@@ -18,6 +18,10 @@ import { ToolService } from "./tools/tool-service.js";
 import { ToolRegistry } from "./tools/tool-registry.js";
 import { ToolCallRequestSchema } from "./api/tool-schemas.js";
 import { CreateToolSchema, UpdateToolSchema, ToolIdParamSchema, type CreateToolInput, type UpdateToolInput } from "./api/tool-management-schemas.js";
+import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema } from "./api/project-schemas.js";
+import { CreateAgentSchema, UpdateAgentSchema, AgentIdParamSchema } from "./api/agent-schemas.js";
+import { ProjectService } from "./projects/service.js";
+import { AgentService } from "./agents/service.js";
 import { createAuthMiddleware } from "./middleware/auth.js";
 import { createRateLimitMiddleware, createRateLimitInfoMiddleware, skipIfAdmin, createSkipPathsMiddleware } from "./middleware/rate-limit.js";
 import { createRateLimiter, getRateLimitConfig, isRateLimitingEnabled, getEndpointRateLimit } from "./rate-limiter/factory.js";
@@ -59,6 +63,8 @@ const oauthStore = new OAuthStore();
 const oauthService = new OAuthService(oauthStore);
 const toolService = new ToolService(memory, sessions);
 const apiKeyService = new ApiKeyService();
+const projectService = new ProjectService();
+const agentService = new AgentService();
 
 // Initialize rate limiter
 const rateLimiter = createRateLimiter();
@@ -105,6 +111,8 @@ await sessions.init();
 await ragStore.init();
 await apiKeyService.init();
 await toolRegistry.init();
+await projectService.init();
+await agentService.init();
 
 // Initialize rate limiter if enabled
 if (rateLimitEnabled) {
@@ -121,7 +129,9 @@ log.info("Stores initialized", {
   sessionBackend: env.SESSION_BACKEND,
   activeApiKeys: apiKeyService.countActiveKeys(),
   rateLimitingEnabled: rateLimitEnabled,
-  customTools: toolRegistry.getAllTools().custom.length
+  customTools: toolRegistry.getAllTools().custom.length,
+  projects: projectService.getProjectCount(),
+  agents: agentService.getAgentCount()
 });
 
 // Register auth middleware after apiKeyService is initialized
@@ -198,6 +208,8 @@ app.get("/health", async () => {
     apiKeyRequired: env.API_KEY_REQUIRED === "true",
     apiKeyConfigured: !!env.API_KEY,
     managedKeys: apiKeyService.countActiveKeys(),
+    projects: projectService.getProjectCount(),
+    agents: agentService.getAgentCount(),
     rateLimitingEnabled: rateLimitEnabled,
     rateLimitConfig: rateLimitEnabled ? {
       maxRequests: rateLimitConfig.maxRequests,
@@ -988,6 +1000,499 @@ app.delete("/v1/admin/tools/:id", async (req, reply) => {
   return { ok: true, message: "Tool deleted successfully" };
 });
 
+// ===== Project Management Routes (ADMIN ONLY) =====
+
+// List all projects - ADMIN ONLY
+app.get("/v1/admin/projects", async (req, reply) => {
+  log.info("List projects request");
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to list projects");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can manage projects"
+    });
+  }
+
+  const projects = projectService.listProjects();
+  
+  log.info("Projects listed", { count: projects.length });
+  
+  // Return projects without full character content for list view
+  return { 
+    ok: true, 
+    projects: projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      apiKeyId: p.apiKeyId,
+      keyPrefix: p.keyPrefix,
+      description: p.description,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      isActive: p.isActive
+    }))
+  };
+});
+
+// Get project by ID - ADMIN ONLY
+app.get("/v1/admin/projects/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Get project request", { projectId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can view project details"
+    });
+  }
+
+  const parsed = ProjectIdParamSchema.safeParse({ id: params.id });
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid project ID" });
+  }
+
+  const project = projectService.getProject(parsed.data.id);
+  if (!project) {
+    return reply.code(404).send({ ok: false, error: "Project not found" });
+  }
+
+  return { ok: true, project };
+});
+
+// Get project character - ADMIN ONLY
+app.get("/v1/admin/projects/:id/character", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Get project character request", { projectId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can view project character"
+    });
+  }
+
+  const parsed = ProjectIdParamSchema.safeParse({ id: params.id });
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid project ID" });
+  }
+
+  const character = projectService.getProjectCharacter(parsed.data.id);
+  if (character === null) {
+    return reply.code(404).send({ ok: false, error: "Project not found" });
+  }
+
+  return { ok: true, character };
+});
+
+// Create new project - ADMIN ONLY
+app.post("/v1/admin/projects", async (req, reply) => {
+  log.info("Create project request");
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to create project");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can create projects"
+    });
+  }
+
+  const parsed = CreateProjectSchema.safeParse(req.body);
+  if (!parsed.success) {
+    log.warn("Invalid project create request", { errors: parsed.error.flatten() });
+    return reply.code(400).send({ ok: false, error: parsed.error.flatten() });
+  }
+
+  try {
+    log.info("Creating project", { name: parsed.data.name });
+    
+    // First create an API key for this project
+    const apiKeyResult = await apiKeyService.createKey({
+      name: `${parsed.data.name} API Key`,
+      description: `Auto-generated API key for project: ${parsed.data.name}`,
+      permissions: ["chat:write", "tools:read", "tools:execute"],
+    }, "master");
+    
+    // Then create the project
+    const { project } = await projectService.createProject(
+      parsed.data,
+      apiKeyResult.apiKey.id,
+      apiKeyResult.apiKey.keyPrefix
+    );
+    
+    log.info("Project created successfully", { 
+      projectId: project.id,
+      name: project.name,
+      apiKeyId: apiKeyResult.apiKey.id
+    });
+    
+    return { 
+      ok: true, 
+      project,
+      apiKey: apiKeyResult.key // Return the full key (only time it's shown)
+    };
+  } catch (error) {
+    log.error("Project creation failed", error instanceof Error ? error : new Error(String(error)));
+    return reply.code(400).send({ 
+      ok: false, 
+      error: error instanceof Error ? error.message : "Failed to create project" 
+    });
+  }
+});
+
+// Update project - ADMIN ONLY
+app.put("/v1/admin/projects/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Update project request", { projectId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to update project");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can update projects"
+    });
+  }
+
+  const idParsed = ProjectIdParamSchema.safeParse({ id: params.id });
+  if (!idParsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid project ID" });
+  }
+
+  const bodyParsed = UpdateProjectSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    log.warn("Invalid project update request", { errors: bodyParsed.error.flatten() });
+    return reply.code(400).send({ ok: false, error: bodyParsed.error.flatten() });
+  }
+
+  try {
+    const updated = await projectService.updateProject(idParsed.data.id, bodyParsed.data);
+    
+    if (!updated) {
+      return reply.code(404).send({ ok: false, error: "Project not found" });
+    }
+    
+    log.info("Project updated successfully", { 
+      projectId: updated.id,
+      name: updated.name 
+    });
+    
+    return { ok: true, project: updated };
+  } catch (error) {
+    log.error("Project update failed", error instanceof Error ? error : new Error(String(error)));
+    return reply.code(400).send({ 
+      ok: false, 
+      error: error instanceof Error ? error.message : "Failed to update project" 
+    });
+  }
+});
+
+// Delete project - ADMIN ONLY
+app.delete("/v1/admin/projects/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Delete project request", { projectId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to delete project");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can delete projects"
+    });
+  }
+
+  const parsed = ProjectIdParamSchema.safeParse({ id: params.id });
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid project ID" });
+  }
+
+  // Get project info before deleting for logging
+  const project = projectService.getProject(parsed.data.id);
+  if (!project) {
+    return reply.code(404).send({ ok: false, error: "Project not found" });
+  }
+
+  const success = await projectService.deleteProject(parsed.data.id);
+  
+  if (!success) {
+    return reply.code(404).send({ ok: false, error: "Project not found" });
+  }
+  
+  // Also delete the associated API key
+  if (project.apiKeyId) {
+    await apiKeyService.deleteKey(project.apiKeyId);
+  }
+  
+  // Also delete all agents associated with this project
+  const deletedAgents = await agentService.deleteAgentsByProject(parsed.data.id);
+  
+  log.info("Project deleted successfully", { 
+    projectId: parsed.data.id,
+    name: project.name,
+    deletedAgents
+  });
+  
+  return { ok: true, message: "Project deleted successfully" };
+});
+
+// ===== Agent Management Routes (ADMIN ONLY) =====
+
+// List all agents - ADMIN ONLY
+app.get("/v1/admin/agents", async (req, reply) => {
+  log.info("List agents request");
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to list agents");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can manage agents"
+    });
+  }
+
+  const { projectId } = req.query as { projectId?: string };
+  const agents = agentService.listAgents(projectId);
+  
+  log.info("Agents listed", { count: agents.length, projectId });
+  
+  // Return agents without full character content for list view
+  return { 
+    ok: true, 
+    agents: agents.map(a => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      projectId: a.projectId,
+      role: a.role,
+      model: a.model,
+      isActive: a.isActive,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt
+    }))
+  };
+});
+
+// Get agent roles - ADMIN ONLY
+app.get("/v1/admin/agents/roles", async (req, reply) => {
+  log.info("Get agent roles request");
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can view agent roles"
+    });
+  }
+
+  const roles = agentService.getAvailableRoles();
+  return { ok: true, roles };
+});
+
+// Get agent by ID - ADMIN ONLY
+app.get("/v1/admin/agents/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Get agent request", { agentId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can view agent details"
+    });
+  }
+
+  const parsed = AgentIdParamSchema.safeParse({ id: params.id });
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid agent ID" });
+  }
+
+  const agent = agentService.getAgent(parsed.data.id);
+  if (!agent) {
+    return reply.code(404).send({ ok: false, error: "Agent not found" });
+  }
+
+  return { ok: true, agent };
+});
+
+// Create new agent - ADMIN ONLY
+app.post("/v1/admin/agents", async (req, reply) => {
+  log.info("Create agent request");
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to create agent");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can create agents"
+    });
+  }
+
+  const parsed = CreateAgentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    log.warn("Invalid agent create request", { errors: parsed.error.flatten() });
+    return reply.code(400).send({ ok: false, error: parsed.error.flatten() });
+  }
+
+  // Verify project exists
+  if (!projectService.hasProject(parsed.data.projectId)) {
+    return reply.code(400).send({ 
+      ok: false, 
+      error: "Project not found",
+      message: `Project '${parsed.data.projectId}' does not exist`
+    });
+  }
+
+  try {
+    log.info("Creating agent", { 
+      name: parsed.data.name, 
+      projectId: parsed.data.projectId,
+      role: parsed.data.role 
+    });
+    
+    const agent = await agentService.createAgent(parsed.data);
+    
+    log.info("Agent created successfully", { 
+      agentId: agent.id,
+      name: agent.name,
+      projectId: agent.projectId
+    });
+    
+    return { 
+      ok: true, 
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        projectId: agent.projectId,
+        role: agent.role,
+        model: agent.model,
+        isActive: agent.isActive,
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt
+      }
+    };
+  } catch (error) {
+    log.error("Agent creation failed", error instanceof Error ? error : new Error(String(error)));
+    return reply.code(400).send({ 
+      ok: false, 
+      error: error instanceof Error ? error.message : "Failed to create agent" 
+    });
+  }
+});
+
+// Update agent - ADMIN ONLY
+app.put("/v1/admin/agents/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Update agent request", { agentId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to update agent");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can update agents"
+    });
+  }
+
+  const idParsed = AgentIdParamSchema.safeParse({ id: params.id });
+  if (!idParsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid agent ID" });
+  }
+
+  const bodyParsed = UpdateAgentSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    log.warn("Invalid agent update request", { errors: bodyParsed.error.flatten() });
+    return reply.code(400).send({ ok: false, error: bodyParsed.error.flatten() });
+  }
+
+  try {
+    const updated = await agentService.updateAgent(idParsed.data.id, bodyParsed.data);
+    
+    if (!updated) {
+      return reply.code(404).send({ ok: false, error: "Agent not found" });
+    }
+    
+    log.info("Agent updated successfully", { 
+      agentId: updated.id,
+      name: updated.name 
+    });
+    
+    return { ok: true, agent: updated };
+  } catch (error) {
+    log.error("Agent update failed", error instanceof Error ? error : new Error(String(error)));
+    return reply.code(400).send({ 
+      ok: false, 
+      error: error instanceof Error ? error.message : "Failed to update agent" 
+    });
+  }
+});
+
+// Delete agent - ADMIN ONLY
+app.delete("/v1/admin/agents/:id", async (req, reply) => {
+  const params = req.params as { id: string };
+  log.info("Delete agent request", { agentId: params.id });
+  
+  const authReq = req as AuthRequest;
+  
+  if (!isAdmin(authReq)) {
+    log.warn("Unauthorized access attempt to delete agent");
+    return reply.code(403).send({ 
+      ok: false, 
+      error: "Forbidden - Admin access required",
+      message: "Only the master API key can delete agents"
+    });
+  }
+
+  const parsed = AgentIdParamSchema.safeParse({ id: params.id });
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: "Invalid agent ID" });
+  }
+
+  // Get agent info before deleting for logging
+  const agent = agentService.getAgent(parsed.data.id);
+  if (!agent) {
+    return reply.code(404).send({ ok: false, error: "Agent not found" });
+  }
+
+  const success = await agentService.deleteAgent(parsed.data.id);
+  
+  if (!success) {
+    return reply.code(404).send({ ok: false, error: "Agent not found" });
+  }
+  
+  log.info("Agent deleted successfully", { 
+    agentId: parsed.data.id,
+    name: agent.name 
+  });
+  
+  return { ok: true, message: "Agent deleted successfully" };
+});
+
 // ===== Public Chat Route (Rate Limited) =====
 
 app.post("/v1/chat", async (req, reply) => {
@@ -1092,6 +1597,8 @@ async function bootstrap() {
     port: env.PORT,
     apiKeyRequired: env.API_KEY_REQUIRED,
     activeApiKeys: apiKeyService.countActiveKeys(),
+    projects: projectService.getProjectCount(),
+    agents: agentService.getAgentCount(),
     rateLimitingEnabled: rateLimitEnabled,
     rateLimitConfig: rateLimitEnabled ? {
       maxRequests: rateLimitConfig.maxRequests,

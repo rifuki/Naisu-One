@@ -23,7 +23,7 @@ export class RAGStore {
       id: randomUUID(),
       tenantId,
       source,
-      status: "queued",
+      status: "pending",
       createdAt: now,
       updatedAt: now
     };

@@ -3,7 +3,7 @@ import { createLogger } from "./logger.js";
 const log = createLogger("FileParser");
 
 /** Supported file types */
-export type FileType = "pdf" | "docx" | "txt" | "md" | "markdown";
+export type FileType = "pdf" | "docx" | "txt" | "md" | "markdown" | "json" | "csv";
 
 /** Parsed document result */
 export interface ParsedDocument {
@@ -32,6 +32,10 @@ export function getFileType(filename: string): FileType | null {
     case "md":
     case "markdown":
       return "md";
+    case "json":
+      return "json";
+    case "csv":
+      return "csv";
     default:
       return null;
   }
@@ -111,6 +115,67 @@ async function parseText(buffer: Buffer, filename: string, type: "txt" | "md"): 
   }
 }
 
+/** Parse JSON file */
+async function parseJSON(buffer: Buffer, filename: string): Promise<ParsedDocument> {
+  try {
+    const content = buffer.toString("utf-8");
+    const parsed = JSON.parse(content);
+    
+    // Convert JSON to a readable text format for embedding
+    const textContent = JSON.stringify(parsed, null, 2);
+    
+    return {
+      content: textContent,
+      metadata: {
+        filename,
+        mimetype: "application/json",
+        size: buffer.length,
+        type: "json",
+        wordCount: textContent.split(/\s+/).length
+      }
+    };
+  } catch (error) {
+    log.error("JSON parsing failed", error instanceof Error ? error : new Error(String(error)));
+    throw new Error("Failed to parse JSON file. Ensure it is valid JSON.");
+  }
+}
+
+/** Parse CSV file */
+async function parseCSV(buffer: Buffer, filename: string): Promise<ParsedDocument> {
+  try {
+    const content = buffer.toString("utf-8");
+    
+    // Basic CSV parsing - split into rows and cells
+    const rows = content.split("\n").filter(row => row.trim());
+    const headers = rows[0]?.split(",").map(h => h.trim()) || [];
+    
+    // Convert to readable text format
+    const textLines: string[] = [];
+    
+    for (let i = 1; i < rows.length; i++) {
+      const cells = rows[i]?.split(",").map(c => c.trim()) || [];
+      const rowText = headers.map((h, idx) => `${h}: ${cells[idx] || ""}`).join("; ");
+      textLines.push(rowText);
+    }
+    
+    const textContent = textLines.join("\n");
+    
+    return {
+      content: textContent,
+      metadata: {
+        filename,
+        mimetype: "text/csv",
+        size: buffer.length,
+        type: "csv",
+        wordCount: content.split(/\s+/).length
+      }
+    };
+  } catch (error) {
+    log.error("CSV parsing failed", error instanceof Error ? error : new Error(String(error)));
+    throw new Error("Failed to parse CSV file");
+  }
+}
+
 /** Parse file based on type */
 export async function parseFile(
   buffer: Buffer,
@@ -134,6 +199,10 @@ export async function parseFile(
     case "txt":
     case "md":
       return parseText(buffer, filename, fileType);
+    case "json":
+      return parseJSON(buffer, filename);
+    case "csv":
+      return parseCSV(buffer, filename);
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
@@ -163,7 +232,7 @@ export function validateFile(
   if (!isSupportedFileType(filename)) {
     return {
       valid: false,
-      error: `Unsupported file type. Supported: PDF, DOCX, TXT, MD, MARKDOWN`
+      error: `Unsupported file type. Supported: PDF, DOCX, TXT, MD, JSON, CSV`
     };
   }
   

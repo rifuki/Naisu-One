@@ -19,9 +19,10 @@ export type RAGChunk = {
 export type RAGIngestJob = {
   id: string;
   tenantId: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "pending" | "processing" | "completed" | "failed";
   source: string;
   createdAt: string;
   updatedAt: string;
   error?: string;
+  chunks?: number;
 };

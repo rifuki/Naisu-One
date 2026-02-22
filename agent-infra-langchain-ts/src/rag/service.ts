@@ -13,7 +13,7 @@ export class RAGService {
     const job = await this.store.createJob(params.tenantId, params.source);
 
     try {
-      await this.store.updateJob(job.id, { status: "running" });
+      await this.store.updateJob(job.id, { status: "processing" });
 
       const doc = await this.store.createDocument({
         tenantId: params.tenantId,
@@ -31,7 +31,7 @@ export class RAGService {
       }));
 
       await this.store.createChunks(chunks);
-      await this.store.updateJob(job.id, { status: "done" });
+      await this.store.updateJob(job.id, { status: "completed", chunks: chunks.length });
 
       return { jobId: job.id, documentId: doc.id, chunkCount: chunks.length };
     } catch (error) {
