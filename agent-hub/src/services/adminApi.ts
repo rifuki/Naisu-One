@@ -359,7 +359,7 @@ export interface ApiError {
 
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
-const MASTER_API_KEY = import.meta.env.VITE_MASTER_API_KEY || '';
+const MASTER_API_KEY = ''; // moved server-side via proxy
 
 // Custom error class for API errors
 export class AdminAPIError extends Error {
@@ -375,15 +375,21 @@ export class AdminAPIError extends Error {
 
 // Helper function to get headers with authorization
 function getHeaders(): HeadersInit {
-  const headers: HeadersInit = {
+  return {
     'Content-Type': 'application/json',
   };
-  
-  if (MASTER_API_KEY) {
-    headers['Authorization'] = `Bearer ${MASTER_API_KEY}`;
+}
+
+function proxyUrl(path: string): string {
+  return `/api/admin-proxy?path=${encodeURIComponent(path)}`;
+}
+
+async function fetchAdmin(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || {});
+  if (init.body instanceof FormData) {
+    headers.delete('Content-Type');
   }
-  
-  return headers;
+  return fetch(proxyUrl(path), { ...init, headers });
 }
 
 // Helper function to handle API responses
@@ -413,7 +419,7 @@ export const AdminAPI = {
    * Check if API key is configured
    */
   isConfigured(): boolean {
-    return !!MASTER_API_KEY;
+    return true;
   },
 
   /**
@@ -427,9 +433,7 @@ export const AdminAPI = {
    * Get the configured master API key (masked)
    */
   getKeyPreview(): string {
-    if (!MASTER_API_KEY) return 'Not configured';
-    if (MASTER_API_KEY.length < 12) return '***';
-    return `${MASTER_API_KEY.slice(0, 7)}...${MASTER_API_KEY.slice(-4)}`;
+    return 'Stored server-side';
   },
 
   // ====================
@@ -440,7 +444,7 @@ export const AdminAPI = {
    * Check service health
    */
   async health(): Promise<HealthResponse> {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetchAdmin('/health');
     return handleResponse<HealthResponse>(response);
   },
 
@@ -453,7 +457,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async sendChat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/chat`, {
+    const response = await fetchAdmin('/v1/admin/chat', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -470,10 +474,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async listApiKeys(): Promise<ListApiKeysResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/keys`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin('/v1/keys', {
+      headers: {},
     });
     return handleResponse<ListApiKeysResponse>(response);
   },
@@ -483,7 +485,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async createApiKey(request: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/keys`, {
+    const response = await fetchAdmin('/v1/keys', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -496,11 +498,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async revokeApiKey(keyId: string): Promise<{ ok: true; message: string }> {
-    const response = await fetch(`${API_BASE_URL}/v1/keys/${keyId}/revoke`, {
+    const response = await fetchAdmin(`/v1/keys/${keyId}/revoke`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<{ ok: true; message: string }>(response);
   },
@@ -510,11 +510,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async activateApiKey(keyId: string): Promise<{ ok: true; message: string }> {
-    const response = await fetch(`${API_BASE_URL}/v1/keys/${keyId}/activate`, {
+    const response = await fetchAdmin(`/v1/keys/${keyId}/activate`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<{ ok: true; message: string }>(response);
   },
@@ -524,11 +522,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async deleteApiKey(keyId: string): Promise<{ ok: true; message: string }> {
-    const response = await fetch(`${API_BASE_URL}/v1/keys/${keyId}`, {
+    const response = await fetchAdmin(`/v1/keys/${keyId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<{ ok: true; message: string }>(response);
   },
@@ -542,7 +538,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async ingestDocument(request: RAGIngestRequest): Promise<RAGIngestResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/rag/ingest`, {
+    const response = await fetchAdmin('/v1/rag/ingest', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -555,10 +551,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getRAGJobStatus(jobId: string): Promise<RAGJobResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/rag/jobs/${jobId}`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/rag/jobs/${jobId}`, {
+      headers: {},
     });
     return handleResponse<RAGJobResponse>(response);
   },
@@ -573,10 +567,8 @@ export const AdminAPI = {
     limit: number = 5
   ): Promise<RAGSearchResponse> {
     const params = new URLSearchParams({ tenantId, query, limit: String(limit) });
-    const response = await fetch(`${API_BASE_URL}/v1/rag/search?${params}`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/rag/search?${params}`, {
+      headers: {},
     });
     return handleResponse<RAGSearchResponse>(response);
   },
@@ -598,11 +590,9 @@ export const AdminAPI = {
       formData.append('metadata', JSON.stringify(metadata));
     }
 
-    const response = await fetch(`${API_BASE_URL}/v1/rag/upload`, {
+    const response = await fetchAdmin('/v1/rag/upload', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-        // Note: Don't set Content-Type for FormData, browser will set it with boundary
+      headers: {        // Note: Don't set Content-Type for FormData, browser will set it with boundary
       },
       body: formData,
     });
@@ -637,10 +627,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async listTools(): Promise<ListToolsResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/tools`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin('/v1/admin/tools', {
+      headers: {},
     });
     return handleResponse<ListToolsResponse>(response);
   },
@@ -650,10 +638,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getTool(toolId: string): Promise<GetToolResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/tools/${toolId}`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/admin/tools/${toolId}`, {
+      headers: {},
     });
     return handleResponse<GetToolResponse>(response);
   },
@@ -663,7 +649,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async createTool(request: CreateToolRequest): Promise<CreateToolResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/tools`, {
+    const response = await fetchAdmin('/v1/admin/tools', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -676,7 +662,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async updateTool(toolId: string, request: UpdateToolRequest): Promise<UpdateToolResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/tools/${toolId}`, {
+    const response = await fetchAdmin(`/v1/admin/tools/${toolId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -689,11 +675,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async deleteTool(toolId: string): Promise<DeleteToolResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/tools/${toolId}`, {
+    const response = await fetchAdmin(`/v1/admin/tools/${toolId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<DeleteToolResponse>(response);
   },
@@ -707,10 +691,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async listProjects(): Promise<ListProjectsResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin('/v1/admin/projects', {
+      headers: {},
     });
     return handleResponse<ListProjectsResponse>(response);
   },
@@ -720,10 +702,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getProject(projectId: string): Promise<GetProjectResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects/${projectId}`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/admin/projects/${projectId}`, {
+      headers: {},
     });
     return handleResponse<GetProjectResponse>(response);
   },
@@ -733,10 +713,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getProjectCharacter(projectId: string): Promise<GetProjectCharacterResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects/${projectId}/character`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/admin/projects/${projectId}/character`, {
+      headers: {},
     });
     return handleResponse<GetProjectCharacterResponse>(response);
   },
@@ -746,7 +724,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async createProject(request: CreateProjectRequest): Promise<CreateProjectResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects`, {
+    const response = await fetchAdmin('/v1/admin/projects', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -759,7 +737,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async updateProject(projectId: string, request: UpdateProjectRequest): Promise<UpdateProjectResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects/${projectId}`, {
+    const response = await fetchAdmin(`/v1/admin/projects/${projectId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -772,11 +750,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async deleteProject(projectId: string): Promise<DeleteProjectResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/projects/${projectId}`, {
+    const response = await fetchAdmin(`/v1/admin/projects/${projectId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<DeleteProjectResponse>(response);
   },
@@ -790,15 +766,12 @@ export const AdminAPI = {
    * Requires master API key
    */
   async listAgents(projectId?: string): Promise<ListAgentsResponse> {
-    const url = new URL(`${API_BASE_URL}/v1/admin/agents`);
+    const params = new URLSearchParams();
     if (projectId) {
-      url.searchParams.append('projectId', projectId);
+      params.append('projectId', projectId);
     }
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
-    });
+    const path = `/v1/admin/agents${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await fetchAdmin(path);
     return handleResponse<ListAgentsResponse>(response);
   },
 
@@ -807,10 +780,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getAgentRoles(): Promise<GetAgentRolesResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/agents/roles`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin('/v1/admin/agents/roles', {
+      headers: {},
     });
     return handleResponse<GetAgentRolesResponse>(response);
   },
@@ -820,10 +791,8 @@ export const AdminAPI = {
    * Requires master API key
    */
   async getAgent(agentId: string): Promise<GetAgentResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/agents/${agentId}`, {
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+    const response = await fetchAdmin(`/v1/admin/agents/${agentId}`, {
+      headers: {},
     });
     return handleResponse<GetAgentResponse>(response);
   },
@@ -833,7 +802,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async createAgent(request: CreateAgentRequest): Promise<CreateAgentResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/agents`, {
+    const response = await fetchAdmin('/v1/admin/agents', {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -846,7 +815,7 @@ export const AdminAPI = {
    * Requires master API key
    */
   async updateAgent(agentId: string, request: UpdateAgentRequest): Promise<UpdateAgentResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/agents/${agentId}`, {
+    const response = await fetchAdmin(`/v1/admin/agents/${agentId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(request),
@@ -859,11 +828,9 @@ export const AdminAPI = {
    * Requires master API key
    */
   async deleteAgent(agentId: string): Promise<DeleteAgentResponse> {
-    const response = await fetch(`${API_BASE_URL}/v1/admin/agents/${agentId}`, {
+    const response = await fetchAdmin(`/v1/admin/agents/${agentId}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${MASTER_API_KEY}`,
-      },
+      headers: {},
     });
     return handleResponse<DeleteAgentResponse>(response);
   },
