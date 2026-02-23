@@ -1,4 +1,4 @@
-import { getSessionFromRequest } from './_auth';
+import { getSessionFromRequest } from './_auth.js';
 
 const API_BASE_URL = process.env.API_BASE_URL;
 const MASTER_API_KEY = process.env.MASTER_API_KEY;

@@ -4,7 +4,7 @@ import {
   getAdminUsername,
   getSessionMaxAgeSeconds,
   verifyAdminPassword,
-} from '../_auth';
+} from '../_auth.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

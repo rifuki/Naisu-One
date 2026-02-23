@@ -1,4 +1,4 @@
-import { getSessionFromRequest } from '../_auth';
+import { getSessionFromRequest } from '../_auth.js';
 
 export default async function handler(req: any, res: any) {
   const session = getSessionFromRequest(req);

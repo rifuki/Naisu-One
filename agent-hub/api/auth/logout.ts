@@ -1,4 +1,4 @@
-import { buildClearSessionCookie } from '../_auth';
+import { buildClearSessionCookie } from '../_auth.js';
 
 export default async function handler(_req: any, res: any) {
   res.setHeader('Set-Cookie', buildClearSessionCookie());
