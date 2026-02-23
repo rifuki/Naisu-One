@@ -1,0 +1,48 @@
+name: Deploy Agent Hub (admin FE)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent-hub/**'
+      - '.github/workflows/deploy-agent-hub.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-agent-hub
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-hub
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test --if-present
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_AGENT_HUB }}
+        run: |
+          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx vercel build --prod --token="$VERCEL_TOKEN"
+          npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

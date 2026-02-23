@@ -1,0 +1,55 @@
+name: Deploy Naisu Backend (VPS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'naisu-backend/**'
+      - '.github/workflows/deploy-naisu-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-naisu-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script_stop: true
+          script: |
+            set -e
+            REPO_PATH="${{ secrets.VPS_REPO_PATH }}"
+            SERVICE_NAME="${{ secrets.NAISU_BACKEND_SERVICE_NAME }}"
+            if [ -z "$SERVICE_NAME" ]; then SERVICE_NAME="naisu-backend.service"; fi
+
+            cd "$REPO_PATH"
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+
+            cd naisu-backend
+
+            if command -v bun >/dev/null 2>&1; then
+              bun install --frozen-lockfile || bun install
+            else
+              npm install
+            fi
+
+            sudo systemctl restart "$SERVICE_NAME"
+            sleep 3
+            sudo systemctl --no-pager --full status "$SERVICE_NAME" | sed -n '1,40p'
+
+            HEALTH_URL="${{ secrets.NAISU_BACKEND_HEALTHCHECK_URL }}"
+            if [ -n "$HEALTH_URL" ]; then
+              curl -fsS "$HEALTH_URL" >/dev/null
+            fi
+
+            echo "Naisu backend deploy OK"
