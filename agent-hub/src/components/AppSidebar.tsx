@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { logout } from "@/services/authApi";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   ChevronRight,
   Zap,
   FolderOpen,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +30,13 @@ const navItems = [
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+    window.location.reload();
+  }
 
   return (
     <motion.aside
@@ -81,6 +90,14 @@ export function AppSidebar() {
           );
         })}
       </nav>
+
+      <button
+        onClick={handleLogout}
+        className="mx-3 mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+      >
+        <LogOut className="w-4 h-4" />
+        {!collapsed && <span>Logout</span>}
+      </button>
 
       {/* Collapse button */}
       <button

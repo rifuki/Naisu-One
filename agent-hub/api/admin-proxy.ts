@@ -1,3 +1,5 @@
+import { getSessionFromRequest } from './_auth';
+
 const API_BASE_URL = process.env.API_BASE_URL;
 const MASTER_API_KEY = process.env.MASTER_API_KEY;
 
@@ -13,6 +15,11 @@ async function readRawBody(req: any): Promise<Buffer | undefined> {
 }
 
 export default async function handler(req: any, res: any) {
+  const session = getSessionFromRequest(req);
+  if (!session.ok) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
   if (!API_BASE_URL || !MASTER_API_KEY) {
     return res.status(500).json({
       ok: false,
