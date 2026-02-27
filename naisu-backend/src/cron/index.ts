@@ -3,6 +3,7 @@
  * Background tasks for the backend
  */
 import { logger } from '@lib/logger'
+import { startIndexer, stopIndexer } from '@services/indexer'
 
 // ============================================================================
 // Job Definitions
@@ -25,8 +26,11 @@ let intervals: ReturnType<typeof setInterval>[] = []
  * Start all cron jobs
  */
 export function startCronJobs(): void {
+  // Start intent indexer (background on-chain event polling)
+  startIndexer()
+
   if (jobs.length === 0) {
-    logger.info('No cron jobs configured')
+    logger.info('No additional cron jobs configured')
     return
   }
 
@@ -57,13 +61,13 @@ export function startCronJobs(): void {
  */
 export function stopCronJobs(): void {
   logger.info('Stopping cron jobs...')
+  stopIndexer()
 
   for (const interval of intervals) {
     clearInterval(interval)
   }
 
   intervals = []
-
   logger.info('Cron jobs stopped')
 }
 

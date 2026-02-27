@@ -3,7 +3,7 @@
  * Uses POST /api/v1/uniswap-v4/swap/build and walletClient.sendTransaction.
  */
 import { useCallback, useState } from 'react';
-import { useWalletClient, usePublicClient } from 'wagmi';
+import { useWalletClient, usePublicClient, useAccount } from 'wagmi';
 
 function resolveApiBase() {
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
@@ -57,6 +57,7 @@ export interface BuildParams {
 export function useSwapBuild() {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { address } = useAccount();
   const [isBuilding, setIsBuilding] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,11 +80,12 @@ export function useSwapBuild() {
           console.log(`[Swap] Sending tx ${i + 1}/${txs.length}:`, tx.description);
           
           const hash = await walletClient.sendTransaction({
+            account: address!,
             to: tx.to as `0x${string}`,
             data: tx.data as `0x${string}`,
             value: BigInt(tx.value),
             chainId: tx.chainId,
-          });
+          } as any);
           
           hashes.push(hash);
           setTxHashes([...hashes]);
@@ -100,7 +102,7 @@ export function useSwapBuild() {
         // Wait for final transaction
         if (hashes.length > 0) {
           console.log('[Swap] Waiting for final tx confirmation...');
-          await publicClient.waitForTransactionReceipt({ hash: hashes[hashes.length - 1] });
+          await publicClient.waitForTransactionReceipt({ hash: hashes[hashes.length - 1] as `0x${string}` });
           console.log('[Swap] All transactions confirmed');
         }
         

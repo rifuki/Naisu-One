@@ -11,10 +11,12 @@ interface OpenClawConfig {
   model: string;
 }
 
+const _agentBase = (import.meta.env.VITE_AGENT_URL as string | undefined)?.trim() || 'http://localhost:8787';
+
 const DEFAULT_CONFIG: OpenClawConfig = {
-  apiUrl: process.env.OPENCLAW_API_URL || 'https://ai.naisu.one/v1/chat/completions',
-  apiKey: process.env.OPENCLAW_API_KEY || '',
-  model: 'openai-codex/gpt-5.2',
+  apiUrl: `${_agentBase}/v1/chat/completions`,
+  apiKey: (import.meta.env.VITE_OPENCLAW_API_KEY as string | undefined) ?? '',
+  model: (import.meta.env.VITE_AGENT_MODEL as string | undefined) ?? 'kimi-for-coding',
 };
 
 export function useOpenClaw(config?: Partial<OpenClawConfig>) {

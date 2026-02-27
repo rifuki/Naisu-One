@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use ethers::signers::Signer as _;
 use eyre::Result;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
@@ -601,9 +602,16 @@ async fn solve_and_prove_inner(
         .await
         .unwrap_or(0);
 
-    // ── Solver's address (32-byte padded, as EVM address) ───────────────────
-    // Use solver_pubkey directly as the 32-byte solver_address arg
-    let solver_address: [u8; 32] = solver_pubkey;
+    // ── Solver's EVM address (32-byte left-padded) ──────────────────────────
+    // The Wormhole payload encodes the solver's EVM address so the EVM contract
+    // knows where to send the ETH settlement. Must be the EVM address derived
+    // from evm_private_key, NOT the Solana pubkey.
+    let solver_evm_wallet: ethers::signers::LocalWallet = config
+        .evm_private_key
+        .parse::<ethers::signers::LocalWallet>()
+        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
+    let mut solver_address = [0u8; 32];
+    solver_address[12..].copy_from_slice(solver_evm_wallet.address().as_bytes());
 
     // ── Build instruction data ───────────────────────────────────────────────
     // solve_and_prove(order_id: [u8;32], solver_address: [u8;32], amount_lamports: u64)
@@ -838,8 +846,15 @@ async fn solve_and_stake_inner(
     let wormhole_message_key = ed25519_dalek::SigningKey::from_bytes(&msg_secret);
     let wormhole_message_pubkey: [u8; 32] = wormhole_message_key.verifying_key().to_bytes();
 
-    // ── Solver address (32-byte) ─────────────────────────────────────────────
-    let solver_address: [u8; 32] = solver_pubkey;
+    // ── Solver's EVM address (32-byte left-padded) ──────────────────────────
+    // Must match the EVM address derived from evm_private_key so settleOrder
+    // pays to the correct solver wallet, not to bytes of the Solana pubkey.
+    let solver_evm_wallet: ethers::signers::LocalWallet = config
+        .evm_private_key
+        .parse::<ethers::signers::LocalWallet>()
+        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
+    let mut solver_address = [0u8; 32];
+    solver_address[12..].copy_from_slice(solver_evm_wallet.address().as_bytes());
 
     // ── Build instruction data ───────────────────────────────────────────────
     // solve_stake_and_prove(order_id: [u8;32], solver_address: [u8;32], amount_lamports: u64)

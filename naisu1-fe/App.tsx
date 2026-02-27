@@ -1,6 +1,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import ActiveIntents from './components/ActiveIntents';
 import LandingPage from './pages/LandingPage';
 import DashboardPage from './pages/DashboardPage';
 import SwapPage from './pages/SwapPage';
@@ -30,6 +31,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </div>
         </div>
       </footer>
+      {/* Global floating Active Intents panel */}
+      <ActiveIntents />
     </div>
   );
 };

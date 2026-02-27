@@ -63,11 +63,15 @@ pub mod mock_lending {
         // Accrue yield before calculating exchange rate
         accrue_yield_internal(&mut ctx.accounts.market)?;
 
-        let market = &ctx.accounts.market;
+        let exchange_rate = ctx.accounts.market.exchange_rate;
+        let underlying_mint_key = ctx.accounts.market.underlying_mint;
+        let market_bump = ctx.accounts.market.bump;
+        let market_key = ctx.accounts.market.key();
+
         let y_amount = (amount as u128)
             .checked_mul(RATE_SCALE as u128)
             .ok_or(LendingError::MathOverflow)?
-            .checked_div(market.exchange_rate as u128)
+            .checked_div(exchange_rate as u128)
             .ok_or(LendingError::MathOverflow)? as u64;
 
         require!(y_amount > 0, LendingError::ZeroAmount);
@@ -85,11 +89,10 @@ pub mod mock_lending {
             amount,
         )?;
 
-        let market_key = ctx.accounts.market.key();
         let market_seeds = &[
             b"market".as_ref(),
-            market_key.as_ref(),
-            &[ctx.accounts.market.bump],
+            underlying_mint_key.as_ref(),
+            &[market_bump],
         ];
 
         // Mint yTokens to user
@@ -107,10 +110,11 @@ pub mod mock_lending {
         )?;
 
         // Update user position
+        let user_key = ctx.accounts.user.key();
         let position = &mut ctx.accounts.user_position;
         if position.owner == Pubkey::default() {
-            position.owner = ctx.accounts.user.key();
-            position.market = ctx.accounts.market.key();
+            position.owner = user_key;
+            position.market = market_key;
             position.bump = ctx.bumps.user_position;
         }
         position.y_token_balance = position
@@ -133,7 +137,7 @@ pub mod mock_lending {
             "Deposited: amount={}, y_minted={}, rate={}",
             amount,
             y_amount,
-            market.exchange_rate
+            exchange_rate
         );
         Ok(())
     }
@@ -145,51 +149,56 @@ pub mod mock_lending {
         // Accrue yield first
         accrue_yield_internal(&mut ctx.accounts.market)?;
 
-        let market = &ctx.accounts.market;
-        let position = &ctx.accounts.user_position;
+        let exchange_rate = ctx.accounts.market.exchange_rate;
+        let collateral_factor_bps = ctx.accounts.market.collateral_factor_bps;
+        let underlying_mint_key = ctx.accounts.market.underlying_mint;
+        let market_bump = ctx.accounts.market.bump;
+        let total_deposited = ctx.accounts.market.total_deposited;
+        let total_borrowed = ctx.accounts.market.total_borrowed;
+
+        let position_y_bal = ctx.accounts.user_position.y_token_balance;
+        let position_borrowed = ctx.accounts.user_position.borrowed_amount;
 
         require!(
-            position.y_token_balance >= y_amount,
+            position_y_bal >= y_amount,
             LendingError::InsufficientBalance
         );
 
-        // Check not over-borrowed
-        let remaining_y = position
-            .y_token_balance
+        // Check not over-borrowed after withdrawal
+        let remaining_y = position_y_bal
             .checked_sub(y_amount)
             .ok_or(LendingError::MathOverflow)?;
         let remaining_collateral = (remaining_y as u128)
-            .checked_mul(market.exchange_rate as u128)
+            .checked_mul(exchange_rate as u128)
             .ok_or(LendingError::MathOverflow)?
             .checked_div(RATE_SCALE as u128)
             .ok_or(LendingError::MathOverflow)? as u64;
         let max_borrow = (remaining_collateral as u128)
-            .checked_mul(market.collateral_factor_bps as u128)
+            .checked_mul(collateral_factor_bps as u128)
             .ok_or(LendingError::MathOverflow)?
             .checked_div(10000)
             .ok_or(LendingError::MathOverflow)? as u64;
         require!(
-            position.borrowed_amount <= max_borrow,
+            position_borrowed <= max_borrow,
             LendingError::BorrowLimitExceeded
         );
 
         // Calculate underlying to return
         let underlying_amount = (y_amount as u128)
-            .checked_mul(market.exchange_rate as u128)
+            .checked_mul(exchange_rate as u128)
             .ok_or(LendingError::MathOverflow)?
             .checked_div(RATE_SCALE as u128)
             .ok_or(LendingError::MathOverflow)? as u64;
 
         require!(
-            underlying_amount <= market.total_deposited - market.total_borrowed,
+            underlying_amount <= total_deposited - total_borrowed,
             LendingError::InsufficientLiquidity
         );
 
-        let market_key = ctx.accounts.market.key();
         let market_seeds = &[
             b"market".as_ref(),
-            market_key.as_ref(),
-            &[ctx.accounts.market.bump],
+            underlying_mint_key.as_ref(),
+            &[market_bump],
         ];
 
         // Burn yTokens
@@ -239,7 +248,7 @@ pub mod mock_lending {
             "Withdrawn: y_burned={}, underlying={}, rate={}",
             y_amount,
             underlying_amount,
-            market.exchange_rate
+            exchange_rate
         );
         Ok(())
     }
@@ -250,24 +259,31 @@ pub mod mock_lending {
 
         accrue_yield_internal(&mut ctx.accounts.market)?;
 
-        let market = &ctx.accounts.market;
-        let position = &ctx.accounts.user_position;
+        // Extract all needed values before any mutable borrows
+        let exchange_rate = ctx.accounts.market.exchange_rate;
+        let collateral_factor_bps = ctx.accounts.market.collateral_factor_bps;
+        let total_deposited = ctx.accounts.market.total_deposited;
+        let total_borrowed = ctx.accounts.market.total_borrowed;
+        let underlying_mint_key = ctx.accounts.market.underlying_mint;
+        let market_bump = ctx.accounts.market.bump;
+
+        let y_token_balance = ctx.accounts.user_position.y_token_balance;
+        let borrowed_amount = ctx.accounts.user_position.borrowed_amount;
 
         // Calculate collateral value in underlying
-        let collateral_value = (position.y_token_balance as u128)
-            .checked_mul(market.exchange_rate as u128)
+        let collateral_value = (y_token_balance as u128)
+            .checked_mul(exchange_rate as u128)
             .ok_or(LendingError::MathOverflow)?
             .checked_div(RATE_SCALE as u128)
             .ok_or(LendingError::MathOverflow)? as u64;
 
         let max_borrow = (collateral_value as u128)
-            .checked_mul(market.collateral_factor_bps as u128)
+            .checked_mul(collateral_factor_bps as u128)
             .ok_or(LendingError::MathOverflow)?
             .checked_div(10000)
             .ok_or(LendingError::MathOverflow)? as u64;
 
-        let new_borrowed = position
-            .borrowed_amount
+        let new_borrowed = borrowed_amount
             .checked_add(amount)
             .ok_or(LendingError::MathOverflow)?;
         require!(
@@ -275,15 +291,14 @@ pub mod mock_lending {
             LendingError::BorrowLimitExceeded
         );
         require!(
-            amount <= market.total_deposited - market.total_borrowed,
+            amount <= total_deposited - total_borrowed,
             LendingError::InsufficientLiquidity
         );
 
-        let market_key = ctx.accounts.market.key();
         let market_seeds = &[
             b"market".as_ref(),
-            market_key.as_ref(),
-            &[ctx.accounts.market.bump],
+            underlying_mint_key.as_ref(),
+            &[market_bump],
         ];
 
         // Transfer tokens from vault to user
@@ -590,12 +605,7 @@ pub struct Borrow<'info> {
     #[account(mut, constraint = vault.key() == market.vault)]
     pub vault: Account<'info, TokenAccount>,
 
-    #[account(
-        init_if_needed,
-        payer = user,
-        token::mint = market.underlying_mint,
-        token::authority = user,
-    )]
+    #[account(mut, token::mint = market.underlying_mint, token::authority = user)]
     pub user_token: Account<'info, TokenAccount>,
 
     #[account(

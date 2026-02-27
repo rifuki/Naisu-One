@@ -1,0 +1,94 @@
+// Auto-sourced from contracts/evm/out/IntentBridge.sol/IntentBridge.json
+export const INTENT_BRIDGE_ABI = [
+  {
+    type: "function",
+    name: "cancelOrder",
+    inputs: [{ name: "orderId", type: "bytes32" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "createOrder",
+    inputs: [
+      { name: "recipient", type: "bytes32" },
+      { name: "destinationChain", type: "uint16" },
+      { name: "startPrice", type: "uint256" },
+      { name: "floorPrice", type: "uint256" },
+      { name: "durationSeconds", type: "uint256" },
+    ],
+    outputs: [{ name: "orderId", type: "bytes32" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "fulfillAndProve",
+    inputs: [
+      { name: "intentId", type: "bytes32" },
+      { name: "recipient", type: "address" },
+    ],
+    outputs: [{ name: "sequence", type: "uint64" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "settleOrder",
+    inputs: [{ name: "encodedVaa", type: "bytes" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "getAuctionPrice",
+    inputs: [{ name: "orderId", type: "bytes32" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "orders",
+    inputs: [{ name: "", type: "bytes32" }],
+    outputs: [
+      { name: "creator", type: "address" },
+      { name: "recipient", type: "bytes32" },
+      { name: "destinationChain", type: "uint16" },
+      { name: "amount", type: "uint256" },
+      { name: "startPrice", type: "uint256" },
+      { name: "floorPrice", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "createdAt", type: "uint256" },
+      { name: "status", type: "uint8" }, // 0=Open, 1=Fulfilled, 2=Cancelled
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "event",
+    name: "OrderCreated",
+    inputs: [
+      { name: "orderId", type: "bytes32", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "recipient", type: "bytes32", indexed: false },
+      { name: "destinationChain", type: "uint16", indexed: false },
+      { name: "amount", type: "uint256", indexed: false },
+      { name: "startPrice", type: "uint256", indexed: false },
+      { name: "floorPrice", type: "uint256", indexed: false },
+      { name: "deadline", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OrderFulfilled",
+    inputs: [
+      { name: "orderId", type: "bytes32", indexed: true },
+      { name: "solver", type: "address", indexed: true },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OrderCancelled",
+    inputs: [{ name: "orderId", type: "bytes32", indexed: true }],
+    anonymous: false,
+  },
+] as const;

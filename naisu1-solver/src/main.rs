@@ -6,6 +6,7 @@ mod strategy;
 mod wormhole;
 
 use config::Config;
+use ethers::signers::Signer;
 use eyre::Result;
 use std::sync::Arc;
 use tracing::info;
@@ -41,6 +42,11 @@ async fn main() -> Result<()> {
         .init();
 
     let config = Arc::new(Config::load()?);
+    
+    // Derive EVM address from private key for logging
+    let evm_wallet: ethers::signers::LocalWallet = config.evm_private_key.parse()?;
+    let evm_address = format!("{:?}", evm_wallet.address());
+    
     info!(
         evm_contract = %config.evm_contract_address,
         evm_chain_id = config.evm_chain_id,
@@ -48,6 +54,7 @@ async fn main() -> Result<()> {
         evm2_chain_id = config.evm2_chain_id,
         solana_program = %config.solana_program_id,
         enable_auto_stake = config.enable_auto_stake,
+        evm_solver_address = %evm_address,
         "Starting Intent Solver..."
     );
 

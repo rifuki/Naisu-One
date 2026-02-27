@@ -64,6 +64,9 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().optional(),
   REDIS_PREFIX: z.string().default("agentinfra"),
 
+  // Naisu backend URL (for DeFi tools)
+  NAISU_BACKEND_URL: z.string().url().default("http://localhost:3000"),
+
   // Rate Limiting Configuration
   RATE_LIMIT_ENABLED: z.enum(["true", "false"]).default("true"),
   RATE_LIMIT_BACKEND: z.enum(["json", "redis"]).default("json"),

@@ -19,6 +19,8 @@ import { rateLimit } from '@middleware/rate-limit'
 import { healthRouter } from './health'
 import { uniswapV4Router } from './uniswap-v4'
 import { cetusRouter } from './cetus'
+import { solanaRouter } from './solana'
+import { intentRouter } from './intent'
 import { docsRouter } from './docs'
 
 // ============================================================================
@@ -150,6 +152,12 @@ api.route('/uniswap-v4', uniswapV4Router)
 
 // Cetus CLMM routes (Sui)
 api.route('/cetus', cetusRouter)
+
+// Solana balance
+api.route('/solana', solanaRouter)
+
+// Intent Bridge routes (cross-chain Dutch auction)
+api.route('/intent', intentRouter)
 
 // API Docs (mounted at root level, not under /api/v1)
 app.route('/docs', docsRouter)

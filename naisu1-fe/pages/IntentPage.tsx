@@ -1,5 +1,98 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useOpenClaw, ChatMessage } from '../hooks/useOpenClaw';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useAccount, useSendTransaction } from 'wagmi';
+import { parseEther } from 'viem';
+import ReactMarkdown from 'react-markdown';
+import { useAgent, AgentMessage as ChatMessage, TxData } from '../hooks/useAgent';
+import { useSolanaAddress } from '../hooks/useSolanaAddress';
+import { useOrderWatch, OrderUpdateEvent } from '../hooks/useOrderWatch';
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
+// Compact status monitor card shown after tx submit
+interface OrderMonitorProps {
+    txHash: string;
+    chainId: number;
+    userAddress: string;
+}
+const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddress }) => {
+    const [status, setStatus] = useState<'indexing' | 'open' | 'fulfilled' | 'error'>('indexing');
+    const [elapsed, setElapsed] = useState(0);
+    const explorerBase = chainId === 84532 ? 'https://sepolia.basescan.org/tx/' : 'https://testnet.snowtrace.io/tx/';
+    const chain = chainId === 84532 ? 'Base Sepolia' : 'Fuji';
+
+    useEffect(() => {
+        const startTime = Date.now();
+        const ticker = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
+
+        let attempts = 0;
+        // Dutch auction deadline = 5 min, give 10 min total to account for indexing delay
+        const MAX_ATTEMPTS = 120; // 120 × 5s = 10 min
+        const poll = setInterval(async () => {
+            attempts++;
+            if (attempts > MAX_ATTEMPTS) {
+                clearInterval(poll);
+                setStatus('error');
+                return;
+            }
+            try {
+                const chainParam = chainId === 84532 ? 'evm-base' : 'evm-fuji';
+                const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${userAddress}&chain=${chainParam}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const orders: Array<{ status: string; orderId?: string }> = data.data ?? data.orders ?? [];
+                // Match by tx hash or just check latest order status
+                const latestOrder = orders[0];
+                if (orders.some(o => o.status === 'FULFILLED')) {
+                    setStatus('fulfilled');
+                    clearInterval(poll);
+                    clearInterval(ticker);
+                } else if (latestOrder && latestOrder.status === 'OPEN') {
+                    setStatus('open');
+                } else if (orders.length > 0) {
+                    setStatus('open');
+                }
+            } catch { /* ignore — backend may be warming up */ }
+        }, 5000);
+
+        return () => { clearInterval(poll); clearInterval(ticker); };
+    }, [txHash, chainId, userAddress]);
+
+    const statusConfig = {
+        indexing:  { icon: 'sync',         color: 'text-slate-400', label: 'Indexing...',      spin: true,  dot: false },
+        open:      { icon: 'schedule',     color: 'text-amber-400', label: 'Awaiting solver',  spin: false, dot: true  },
+        fulfilled: { icon: 'check_circle', color: 'text-primary',   label: 'Fulfilled!',       spin: false, dot: false },
+        error:     { icon: 'warning',      color: 'text-slate-500', label: 'Check Intents panel', spin: false, dot: false },
+    }[status];
+
+    return (
+        <div className="mt-3 rounded-xl border border-white/8 bg-white/3 p-3 flex items-center gap-3">
+            <div className={`shrink-0 ${statusConfig.color} ${statusConfig.spin ? 'animate-spin' : ''}`}>
+                <span className="material-symbols-outlined text-[18px]">{statusConfig.icon}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                    {statusConfig.dot && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    )}
+                    <span className={`text-[12px] font-semibold ${statusConfig.color}`}>{statusConfig.label}</span>
+                    {status !== 'fulfilled' && status !== 'error' && (
+                        <span className="text-[10px] text-slate-600 tabular-nums">{elapsed}s</span>
+                    )}
+                    {status === 'fulfilled' && (
+                        <span className="text-[10px] text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full">SOL delivered</span>
+                    )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-slate-600 font-mono truncate">{chain} · {txHash.slice(0,10)}…{txHash.slice(-6)}</span>
+                    <a href={`${explorerBase}${txHash}`} target="_blank" rel="noreferrer"
+                       className="text-[10px] text-slate-600 hover:text-primary transition-colors shrink-0">
+                        <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const IntentPage: React.FC = () => {
     const [inputValue, setInputValue] = useState("");
@@ -7,21 +100,94 @@ const IntentPage: React.FC = () => {
     const [showSettings, setShowSettings] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    const { address } = useAccount();
+    const { sendTransactionAsync } = useSendTransaction();
+    const solAddress = useSolanaAddress();
+    const [txStatus, setTxStatus] = useState<string | null>(null);
+    // Track submitted tx hashes for inline monitoring
+    const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number }>>([]);
+
+    useEffect(() => {
+        console.log('[IntentPage Wallet Debug] EVM:', address, 'Solana:', solAddress);
+    }, [address, solAddress]);
+
     const {
         messages,
         isLoading,
         error,
-        streamingContent,
+        pendingTx,
+        setPendingTx,
         sendMessage,
+        addMessage,
         reset,
-    } = useOpenClaw();
+    } = useAgent(address, solAddress);
+
+    // ── Order status watcher via SSE ─────────────────────────────────────────
+    // Only activate after user has submitted at least one tx in this session
+    const hasSubmittedTx = submittedTxs.length > 0;
+
+    const handleOrderUpdate = useCallback((event: OrderUpdateEvent) => {
+        const { status, orderId, amount, chain, explorerUrl } = event;
+        const shortId = orderId.slice(0, 8);
+        const chainLabel = chain === 'evm-base' ? 'Base Sepolia' : chain === 'evm-fuji' ? 'Fuji' : chain;
+
+        let message = '';
+        if (status === 'FULFILLED') {
+            message = `Order \`${shortId}\` fulfilled — **${amount} ETH** bridged successfully on ${chainLabel}. SOL is on its way to your wallet. [View tx](${explorerUrl})`;
+        } else if (status === 'EXPIRED') {
+            message = `Order \`${shortId}\` expired before a solver filled it. Your ETH is still locked — you can cancel and reclaim it via the Intents panel.`;
+        } else if (status === 'CANCELLED') {
+            message = `Order \`${shortId}\` cancelled. Funds have been returned.`;
+        }
+
+        if (message) addMessage(message);
+    }, [addMessage]);
+
+    useOrderWatch({
+        user: address,
+        enabled: hasSubmittedTx && hasInteracted,
+        onOrderUpdate: handleOrderUpdate,
+    });
+
+    const handleSendTx = useCallback(async (tx: TxData) => {
+        try {
+            setTxStatus('Confirm in wallet...');
+            const hash = await sendTransactionAsync({
+                to: tx.to as `0x${string}`,
+                data: tx.data as `0x${string}`,
+                value: parseEther(tx.value),
+                chainId: tx.chainId,
+            });
+            setTxStatus(null);
+            setPendingTx(undefined);
+
+            // Fire refresh event for ActiveIntents panel
+            window.dispatchEvent(new Event('refresh_intents'));
+
+            // Add compact submitted message (no agent round-trip needed)
+            const explorerBase = tx.chainId === 84532
+                ? 'https://sepolia.basescan.org/tx/'
+                : 'https://testnet.snowtrace.io/tx/';
+
+            // Inject system message directly into messages via sendMessage with tx info
+            // We pass a special marker so the message bubble can render the monitor widget
+            const msgContent = `__TX_SUBMITTED__${JSON.stringify({ hash, chainId: tx.chainId, explorerBase })}`;
+            // Store for monitor widget
+            setSubmittedTxs(prev => [...prev, { hash, chainId: tx.chainId, msgIdx: -1 }]);
+            sendMessage(`Transaction submitted! Hash: ${hash}\n\nExplorer: ${explorerBase}${hash}`);
+        } catch (err: unknown) {
+            setTxStatus(null);
+            const msg = err instanceof Error ? (err as any).shortMessage ?? err.message : 'Unknown error';
+            sendMessage(`Transaction failed: ${msg}`);
+        }
+    }, [sendTransactionAsync, sendMessage, setPendingTx]);
 
     // Auto-scroll to bottom on new messages or streaming
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-    }, [messages, streamingContent]);
+    }, [messages, isLoading]);
 
     const handleSend = () => {
         if (!inputValue.trim() || isLoading) return;
@@ -47,86 +213,20 @@ const IntentPage: React.FC = () => {
         setInputValue("");
     };
 
-    // Simple markdown-like renderer for assistant messages
-    const renderContent = (content: string) => {
-        // Split by code blocks first
-        const parts = content.split(/(```[\s\S]*?```)/g);
-        return parts.map((part, i) => {
-            if (part.startsWith('```') && part.endsWith('```')) {
-                const inner = part.slice(3, -3);
-                const newlineIdx = inner.indexOf('\n');
-                const code = newlineIdx > -1 ? inner.slice(newlineIdx + 1) : inner;
-                return (
-                    <pre key={i} className="bg-black/40 border border-white/10 rounded-lg p-4 overflow-x-auto text-sm my-3 font-mono text-slate-300">
-                        <code>{code}</code>
-                    </pre>
-                );
-            }
-            // Process inline markdown
-            return (
-                <span key={i}>
-                    {part.split('\n').map((line, li) => {
-                        // Bold text
-                        const formatted = line.replace(
-                            /\*\*(.*?)\*\*/g,
-                            '<strong class="text-white font-semibold">$1</strong>'
-                        ).replace(
-                            /`([^`]+)`/g,
-                            '<code class="bg-white/10 px-1.5 py-0.5 rounded text-primary text-sm font-mono">$1</code>'
-                        );
-
-                        // Heading lines
-                        if (line.startsWith('### ')) {
-                            return (
-                                <h4 key={li} className="text-white font-bold text-base mt-4 mb-2"
-                                    dangerouslySetInnerHTML={{ __html: formatted.slice(4) }}
-                                />
-                            );
-                        }
-                        if (line.startsWith('## ')) {
-                            return (
-                                <h3 key={li} className="text-white font-bold text-lg mt-4 mb-2"
-                                    dangerouslySetInnerHTML={{ __html: formatted.slice(3) }}
-                                />
-                            );
-                        }
-                        // Bullet points
-                        if (line.startsWith('- ') || line.startsWith('* ')) {
-                            return (
-                                <div key={li} className="flex gap-2 ml-2 my-0.5">
-                                    <span className="text-primary mt-1 text-xs">&#9679;</span>
-                                    <span dangerouslySetInnerHTML={{ __html: formatted.slice(2) }} />
-                                </div>
-                            );
-                        }
-                        // Numbered list
-                        const numMatch = line.match(/^(\d+)\.\s/);
-                        if (numMatch) {
-                            return (
-                                <div key={li} className="flex gap-2 ml-2 my-0.5">
-                                    <span className="text-primary font-mono text-sm min-w-[1.2em]">{numMatch[1]}.</span>
-                                    <span dangerouslySetInnerHTML={{ __html: formatted.slice(numMatch[0].length) }} />
-                                </div>
-                            );
-                        }
-
-                        if (!line.trim()) return <br key={li} />;
-
-                        return (
-                            <span key={li}>
-                                <span dangerouslySetInnerHTML={{ __html: formatted }} />
-                                {li < part.split('\n').length - 1 && <br />}
-                            </span>
-                        );
-                    })}
-                </span>
-            );
-        });
-    };
-
-    // Get only user messages for display count
-    const userMessages = messages.filter(m => m.role === 'user');
-    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    const renderContent = (content: string) => (
+        <div className="prose prose-invert prose-sm max-w-none
+            [&_table]:w-full [&_table]:text-xs [&_table]:border-collapse
+            [&_td]:px-2 [&_td]:py-1.5 [&_td]:border [&_td]:border-white/10
+            [&_th]:px-2 [&_th]:py-1.5 [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/5 [&_th]:text-left
+            [&_code]:bg-primary/10 [&_code]:px-1.5 [&_code]:rounded [&_code]:text-primary [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-primary/20
+            [&_pre]:bg-slate-900/50 [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:text-xs
+            [&_p]:my-2 [&_ul]:my-2 [&_li]:my-1 [&_strong]:text-white [&_a]:text-primary [&_a]:hover:underline
+            [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-white [&_h1]:mb-2
+            [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_h2]:mb-2
+            [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-white [&_h3]:mb-1">
+            <ReactMarkdown>{content}</ReactMarkdown>
+        </div>
+    );
 
     // ZERO STATE: Hero View
     if (!hasInteracted) {
@@ -174,7 +274,7 @@ const IntentPage: React.FC = () => {
                                     value={inputValue}
                                     onChange={(e) => setInputValue(e.target.value)}
                                     onKeyDown={handleKeyDown}
-                                    placeholder="Swap 0.1 USDC from ETH Base, stake SUI on Scallop..."
+                                    placeholder="Bridge 0.1 ETH from Base Sepolia to Solana..."
                                     className="flex-1 bg-transparent border-none text-white placeholder-slate-500 text-lg h-14 focus:ring-0 outline-none font-medium"
                                     autoFocus
                                 />
@@ -197,9 +297,9 @@ const IntentPage: React.FC = () => {
                     {/* Chips */}
                     <div className="flex flex-wrap justify-center gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}>
                         {[
-                            'Swap 0.1 USDC from ETH Base',
-                            'Bridge 100 USDC to Sui',
-                            'Yield farm stablecoins on Optimism',
+                            'Bridge 0.1 ETH from Base Sepolia to Solana',
+                            'Bridge 0.05 ETH from Fuji to Solana',
+                            'How much SOL will I get for 0.1 ETH?',
                         ].map((text) => (
                             <button 
                                 key={text}
@@ -249,57 +349,50 @@ const IntentPage: React.FC = () => {
             {/* Main Content Area - Scrollable Messages */}
             <div 
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto py-8 px-4 sm:px-8 space-y-8 flex flex-col items-center no-scrollbar relative z-10"
+                className="flex-1 overflow-y-auto py-6 px-4 sm:px-8 space-y-6 flex flex-col items-center no-scrollbar relative z-10"
             >
-                <div className="w-full max-w-3xl space-y-8">
+                <div className="w-full max-w-3xl space-y-6">
                     
                     {/* Render all messages */}
-                    {messages.map((msg, idx) => (
-                        <MessageBubble 
-                            key={idx} 
-                            message={msg} 
-                            renderContent={renderContent}
-                        />
-                    ))}
+                    {messages.map((msg, idx) => {
+                        // Attach monitor widget to the LAST assistant message after a tx submit
+                        let monitorTx: { hash: string; chainId: number; userAddress: string } | null = null;
+                        if (
+                            msg.role === 'assistant' &&
+                            submittedTxs.length > 0 &&
+                            idx === messages.length - 1 &&
+                            !isLoading
+                        ) {
+                            const latest = submittedTxs[submittedTxs.length - 1];
+                            if (latest && address) {
+                                monitorTx = { hash: latest.hash, chainId: latest.chainId, userAddress: address };
+                            }
+                        }
+                        return (
+                            <MessageBubble
+                                key={idx}
+                                message={msg}
+                                renderContent={renderContent}
+                                monitorTx={monitorTx}
+                            />
+                        );
+                    })}
 
-                    {/* Streaming response */}
-                    {isLoading && streamingContent && (
-                        <div className="flex gap-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
-                            <div className="flex-shrink-0 mt-2 hidden sm:block">
-                                <div className="size-10 rounded-full bg-gradient-to-br from-primary to-teal-800 flex items-center justify-center shadow-[0_0_20px_rgba(13,242,223,0.3)] ring-2 ring-primary/20">
-                                    <span className="material-symbols-outlined text-white text-xl">smart_toy</span>
+                    {/* Loading indicator */}
+                    {isLoading && (
+                        <div className="flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms', animationFillMode: 'forwards' }}>
+                            <div className="flex-shrink-0 mt-1 hidden sm:block">
+                                <div className="size-8 rounded-full bg-[#0d1614] border border-white/8 flex items-center justify-center">
+                                    <div className="size-4 border-2 border-primary/60 border-t-transparent rounded-full animate-spin"></div>
                                 </div>
                             </div>
-                            <div className="flex-1 max-w-2xl">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-sm font-semibold text-white">NesuClaw Agent</span>
-                                    <span className="text-xs text-slate-500">typing...</span>
+                            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6">
+                                <div className="flex gap-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '300ms' }}></div>
                                 </div>
-                                <div className="p-5 rounded-2xl rounded-tl-none bg-surface-light border border-white/5 text-slate-300 text-base leading-relaxed shadow-lg">
-                                    {renderContent(streamingContent)}
-                                    <span className="inline-block w-2 h-5 bg-primary/80 ml-1 animate-pulse rounded-sm"></span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Loading indicator when no streaming content yet */}
-                    {isLoading && !streamingContent && (
-                        <div className="flex gap-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}>
-                            <div className="flex-shrink-0 mt-2 hidden sm:block">
-                                <div className="size-10 rounded-full bg-surface-light border border-white/10 flex items-center justify-center">
-                                    <div className="size-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                                </div>
-                            </div>
-                            <div className="flex-1 pt-3">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex gap-1.5">
-                                        <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                        <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                        <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                                    </div>
-                                    <p className="text-slate-400 text-base">Analyzing your intent...</p>
-                                </div>
+                                <p className="text-slate-500 text-[12px]">Thinking...</p>
                             </div>
                         </div>
                     )}
@@ -333,6 +426,135 @@ const IntentPage: React.FC = () => {
                 </div>
             </div>
 
+            {/* TX CONFIRM CARD */}
+            {pendingTx && !isLoading && (
+                <div className="w-full px-4 sm:px-8 relative z-30">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="relative rounded-2xl overflow-hidden border border-primary/30 bg-[#070e0c] shadow-[0_0_40px_-8px_rgba(13,242,223,0.2)]">
+                            {/* top glow line */}
+                            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
+
+                            <div className="flex flex-col">
+                                {/* Header */}
+                                <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-white/5">
+                                    <div className="size-6 rounded-lg bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+                                        <span className="material-symbols-outlined text-primary" style={{fontSize:'14px'}}>receipt_long</span>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-primary uppercase tracking-[0.12em]">Review Transaction</span>
+                                    <span className="ml-auto text-[10px] font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                                        {pendingTx.chainId === 84532 ? 'Base Sepolia' : pendingTx.chainId === 43113 ? 'Avalanche Fuji' : `Chain ${pendingTx.chainId}`}
+                                    </span>
+                                </div>
+
+                                <div className="flex items-stretch">
+                                    {/* Left: details */}
+                                    <div className="flex-1 px-5 py-4 flex flex-col gap-2.5">
+
+                                        {pendingTx.decoded ? (() => {
+                                            const d = pendingTx.decoded;
+                                            return (
+                                                <>
+                                                    {/* Amount row — big */}
+                                                    <div className="flex items-baseline gap-2 mb-1">
+                                                        <span className="text-[22px] font-bold text-white tabular-nums">{d.amountEth}</span>
+                                                        <span className="text-[13px] text-slate-400 font-medium">ETH</span>
+                                                        <span className="material-symbols-outlined text-slate-600 text-[16px]">arrow_forward</span>
+                                                        <span className="text-[13px] font-semibold text-primary">~SOL</span>
+                                                        <span className="text-[11px] text-slate-500">on {d.destinationLabel}</span>
+                                                    </div>
+
+                                                    {/* Recipient */}
+                                                    <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/3 border border-white/6">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="material-symbols-outlined text-slate-500 text-[14px]">account_balance_wallet</span>
+                                                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Recipient</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-[12px] font-mono text-slate-200">{d.recipientShort}</span>
+                                                            <button
+                                                                onClick={() => navigator.clipboard.writeText(d.recipient)}
+                                                                className="text-slate-600 hover:text-primary transition-colors"
+                                                                title={d.recipient}
+                                                            >
+                                                                <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Auction params */}
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
+                                                            <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Start price</span>
+                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.startPriceEth).toFixed(4)} ETH</span>
+                                                        </div>
+                                                        <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
+                                                            <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Floor price</span>
+                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.floorPriceEth).toFixed(4)} ETH</span>
+                                                        </div>
+                                                        <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
+                                                            <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Auction</span>
+                                                            <span className="text-[11px] font-mono text-slate-300">{d.durationMin} min</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Contract */}
+                                                    <div className="flex items-center justify-between text-[10px] text-slate-600 pt-0.5">
+                                                        <span>IntentBridge contract</span>
+                                                        <span className="font-mono">{pendingTx.to.slice(0,8)}…{pendingTx.to.slice(-6)}</span>
+                                                    </div>
+                                                </>
+                                            );
+                                        })() : (
+                                            // Fallback: raw fields jika decode gagal
+                                            <div className="flex flex-col gap-1.5">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] text-slate-500 w-12 shrink-0">To</span>
+                                                    <span className="text-[12px] font-mono text-slate-300">{pendingTx.to.slice(0,10)}…{pendingTx.to.slice(-8)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] text-slate-500 w-12 shrink-0">Value</span>
+                                                    <span className="text-[15px] font-bold text-white">{pendingTx.value} <span className="text-[11px] text-slate-400 font-normal">ETH</span></span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Divider */}
+                                    <div className="w-px bg-white/5 self-stretch" />
+
+                                    {/* Right: actions */}
+                                    <div className="flex flex-col justify-center gap-2 px-4 py-4 shrink-0 w-[148px]">
+                                        {txStatus ? (
+                                            <div className="flex flex-col items-center gap-2 py-2">
+                                                <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                                <span className="text-[11px] text-primary/80 text-center leading-tight">{txStatus}</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => handleSendTx(pendingTx)}
+                                                    className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
+                                                >
+                                                    <span className="material-symbols-outlined text-[14px]">account_balance_wallet</span>
+                                                    Sign & Send
+                                                </button>
+                                                <button
+                                                    onClick={() => setPendingTx(undefined)}
+                                                    className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
+                                                >
+                                                    <span className="material-symbols-outlined text-[13px]">close</span>
+                                                    Dismiss
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Input Area */}
             <div className="w-full px-4 sm:px-8 pb-8 pt-4 relative z-20 bg-gradient-to-t from-background via-background to-transparent">
                 <div className="max-w-3xl mx-auto">
@@ -340,9 +562,9 @@ const IntentPage: React.FC = () => {
                     {messages.length <= 2 && (
                         <div className="flex flex-wrap gap-2 justify-center mb-4">
                             {[
-                                'Swap 0.1 USDC from ETH Base',
-                                'Bridge 100 USDC to Sui',
-                                'Check SUI staking yields',
+                                'Bridge 0.1 ETH from Base Sepolia to Solana',
+                                'Bridge 0.05 ETH from Fuji to Solana',
+                                'How much SOL will I get for 0.1 ETH?',
                             ].map((text) => (
                                 <button
                                     key={text}
@@ -426,7 +648,7 @@ const IntentPage: React.FC = () => {
                                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 block">Agent Model</label>
                                 <div className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-lg px-4 py-3">
                                     <span className="material-symbols-outlined text-slate-400">smart_toy</span>
-                                    <span className="text-white font-medium text-sm">openai-codex/gpt-5.2</span>
+                                    <span className="text-white font-medium text-sm">{import.meta.env.VITE_AGENT_MODEL ?? 'kimi-for-coding'}</span>
                                 </div>
                             </div>
 
@@ -467,18 +689,44 @@ const IntentPage: React.FC = () => {
 interface MessageBubbleProps {
     message: ChatMessage;
     renderContent: (content: string) => React.ReactNode;
+    monitorTx?: { hash: string; chainId: number; userAddress: string } | null;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, renderContent }) => {
+// Detect if a user message is the post-tx submit message
+function extractTxHashFromSubmitMsg(content: string): { hash: string; explorerBase: string } | null {
+    const m = content.match(/Hash:\s*(0x[0-9a-fA-F]{64})/);
+    const e = content.match(/Explorer:\s*(https?:\/\/\S+)/);
+    if (m && e) return { hash: m[1]!, explorerBase: e[1]!.replace(m[1]!, '') };
+    return null;
+}
+
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, renderContent, monitorTx }) => {
     if (message.role === 'user') {
+        // If this is the tx-submitted message, show a compact chip instead
+        const txInfo = extractTxHashFromSubmitMsg(message.content);
+        if (txInfo) {
+            return (
+                <div className="flex flex-col items-end gap-2 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/8 border border-indigo-500/15 text-xs font-mono text-slate-400">
+                        <span className="material-symbols-outlined text-indigo-400 text-[14px]">send</span>
+                        <span>Tx submitted · {txInfo.hash.slice(0, 10)}…{txInfo.hash.slice(-6)}</span>
+                        <a href={`${txInfo.explorerBase}${txInfo.hash}`} target="_blank" rel="noreferrer"
+                           className="text-slate-600 hover:text-primary transition-colors">
+                            <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                        </a>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="flex flex-col items-end gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
                 <div className="max-w-2xl text-right">
-                    <div className="inline-block p-4 rounded-2xl rounded-tr-none bg-indigo-500/10 border border-indigo-500/20 text-white text-base leading-relaxed text-left shadow-lg">
+                    <div className="inline-block p-4 rounded-2xl rounded-tr-none bg-indigo-500/10 border border-indigo-500/20 text-white text-sm leading-relaxed text-left shadow-lg">
                         <p>{message.content}</p>
                     </div>
-                    <div className="flex items-center justify-end gap-2 text-slate-500 text-xs mt-2">
-                        <span className="material-symbols-outlined text-[14px]">account_circle</span>
+                    <div className="flex items-center justify-end gap-1.5 text-slate-500 text-[11px] mt-1.5">
+                        <span className="material-symbols-outlined text-[13px]">account_circle</span>
                         You
                     </div>
                 </div>
@@ -488,19 +736,27 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, renderContent })
 
     // Assistant message
     return (
-        <div className="flex gap-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
-            <div className="flex-shrink-0 mt-2 hidden sm:block">
-                <div className="size-10 rounded-full bg-gradient-to-br from-primary to-teal-800 flex items-center justify-center shadow-[0_0_20px_rgba(13,242,223,0.3)] ring-2 ring-primary/20">
-                    <span className="material-symbols-outlined text-white text-xl">smart_toy</span>
+        <div className="flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+            <div className="flex-shrink-0 mt-1 hidden sm:block">
+                <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+                    <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
                 </div>
             </div>
             <div className="flex-1 max-w-2xl">
-                <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-semibold text-white">NesuClaw Agent</span>
-                    <span className="text-xs text-slate-500">just now</span>
+                <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[12px] font-semibold text-white">Nesu</span>
+                    <span className="text-[10px] text-slate-600">just now</span>
                 </div>
-                <div className="p-5 rounded-2xl rounded-tl-none bg-surface-light border border-white/5 text-slate-300 text-base leading-relaxed shadow-lg">
+                <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
                     {renderContent(message.content)}
+                    {/* Inline order monitor after post-tx agent response */}
+                    {monitorTx && (
+                        <OrderMonitor
+                            txHash={monitorTx.hash}
+                            chainId={monitorTx.chainId}
+                            userAddress={monitorTx.userAddress}
+                        />
+                    )}
                 </div>
             </div>
         </div>

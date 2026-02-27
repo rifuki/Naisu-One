@@ -1,27 +1,27 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount};
+use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
 declare_id!("BK8wLw9FSw1n3SvQP8XDYoxWtcvaodSbgemtjVk96jkX");
 
 /// Mock Liquid Staking — simulates a Jito/Marinade-style LST protocol.
 ///
+/// Simplified design: uses a wSOL token vault instead of a raw SOL PDA.
 /// Flow:
-///   1. Admin calls `initialize` to create a staking pool and mint the LST token.
-///   2. Users call `stake` → deposit SOL → receive LST tokens at current exchange rate.
-///   3. Users call `request_unstake` → burn LST → create an UnstakeTicket with cooldown.
-///   4. After cooldown_slots have passed, users call `claim_unstake` → receive SOL back.
-///
-/// Exchange rate starts at 1 SOL = 1 LST and increases as yield accumulates (via `accrue_yield`).
+///   1. Admin calls `initialize` to create a staking pool and LST mint.
+///   2. Users call `stake` with wSOL → receive LST tokens at current exchange rate.
+///   3. Users call `request_unstake` → burn LST → lock an UnstakeTicket.
+///   4. After cooldown, call `claim_unstake` → receive wSOL back.
+///   5. Admin calls `accrue_yield` to simulate yield growth.
 #[program]
 pub mod mock_liquid_staking {
     use super::*;
 
-    /// Initialize the staking pool with an exchange rate of 1.0 (scaled by RATE_SCALE).
+    /// Initialize the staking pool.
     pub fn initialize(
         ctx: Context<Initialize>,
         cooldown_slots: u64,
-        yield_bps_per_epoch: u16, // Simulated APY in bps per epoch (e.g. 700 = 7%)
+        yield_bps_per_epoch: u16,
     ) -> Result<()> {
         require!(cooldown_slots > 0, StakingError::InvalidCooldown);
         require!(yield_bps_per_epoch <= 5000, StakingError::YieldTooHigh);
@@ -29,35 +29,32 @@ pub mod mock_liquid_staking {
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
         pool.lst_mint = ctx.accounts.lst_mint.key();
-        pool.sol_vault = ctx.accounts.sol_vault.key();
-        pool.total_staked_sol = 0;
+        pool.wsol_vault = ctx.accounts.wsol_vault.key();
+        pool.underlying_mint = ctx.accounts.underlying_mint.key();
+        pool.total_staked = 0;
         pool.total_lst_supply = 0;
-        // Exchange rate: 1 SOL = 1 LST initially, stored as (rate * RATE_SCALE)
         pool.exchange_rate = RATE_SCALE;
         pool.cooldown_slots = cooldown_slots;
         pool.yield_bps_per_epoch = yield_bps_per_epoch;
         pool.last_yield_slot = Clock::get()?.slot;
         pool.bump = ctx.bumps.pool;
-        pool.sol_vault_bump = ctx.bumps.sol_vault;
 
         msg!(
-            "Staking pool initialized: cooldown_slots={}, yield_bps_per_epoch={}",
+            "Staking pool initialized: cooldown_slots={}, yield_bps={}",
             cooldown_slots,
             yield_bps_per_epoch
         );
         Ok(())
     }
 
-    /// Stake SOL → receive LST tokens.
-    /// LST amount = sol_amount * RATE_SCALE / exchange_rate
-    pub fn stake(ctx: Context<Stake>, sol_amount: u64) -> Result<()> {
-        require!(sol_amount > 0, StakingError::ZeroAmount);
+    /// Stake underlying tokens → receive LST.
+    pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+        require!(amount > 0, StakingError::ZeroAmount);
 
         let pool = &ctx.accounts.pool;
         let exchange_rate = pool.exchange_rate;
 
-        // LST to mint = sol_amount * RATE_SCALE / exchange_rate
-        let lst_amount = (sol_amount as u128)
+        let lst_amount = (amount as u128)
             .checked_mul(RATE_SCALE as u128)
             .ok_or(StakingError::MathOverflow)?
             .checked_div(exchange_rate as u128)
@@ -65,27 +62,22 @@ pub mod mock_liquid_staking {
 
         require!(lst_amount > 0, StakingError::ZeroLstAmount);
 
-        // Transfer SOL from user to sol_vault
-        let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
-            &ctx.accounts.user.key(),
-            &ctx.accounts.sol_vault.key(),
-            sol_amount,
-        );
-        anchor_lang::solana_program::program::invoke(
-            &transfer_ix,
-            &[
-                ctx.accounts.user.to_account_info(),
-                ctx.accounts.sol_vault.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
+        // Transfer underlying from user to vault
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.user_underlying.to_account_info(),
+                    to: ctx.accounts.wsol_vault.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            amount,
         )?;
 
-        let pool_key = ctx.accounts.pool.key();
-        let pool_seeds = &[
-            b"pool".as_ref(),
-            pool_key.as_ref(),
-            &[ctx.accounts.pool.bump],
-        ];
+        let authority_key = ctx.accounts.pool.authority;
+        let bump = ctx.accounts.pool.bump;
+        let pool_seeds = &[b"pool".as_ref(), authority_key.as_ref(), &[bump]];
 
         // Mint LST to user
         token::mint_to(
@@ -102,9 +94,9 @@ pub mod mock_liquid_staking {
         )?;
 
         let pool = &mut ctx.accounts.pool;
-        pool.total_staked_sol = pool
-            .total_staked_sol
-            .checked_add(sol_amount)
+        pool.total_staked = pool
+            .total_staked
+            .checked_add(amount)
             .ok_or(StakingError::MathOverflow)?;
         pool.total_lst_supply = pool
             .total_lst_supply
@@ -112,35 +104,34 @@ pub mod mock_liquid_staking {
             .ok_or(StakingError::MathOverflow)?;
 
         msg!(
-            "Staked: sol={}, lst_minted={}, exchange_rate={}",
-            sol_amount,
+            "Staked: amount={}, lst_minted={}, rate={}",
+            amount,
             lst_amount,
             exchange_rate
         );
         Ok(())
     }
 
-    /// Request unstake: burn LST → create ticket with cooldown.
+    /// Request unstake: burn LST → create UnstakeTicket.
     pub fn request_unstake(ctx: Context<RequestUnstake>, lst_amount: u64) -> Result<()> {
         require!(lst_amount > 0, StakingError::ZeroAmount);
 
         let pool = &ctx.accounts.pool;
         let exchange_rate = pool.exchange_rate;
 
-        // SOL to receive = lst_amount * exchange_rate / RATE_SCALE
-        let sol_amount = (lst_amount as u128)
+        let underlying_amount = (lst_amount as u128)
             .checked_mul(exchange_rate as u128)
             .ok_or(StakingError::MathOverflow)?
             .checked_div(RATE_SCALE as u128)
             .ok_or(StakingError::MathOverflow)? as u64;
 
-        require!(sol_amount > 0, StakingError::ZeroAmount);
+        require!(underlying_amount > 0, StakingError::ZeroAmount);
         require!(
-            sol_amount <= pool.total_staked_sol,
+            underlying_amount <= pool.total_staked,
             StakingError::InsufficientStake
         );
 
-        // Burn LST from user
+        // Burn LST
         token::burn(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -153,18 +144,17 @@ pub mod mock_liquid_staking {
             lst_amount,
         )?;
 
-        // Create unstake ticket
         let ticket = &mut ctx.accounts.unstake_ticket;
         ticket.owner = ctx.accounts.user.key();
-        ticket.sol_amount = sol_amount;
+        ticket.underlying_amount = underlying_amount;
         ticket.claimable_slot = Clock::get()?.slot + pool.cooldown_slots;
         ticket.claimed = false;
         ticket.bump = ctx.bumps.unstake_ticket;
 
         let pool = &mut ctx.accounts.pool;
-        pool.total_staked_sol = pool
-            .total_staked_sol
-            .checked_sub(sol_amount)
+        pool.total_staked = pool
+            .total_staked
+            .checked_sub(underlying_amount)
             .ok_or(StakingError::MathOverflow)?;
         pool.total_lst_supply = pool
             .total_lst_supply
@@ -172,15 +162,14 @@ pub mod mock_liquid_staking {
             .ok_or(StakingError::MathOverflow)?;
 
         msg!(
-            "UnstakeRequested: lst_burned={}, sol_claimable={}, claimable_at_slot={}",
+            "UnstakeRequested: lst_burned={}, underlying_claimable={}",
             lst_amount,
-            sol_amount,
-            ticket.claimable_slot
+            underlying_amount
         );
         Ok(())
     }
 
-    /// Claim SOL after cooldown.
+    /// Claim underlying tokens after cooldown.
     pub fn claim_unstake(ctx: Context<ClaimUnstake>) -> Result<()> {
         let ticket = &ctx.accounts.unstake_ticket;
         require!(!ticket.claimed, StakingError::AlreadyClaimed);
@@ -191,37 +180,34 @@ pub mod mock_liquid_staking {
             StakingError::CooldownNotExpired
         );
 
-        let sol_amount = ticket.sol_amount;
-        require!(sol_amount > 0, StakingError::ZeroAmount);
+        let underlying_amount = ticket.underlying_amount;
+        require!(underlying_amount > 0, StakingError::ZeroAmount);
 
-        let pool_key = ctx.accounts.pool.key();
-        let vault_seeds = &[
-            b"sol_vault".as_ref(),
-            pool_key.as_ref(),
-            &[ctx.accounts.pool.sol_vault_bump],
-        ];
+        let authority_key = ctx.accounts.pool.authority;
+        let bump = ctx.accounts.pool.bump;
+        let pool_seeds = &[b"pool".as_ref(), authority_key.as_ref(), &[bump]];
 
-        // Transfer SOL from vault back to user
-        **ctx
-            .accounts
-            .sol_vault
-            .to_account_info()
-            .try_borrow_mut_lamports()? -= sol_amount;
-        **ctx
-            .accounts
-            .user
-            .to_account_info()
-            .try_borrow_mut_lamports()? += sol_amount;
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.wsol_vault.to_account_info(),
+                    to: ctx.accounts.user_underlying.to_account_info(),
+                    authority: ctx.accounts.pool.to_account_info(),
+                },
+                &[pool_seeds],
+            ),
+            underlying_amount,
+        )?;
 
         let ticket = &mut ctx.accounts.unstake_ticket;
         ticket.claimed = true;
 
-        msg!("UnstakeClaimed: sol={}", sol_amount);
+        msg!("UnstakeClaimed: underlying={}", underlying_amount);
         Ok(())
     }
 
-    /// Admin: simulate yield accrual — increases exchange rate.
-    /// exchange_rate += exchange_rate * yield_bps_per_epoch / 10000
+    /// Admin: simulate yield accrual.
     pub fn accrue_yield(ctx: Context<AccrueYield>) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
         require!(
@@ -236,22 +222,22 @@ pub mod mock_liquid_staking {
         pool.exchange_rate = new_rate as u64;
         pool.last_yield_slot = Clock::get()?.slot;
 
-        msg!("YieldAccrued: new_exchange_rate={}", pool.exchange_rate);
+        msg!("YieldAccrued: new_rate={}", pool.exchange_rate);
         Ok(())
     }
 
-    /// Get current quote: how many LST for given SOL (or vice versa).
-    pub fn get_stake_quote(ctx: Context<GetStakeQuote>, sol_amount: u64) -> Result<u64> {
+    /// Get quote: how many LST for given underlying amount.
+    pub fn get_stake_quote(ctx: Context<GetStakeQuote>, amount: u64) -> Result<u64> {
         let pool = &ctx.accounts.pool;
-        let lst_amount = (sol_amount as u128)
+        let lst_amount = (amount as u128)
             .checked_mul(RATE_SCALE as u128)
             .ok_or(StakingError::MathOverflow)?
             .checked_div(pool.exchange_rate as u128)
             .ok_or(StakingError::MathOverflow)? as u64;
 
         msg!(
-            "StakeQuote: sol={}, lst={}, rate={}",
-            sol_amount,
+            "StakeQuote: amount={}, lst={}, rate={}",
+            amount,
             lst_amount,
             pool.exchange_rate
         );
@@ -263,7 +249,6 @@ pub mod mock_liquid_staking {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Exchange rate scaling factor (1e9 for SOL precision)
 pub const RATE_SCALE: u64 = 1_000_000_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -275,28 +260,28 @@ pub const RATE_SCALE: u64 = 1_000_000_000;
 pub struct StakingPool {
     pub authority: Pubkey,        // 32
     pub lst_mint: Pubkey,         // 32
-    pub sol_vault: Pubkey,        // 32
-    pub total_staked_sol: u64,    // 8
+    pub wsol_vault: Pubkey,       // 32
+    pub underlying_mint: Pubkey,  // 32
+    pub total_staked: u64,        // 8
     pub total_lst_supply: u64,    // 8
-    pub exchange_rate: u64,       // 8  (rate * RATE_SCALE, starts at RATE_SCALE)
+    pub exchange_rate: u64,       // 8
     pub cooldown_slots: u64,      // 8
     pub yield_bps_per_epoch: u16, // 2
     pub last_yield_slot: u64,     // 8
     pub bump: u8,                 // 1
-    pub sol_vault_bump: u8,       // 1
 }
 
 impl StakingPool {
-    pub const LEN: usize = 8 + 32 * 3 + 8 * 5 + 2 + 1 * 2;
+    pub const LEN: usize = 8 + 32 * 4 + 8 * 5 + 2 + 1;
 }
 
 #[account]
 pub struct UnstakeTicket {
-    pub owner: Pubkey,       // 32
-    pub sol_amount: u64,     // 8
-    pub claimable_slot: u64, // 8
-    pub claimed: bool,       // 1
-    pub bump: u8,            // 1
+    pub owner: Pubkey,          // 32
+    pub underlying_amount: u64, // 8
+    pub claimable_slot: u64,    // 8
+    pub claimed: bool,          // 1
+    pub bump: u8,               // 1
 }
 
 impl UnstakeTicket {
@@ -311,6 +296,8 @@ impl UnstakeTicket {
 pub struct Initialize<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub underlying_mint: Account<'info, Mint>,
 
     #[account(
         init,
@@ -331,17 +318,18 @@ pub struct Initialize<'info> {
     )]
     pub lst_mint: Account<'info, Mint>,
 
-    /// CHECK: SOL vault is a system account PDA owned by this program.
     #[account(
         init,
         payer = authority,
-        space = 0,
-        seeds = [b"sol_vault", pool.key().as_ref()],
+        token::mint = underlying_mint,
+        token::authority = pool,
+        seeds = [b"wsol_vault", pool.key().as_ref()],
         bump,
     )]
-    pub sol_vault: AccountInfo<'info>,
+    pub wsol_vault: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
@@ -361,13 +349,14 @@ pub struct Stake<'info> {
     #[account(mut, constraint = lst_mint.key() == pool.lst_mint)]
     pub lst_mint: Account<'info, Mint>,
 
-    /// CHECK: SOL vault PDA
     #[account(
         mut,
-        seeds = [b"sol_vault", pool.key().as_ref()],
-        bump = pool.sol_vault_bump,
+        constraint = wsol_vault.key() == pool.wsol_vault,
     )]
-    pub sol_vault: AccountInfo<'info>,
+    pub wsol_vault: Account<'info, TokenAccount>,
+
+    #[account(mut, token::mint = pool.underlying_mint, token::authority = user)]
+    pub user_underlying: Account<'info, TokenAccount>,
 
     #[account(
         init_if_needed,
@@ -425,13 +414,14 @@ pub struct ClaimUnstake<'info> {
     )]
     pub pool: Account<'info, StakingPool>,
 
-    /// CHECK: SOL vault PDA
     #[account(
         mut,
-        seeds = [b"sol_vault", pool.key().as_ref()],
-        bump = pool.sol_vault_bump,
+        constraint = wsol_vault.key() == pool.wsol_vault,
     )]
-    pub sol_vault: AccountInfo<'info>,
+    pub wsol_vault: Account<'info, TokenAccount>,
+
+    #[account(mut, token::mint = pool.underlying_mint, token::authority = user)]
+    pub user_underlying: Account<'info, TokenAccount>,
 
     #[account(
         mut,
@@ -440,6 +430,7 @@ pub struct ClaimUnstake<'info> {
     )]
     pub unstake_ticket: Account<'info, UnstakeTicket>,
 
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 

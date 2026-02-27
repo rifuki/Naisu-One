@@ -64,6 +64,43 @@ const envSchema = z.object({
     z.string().url().optional()
   ),
 
+  // Solana
+  SOLANA_RPC_URL: z.string().url().default('https://api.devnet.solana.com'),
+  SOLANA_NETWORK: z.enum(['devnet', 'mainnet-beta', 'testnet']).default('devnet'),
+
+  // Intent Bridge — Solana (Anchor program, devnet)
+  SOLANA_INTENT_PROGRAM_ID: z
+    .string()
+    .default('FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k'),
+
+  // Intent Bridge — Sui (Testnet)
+  SUI_PACKAGE_ID: z
+    .string()
+    .default('0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb'),
+  SUI_BRIDGE_STATE_ID: z
+    .string()
+    .default('0x7aac5f895e7071fc33a65fe4325365bb287c64d229d1af1d03e613c8153b3703'),
+  SUI_RPC_URL: z
+    .string()
+    .url()
+    .default('https://fullnode.testnet.sui.io'),
+
+  // Intent Bridge — EVM (Avalanche Fuji testnet)
+  AVALANCHE_FUJI_RPC: z
+    .string()
+    .url()
+    .default('https://api.avax-test.network/ext/bc/C/rpc'),
+  AVALANCHE_FUJI_CONTRACT: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .default('0x274768b4B16841d23B8248d1311fBDC760803E65'),
+
+  // Intent Bridge — EVM (Base Sepolia)
+  BASE_SEPOLIA_INTENT_CONTRACT: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .default('0x0000000000000000000000000000000000000000'),
+
   // Feature Flags
   ENABLE_UNISWAP_V4: z
     .string()
@@ -151,6 +188,36 @@ export const config = {
   // Features
   features: {
     enableUniswapV4: env.ENABLE_UNISWAP_V4,
+  },
+
+  // Solana
+  solana: {
+    network: env.SOLANA_NETWORK,
+    rpcUrl: env.SOLANA_RPC_URL,
+  },
+
+  // Intent Bridge contracts (all chains)
+  intent: {
+    solana: {
+      programId: env.SOLANA_INTENT_PROGRAM_ID,
+    },
+    sui: {
+      packageId: env.SUI_PACKAGE_ID,
+      bridgeStateId: env.SUI_BRIDGE_STATE_ID,
+      rpcUrl: env.SUI_RPC_URL,
+    },
+    evm: {
+      fuji: {
+        rpcUrl: env.AVALANCHE_FUJI_RPC,
+        contract: env.AVALANCHE_FUJI_CONTRACT as `0x${string}`,
+        chainId: 43113,
+      },
+      baseSepolia: {
+        rpcUrl: env.BASE_SEPOLIA_RPC,
+        contract: env.BASE_SEPOLIA_INTENT_CONTRACT as `0x${string}`,
+        chainId: 84532,
+      },
+    },
   },
 
   // Redis

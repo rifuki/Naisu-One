@@ -404,12 +404,12 @@ pub async fn run_with_config(
                     }
                 };
 
-                // Ensure enough time before deadline for full processing (~10-20s + 5min buffer)
-                const DEADLINE_BUFFER_SECS: u64 = 300;
+                // Ensure enough time before deadline for full processing (~10-20s + 1.5min buffer)
+                const DEADLINE_BUFFER_SECS: u64 = 90;
                 let time_until_deadline = order.deadline.saturating_sub(now_ms / 1000);
                 if time_until_deadline < DEADLINE_BUFFER_SECS {
                     warn!(
-                        "[{}] SKIP {} — deadline too close ({}min left, need 5min)",
+                        "[{}] SKIP {} — deadline too close ({}min left, need 1.5min)",
                         chain_name, short, time_until_deadline / 60
                     );
                     seen_orders.lock().await.insert(order.order_id);

@@ -22,9 +22,11 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^0.19.5",
+    "@coral-xyz/anchor": "^0.32.1",
     "@hono/swagger-ui": "^0.5.3",
+    "@hono/zod-openapi": "^0.19.5",
     "@mysten/sui": "^1.21.1",
+    "@solana/web3.js": "^1.98.4",
     "drizzle-orm": "^0.30.0",
     "hono": "^4.11.8",
     "pg": "^8.11.0",

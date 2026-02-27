@@ -67,14 +67,19 @@ pub mod mock_swap_pool {
         let lp_amount = integer_sqrt(initial_amount_a as u128 * initial_amount_b as u128) as u64;
         require!(lp_amount > 0, SwapError::ZeroLpAmount);
 
-        let pool_key = pool.key();
-        let seeds = &[b"pool", pool_key.as_ref(), &[pool.bump]];
-        // Use pool PDA as mint authority
+        // Store keys and bump before dropping mutable borrow of pool
+        let mint_a_key = ctx.accounts.mint_a.key();
+        let mint_b_key = ctx.accounts.mint_b.key();
+        let pool_bump = pool.bump;
+
+        // Drop mutable borrow so we can use ctx.accounts.pool immutably below
+        drop(pool);
+
         let pool_seeds = &[
-            b"pool",
-            ctx.accounts.mint_a.key().as_ref(),
-            ctx.accounts.mint_b.key().as_ref(),
-            &[pool.bump],
+            b"pool".as_ref(),
+            mint_a_key.as_ref(),
+            mint_b_key.as_ref(),
+            &[pool_bump],
         ];
 
         token::mint_to(
@@ -90,7 +95,7 @@ pub mod mock_swap_pool {
             lp_amount,
         )?;
 
-        pool.total_lp_supply = lp_amount;
+        ctx.accounts.pool.total_lp_supply = lp_amount;
 
         msg!(
             "Pool initialized: reserve_a={}, reserve_b={}, lp_minted={}",
