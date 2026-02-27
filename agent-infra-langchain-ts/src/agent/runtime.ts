@@ -63,8 +63,9 @@ function loadProjectCharacter(projectId: string): string {
   }
 }
 
-// Reduced max iterations for faster responses
-const MAX_ITERATIONS = 3;
+// Max iterations: needs to be enough for full bridge flow:
+// evm_balance → intent_quote → intent_build_tx → final response = 4 tool rounds
+const MAX_ITERATIONS = 5;
 
 export class AgentRuntime {
   private model = createLLM();

@@ -75,7 +75,7 @@ intentRouter.get('/watch', async (c) => {
 
         // Only push terminal status changes
         if (effectiveStatus === 'FULFILLED' || effectiveStatus === 'CANCELLED' || effectiveStatus === 'EXPIRED') {
-          const payload: OrderUpdateEvent = {
+          const payload: OrderUpdateEvent & { startPrice?: string } = {
             orderId:          order.orderId,
             status:           effectiveStatus,
             prevStatus:       'OPEN',
@@ -83,6 +83,7 @@ intentRouter.get('/watch', async (c) => {
             amount:           order.amount,
             explorerUrl:      order.explorerUrl,
             destinationChain: order.destinationChain,
+            startPrice:       order.startPrice,
           }
           send('order_update', payload)
         }
@@ -169,6 +170,7 @@ const buildTxBody = z.object({
   startPrice:      z.string().optional(),
   floorPrice:      z.string().optional(),
   durationSeconds: z.number().int().positive().max(86400).optional(),
+  withStake:       z.boolean().default(false),
 })
 
 // ============================================================================
@@ -298,7 +300,38 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
     startPrice:       body.startPrice,
     floorPrice:       body.floorPrice,
     durationSeconds:  body.durationSeconds,
+    withStake:        body.withStake,
   })
 
   return c.json({ success: true, data: result })
 })
+
+// ============================================================================
+// GET /evm-balance — Get native ETH balance of an EVM address
+// ============================================================================
+
+/**
+ * Returns native ETH balance for an EVM address on evm-base or evm-fuji.
+ *
+ * Example:
+ *   GET /api/v1/intent/evm-balance?chain=evm-base&address=0xABC...
+ */
+intentRouter.get(
+  '/evm-balance',
+  zValidator('query', z.object({
+    chain:   z.enum(['evm-base', 'evm-fuji']),
+    address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address'),
+  })),
+  async (c) => {
+    const { chain, address } = c.req.valid('query')
+
+    logger.info({ chain, address }, 'EVM balance requested')
+
+    const balance = await intentService.getEvmNativeBalance({
+      chain: chain as 'evm-base' | 'evm-fuji',
+      address,
+    })
+
+    return c.json({ success: true, data: balance })
+  }
+)

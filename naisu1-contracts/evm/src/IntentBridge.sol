@@ -41,6 +41,7 @@ contract IntentBridge {
         uint256 deadline;
         uint256 createdAt;
         uint8 status;
+        bool withStake; // if true, solver should liquid-stake the delivered SOL on behalf of recipient
     }
 
     // === State ===
@@ -64,7 +65,8 @@ contract IntentBridge {
         uint256 amount,
         uint256 startPrice,
         uint256 floorPrice,
-        uint256 deadline
+        uint256 deadline,
+        bool withStake
     );
     event OrderFulfilled(bytes32 indexed orderId, address indexed solver);
     event OrderCancelled(bytes32 indexed orderId);
@@ -107,12 +109,14 @@ contract IntentBridge {
     /// @param startPrice       Initial auction price (in destination-chain smallest unit)
     /// @param floorPrice       Minimum acceptable price (same unit as startPrice)
     /// @param durationSeconds  How long the Dutch auction runs
+    /// @param withStake        If true, the solver should liquid-stake the delivered assets on behalf of recipient
     function createOrder(
         bytes32 recipient,
         uint16 destinationChain,
         uint256 startPrice,
         uint256 floorPrice,
-        uint256 durationSeconds
+        uint256 durationSeconds,
+        bool withStake
     ) external payable returns (bytes32 orderId) {
         require(msg.value > 0, "No ETH sent");
         require(startPrice >= floorPrice, "Invalid price range");
@@ -131,7 +135,8 @@ contract IntentBridge {
             floorPrice: floorPrice,
             deadline: block.timestamp + durationSeconds,
             createdAt: block.timestamp,
-            status: 0
+            status: 0,
+            withStake: withStake
         });
 
         emit OrderCreated(
@@ -142,7 +147,8 @@ contract IntentBridge {
             msg.value,
             startPrice,
             floorPrice,
-            block.timestamp + durationSeconds
+            block.timestamp + durationSeconds,
+            withStake
         );
     }
 

@@ -149,6 +149,7 @@ export function buildToolkit(params: {
       "For Sui: returns base64 txBytes. For EVM: returns { to, data, value, chainId }. " +
       "The backend NEVER signs or broadcasts — the user signs in their own wallet. " +
       "Use this when the user says 'bridge X from Y to Z' or 'create an intent to swap'. " +
+      "Set withStake=true when the user says 'bridge and stake' or 'get nSOL' — this routes the bridged SOL into the liquid staking protocol so the recipient receives nSOL (LST) instead of raw SOL. " +
       "Always call intent_quote first to confirm the user understands the terms.",
     schema: z.object({
       chain: z
@@ -176,10 +177,14 @@ export function buildToolkit(params: {
         .max(86400)
         .default(300)
         .describe("Dutch auction duration in seconds (default 300 = 5 minutes)"),
+      withStake: z
+        .boolean()
+        .default(false)
+        .describe("If true, the bridged SOL is auto-staked into the liquid staking protocol and the recipient gets nSOL (LST tokens) instead of raw SOL. Only applicable when destinationChain is 'solana'."),
     }),
-    func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds }) => {
+    func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, withStake }) => {
       const url = `${INTENT_API}/build-tx`;
-      const body = { chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds };
+      const body = { chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, withStake };
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -204,12 +209,38 @@ export function buildToolkit(params: {
       JSON.stringify(await httpJson(`${SOLANA_API}/balance/${address}`)),
   });
 
+  /**
+   * evm_balance — Check an EVM wallet's native ETH balance on Base Sepolia or Fuji.
+   * MUST call this before building any EVM transaction to verify the user has enough funds.
+   */
+  const evmBalance = new DynamicStructuredTool({
+    name: "evm_balance",
+    description:
+      "Get the native ETH balance of an EVM wallet address on Base Sepolia (evm-base) or Fuji (evm-fuji). " +
+      "Returns balanceEth (human-readable) and balanceWei. " +
+      "ALWAYS call this BEFORE calling intent_build_tx for any EVM source chain — " +
+      "check the user has enough ETH to cover the bridge amount PLUS estimated gas (~0.001 ETH). " +
+      "If insufficient, inform the user and do NOT build the transaction.",
+    schema: z.object({
+      chain: z
+        .enum(["evm-base", "evm-fuji"])
+        .describe("EVM chain to query (evm-base = Base Sepolia, evm-fuji = Avalanche Fuji)"),
+      address: z
+        .string()
+        .regex(/^0x[0-9a-fA-F]{40}$/)
+        .describe("EVM wallet address (0x...)"),
+    }),
+    func: async ({ chain, address }) =>
+      JSON.stringify(await httpJson(`${INTENT_API}/evm-balance?chain=${chain}&address=${encodeURIComponent(address)}`)),
+  });
+
   tools.push(
     intentQuote,
     intentPrice,
     intentOrders,
     intentBuildTx,
     solanaBalance,
+    evmBalance,
   );
 
   // ── Custom tools from registry ─────────────────────────────────────────────

@@ -21,6 +21,7 @@ pub struct EvmOrder {
     pub floor_price: u128,
     pub deadline: u64,
     pub created_at: u64,
+    pub with_stake: bool,
 }
 
 fn evm_chain_name(chain_id: u64) -> &'static str {
@@ -95,6 +96,7 @@ async fn process_evm_order(
     info!(" creator   : {}", order.creator);
     info!(" recipient : {recipient_display}");
     info!(" deadline  : {deadline_min} min remaining");
+    info!(" withStake : {}", order.with_stake);
     info!("{SEP}");
 
     let mut solana_payment_sig: Option<String> = None;
@@ -106,54 +108,103 @@ async fn process_evm_order(
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
 
+            // Per-order stake routing: with_stake field takes priority over global config flags
+            let use_liquid_stake = order.with_stake || config.enable_liquid_stake;
+            let use_auto_stake   = config.enable_auto_stake;
+
+            let mode_label = if use_liquid_stake {
+                "bridge+liquid_stake"
+            } else if use_auto_stake {
+                "bridge+auto_stake"
+            } else {
+                "bridge (direct SOL)"
+            };
+
             info!("{SEP_SUB}");
-            info!(" [{short}] STEP 1/3  |  Sending SOL on Solana devnet");
+            info!(" [{short}] STEP 1/3  |  Solana devnet — mode: {mode_label}");
             info!(" [{short}]           |  {price} lamports  →  {recipient_b58}");
             info!("{SEP_SUB}");
 
-            let solana_result = if config.enable_auto_stake {
-                executor::solana_executor::solve_and_stake(
-                    &config,
-                    order.order_id,
-                    order.recipient,
-                    price,
-                )
-                .await
-            } else {
-                executor::solana_executor::solve_and_prove(
+            // Priority: per-order with_stake OR global liquid_stake > global auto_stake > plain solve_and_prove
+            if use_liquid_stake {
+                match executor::solana_executor::solve_and_liquid_stake(
                     &config,
                     order.order_id,
                     &recipient_b58,
                     price,
                 )
                 .await
-            };
-
-            match solana_result {
-                Ok((sig, seq)) => {
-                    let action = if config.enable_auto_stake { "staked" } else { "sent" };
-                    let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                    info!(" [{short}] STEP 1/3 ✓  |  SOL {action}");
-                    info!(" [{short}]  seq : {seq}");
-                    info!(" [{short}]  tx  : {sig}");
-                    info!(" [{short}]  url : {sol_url}");
-                    solana_payment_sig = Some(sig);
-                    solana_recipient_b58_cap = Some(recipient_b58);
-                    payment_amount_lamports = price;
-                    (1u16, config.solana_emitter_address.clone(), seq)
-                }
-                Err(e) => {
-                    let err_str = e.to_string();
-                    let action = if config.enable_auto_stake { "solve_and_stake" } else { "solve_and_prove" };
-                    error!(" [{short}] STEP 1/3 ✗  |  Solana {action} failed: {e}");
-                    if !err_str.contains("SolanaTransactionFailed") {
-                        seen_orders.lock().await.remove(&order.order_id);
-                        warn!(" [{short}]  → removed from dedup, will retry on next poll");
+                {
+                    Ok((sig, seq, lst_minted)) => {
+                        let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                        info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + liquid staked");
+                        info!(" [{short}]  nSOL minted : {lst_minted}");
+                        info!(" [{short}]  seq : {seq}");
+                        info!(" [{short}]  tx  : {sig}");
+                        info!(" [{short}]  url : {sol_url}");
+                        solana_payment_sig = Some(sig);
+                        solana_recipient_b58_cap = Some(recipient_b58);
+                        payment_amount_lamports = price;
+                        (1u16, config.solana_emitter_address.clone(), seq)
                     }
-                    info!("{SEP}");
-                    info!(" [{short}] ✗ ORDER ABORTED  |  Solana step failed");
-                    info!("{SEP}");
-                    return;
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        error!(" [{short}] STEP 1/3 ✗  |  solve_and_liquid_stake failed: {e}");
+                        if !err_str.contains("SolanaTransactionFailed") {
+                            seen_orders.lock().await.remove(&order.order_id);
+                            warn!(" [{short}]  → removed from dedup, will retry on next poll");
+                        }
+                        info!("{SEP}");
+                        info!(" [{short}] ✗ ORDER ABORTED  |  Solana liquid stake step failed");
+                        info!("{SEP}");
+                        return;
+                    }
+                }
+            } else {
+                let solana_result = if use_auto_stake {
+                    executor::solana_executor::solve_and_stake(
+                        &config,
+                        order.order_id,
+                        order.recipient,
+                        price,
+                    )
+                    .await
+                } else {
+                    executor::solana_executor::solve_and_prove(
+                        &config,
+                        order.order_id,
+                        &recipient_b58,
+                        price,
+                    )
+                    .await
+                };
+
+                match solana_result {
+                    Ok((sig, seq)) => {
+                        let action = if use_auto_stake { "staked" } else { "sent" };
+                        let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                        info!(" [{short}] STEP 1/3 ✓  |  SOL {action}");
+                        info!(" [{short}]  seq : {seq}");
+                        info!(" [{short}]  tx  : {sig}");
+                        info!(" [{short}]  url : {sol_url}");
+                        solana_payment_sig = Some(sig);
+                        solana_recipient_b58_cap = Some(recipient_b58);
+                        payment_amount_lamports = price;
+                        (1u16, config.solana_emitter_address.clone(), seq)
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        let action = if use_auto_stake { "solve_and_stake" } else { "solve_and_prove" };
+                        error!(" [{short}] STEP 1/3 ✗  |  Solana {action} failed: {e}");
+                        if !err_str.contains("SolanaTransactionFailed") {
+                            seen_orders.lock().await.remove(&order.order_id);
+                            warn!(" [{short}]  → removed from dedup, will retry on next poll");
+                        }
+                        info!("{SEP}");
+                        info!(" [{short}] ✗ ORDER ABORTED  |  Solana step failed");
+                        info!("{SEP}");
+                        return;
+                    }
                 }
             }
         } else {
@@ -316,7 +367,7 @@ pub async fn run_with_config(
                 .from_block(last_block + 1)
                 .to_block(safe_block)
                 .event(
-                    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256)",
+                    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256,bool)",
                 );
 
             let logs = provider.get_logs(&filter).await?;
@@ -486,7 +537,7 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     }
 
     let data: &[u8] = log.data.as_ref();
-    if data.len() < 192 {
+    if data.len() < 224 {
         return None;
     }
 
@@ -501,6 +552,8 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     let start_price = U256::from_big_endian(&data[96..128]).as_u128();
     let floor_price = U256::from_big_endian(&data[128..160]).as_u128();
     let deadline = U256::from_big_endian(&data[160..192]).as_u64();
+    // withStake is ABI-encoded bool (padded to 32 bytes): last byte of data[192..224]
+    let with_stake = data[223] != 0;
 
     let created_at = if let Some(block_number) = log.block_number {
         provider
@@ -524,6 +577,7 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
         floor_price,
         deadline,
         created_at,
+        with_stake,
     })
 }
 

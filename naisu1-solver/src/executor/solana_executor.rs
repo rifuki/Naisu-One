@@ -967,6 +967,125 @@ async fn solve_and_stake_inner(
     Ok((sig, wormhole_sequence))
 }
 
+/// solve_and_liquid_stake: EVM→Solana bridge + automatic liquid staking.
+///
+/// Correct flow (solver does NOT lose SOL):
+///   1. Call solve_and_prove with SOLVER as recipient — solver receives the SOL back.
+///      This emits the Wormhole proof needed to settle on EVM (solver gets ETH back).
+///   2. Call liquid_stake.js TypeScript helper which:
+///      a. Wraps solver's SOL → wSOL in solver's ATA
+///      b. Calls mock_liquid_staking::stake(amount) → mints LST to solver's LST ATA
+///      c. Transfers LST from solver to actual recipient's LST ATA
+///
+/// Net result:
+///   - Solver spends SOL, gets back ETH (via EVM settle) → break-even (minus gas)
+///   - Recipient gets LST (nSOL), NOT raw SOL
+///
+/// Returns (tx_signature, wormhole_sequence, lst_minted).
+/// The tx_signature and wormhole_sequence are from solve_and_prove (used for EVM settlement).
+/// lst_minted is informational (logged, displayed to user).
+pub async fn solve_and_liquid_stake(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    // Validate config
+    if config.liquid_staking_program_id.is_empty() {
+        return Err(eyre::eyre!(
+            "LIQUID_STAKING_PROGRAM_ID not configured — set it in .env to use bridge+stake"
+        ));
+    }
+    if config.liquid_staking_pool_authority.is_empty() {
+        return Err(eyre::eyre!(
+            "LIQUID_STAKING_POOL_AUTHORITY not configured — set it in .env to use bridge+stake"
+        ));
+    }
+
+    // Derive solver's own Solana pubkey (used as solve_and_prove recipient)
+    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
+    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
+    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    info!(
+        order_id = %hex::encode(order_id),
+        amount_lamports,
+        actual_recipient = %recipient_b58,
+        solver = %solver_b58,
+        "Starting bridge+liquid_stake flow — SOL goes to solver, LST goes to recipient"
+    );
+
+    // ── Step 1: solve_and_prove with SOLVER as recipient ─────────────────────────
+    // Solver receives the SOL (not the user). This emits the Wormhole proof for EVM settle.
+    // Solver will then stake that SOL and send LST to the actual recipient.
+    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence = wh_seq,
+        solver = %solver_b58,
+        "solve_and_prove confirmed — SOL received by solver, now staking for recipient..."
+    );
+
+    // ── Step 2: liquid_stake.js helper ──────────────────────────────────────────
+    let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("contracts/solana/scripts");
+
+    let liquid_stake_js = scripts_dir.join("dist/liquid_stake.js");
+
+    let output = tokio::process::Command::new("node")
+        .current_dir(scripts_dir.parent().unwrap())
+        .arg(&liquid_stake_js)
+        .arg(recipient_b58)
+        .arg(amount_lamports.to_string())
+        .arg(&config.solana_rpc_url)
+        .arg(&config.solana_private_key)
+        .arg(&config.liquid_staking_program_id)
+        .arg(&config.liquid_staking_pool_authority)
+        .output()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to run liquid_stake.js: {e}"))?;
+
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    if !stderr_str.is_empty() {
+        info!(
+            order_id = %hex::encode(order_id),
+            "liquid_stake.js stderr:\n{stderr_str}"
+        );
+    }
+
+    if !output.status.success() {
+        return Err(eyre::eyre!(
+            "liquid_stake.js failed (exit {}): {}",
+            output.status,
+            stderr_str
+        ));
+    }
+
+    // Parse "LST_MINTED:<amount>" from stdout
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let lst_minted = stdout_str
+        .lines()
+        .find(|l| l.starts_with("LST_MINTED:"))
+        .and_then(|l| l.trim_start_matches("LST_MINTED:").trim().parse::<u64>().ok())
+        .unwrap_or(0);
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence = wh_seq,
+        lst_minted,
+        recipient = %recipient_b58,
+        "Bridge+liquid_stake complete! Recipient received nSOL (LST) tokens."
+    );
+
+    Ok((sig, wh_seq, lst_minted))
+}
+
 /// M2: Parse Wormhole sequence number dari program logs transaksi yang sudah dikonfirmasi.
 ///
 /// Wormhole Anchor SDK v0.30.x emit log:

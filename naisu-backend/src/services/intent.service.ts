@@ -152,6 +152,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'startPrice', type: 'uint256' },
       { name: 'floorPrice', type: 'uint256' },
       { name: 'durationSeconds', type: 'uint256' },
+      { name: 'withStake', type: 'bool' },
     ],
     outputs: [{ name: 'orderId', type: 'bytes32' }],
   },
@@ -191,6 +192,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'startPrice', type: 'uint256', indexed: false },
       { name: 'floorPrice', type: 'uint256', indexed: false },
       { name: 'deadline', type: 'uint256', indexed: false },
+      { name: 'withStake', type: 'bool', indexed: false },
     ],
   },
 ] as const
@@ -730,6 +732,7 @@ export async function buildIntentTx(params: {
   startPrice?: string              // optional override
   floorPrice?: string              // optional override
   durationSeconds?: number
+  withStake?: boolean
 }): Promise<BuildTxResult> {
   let {
     chain,
@@ -741,6 +744,7 @@ export async function buildIntentTx(params: {
     startPrice,
     floorPrice,
     durationSeconds = INTENT_BRIDGE.AUCTION.DEFAULT_DURATION_MS / 1000,
+    withStake = false,
   } = params
 
   // If startPrice or floorPrice are missing, calculate them properly via getIntentQuote!
@@ -781,6 +785,7 @@ export async function buildIntentTx(params: {
       durationSeconds,
       startPrice,
       floorPrice,
+      withStake,
     })
   }
 
@@ -884,8 +889,9 @@ async function buildEvmCreateOrder(params: {
   durationSeconds: number
   startPrice?: string
   floorPrice?: string
+  withStake?: boolean
 }): Promise<BuildTxResult> {
-  const { chain, recipientAddress, destinationChain, amount, durationSeconds, startPrice, floorPrice } = params
+  const { chain, recipientAddress, destinationChain, amount, durationSeconds, startPrice, floorPrice, withStake = false } = params
 
   const contract    = chain === 'evm-fuji'
     ? config.intent.evm.fuji.contract
@@ -927,6 +933,7 @@ async function buildEvmCreateOrder(params: {
       startPriceWei,
       floorPriceWei,
       BigInt(durationSeconds),
+      withStake,
     ],
   })
 
@@ -937,7 +944,7 @@ async function buildEvmCreateOrder(params: {
       data,
       value:       amountWei.toString(),
       chainId,
-      description: `Create EVM order: lock ${amount} ETH → bridge to ${destinationChain} (${durationSeconds}s Dutch auction)`,
+      description: `Create EVM order: lock ${amount} ETH → bridge to ${destinationChain} (${durationSeconds}s Dutch auction)${withStake ? ' + liquid stake' : ''}`,
     },
   }
 }
@@ -1050,5 +1057,28 @@ async function buildSolanaCreateIntent(params: {
       txBase64,
       description: `Create Solana intent: lock ${amount} SOL → bridge to ${destinationChain} (${durationSeconds}s Dutch auction). Intent PDA: ${intentPda.toBase58()}`,
     },
+  }
+}
+
+// ─── EVM balance check ───────────────────────────────────────────────────────
+
+/**
+ * Get native ETH balance of an EVM address on a given chain.
+ * Returns balanceWei (string) and balanceEth (string).
+ */
+export async function getEvmNativeBalance(params: {
+  chain: 'evm-fuji' | 'evm-base'
+  address: string
+}): Promise<{ chain: string; address: string; balanceWei: string; balanceEth: string }> {
+  const { chain, address } = params
+  const client = chain === 'evm-fuji' ? getFujiClient() : getBaseClient()
+
+  const balanceWei = await client.getBalance({ address: address as `0x${string}` })
+
+  return {
+    chain,
+    address,
+    balanceWei: balanceWei.toString(),
+    balanceEth: formatEther(balanceWei),
   }
 }

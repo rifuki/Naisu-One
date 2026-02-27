@@ -17,8 +17,8 @@ export interface TxDetails {
   destinationChain: number; // Wormhole chain ID
   destinationLabel: string; // 'Solana' | 'Sui' | 'Base Sepolia' etc
   amountEth: string;        // ETH amount human-readable
-  startPriceEth: string;    // Dutch auction start price
-  floorPriceEth: string;    // Dutch auction floor
+  startPriceFormatted: string;    // Dutch auction start price formatted
+  floorPriceFormatted: string;    // Dutch auction floor formatted
   durationMin: number;      // auction duration in minutes
 }
 
@@ -87,14 +87,24 @@ function decodeTxDetails(data: string, value: string, chainId: number): TxDetail
     const recipStr    = recipientHuman(recipient, destinationChain)
     const short       = recipStr.length > 16 ? `${recipStr.slice(0, 8)}…${recipStr.slice(-6)}` : recipStr
 
+    // Determine target chain decimals for price formatting
+    // Solana (1) and Sui (21) use 9 decimals. EVM uses 18.
+    const decimals = (destinationChain === 1 || destinationChain === 21) ? 9 : 18
+    const formatTarget = (val: bigint) => {
+      const s = val.toString().padStart(decimals + 1, '0')
+      const intPart = s.slice(0, -decimals) || '0'
+      const fracPart = s.slice(-decimals).replace(/0+$/, '')
+      return fracPart ? `${intPart}.${fracPart}` : intPart
+    }
+
     return {
       recipient:        recipStr,
       recipientShort:   short,
       destinationChain,
       destinationLabel: destLabel(destinationChain),
       amountEth:        formatEther(amountWei),
-      startPriceEth:    formatEther(startPrice),
-      floorPriceEth:    formatEther(floorPrice),
+      startPriceFormatted: formatTarget(startPrice),
+      floorPriceFormatted: formatTarget(floorPrice),
       durationMin:      Math.round(Number(durationSeconds) / 60),
     }
   } catch {

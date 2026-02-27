@@ -17,6 +17,8 @@ interface OrderMonitorProps {
 const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddress }) => {
     const [status, setStatus] = useState<'indexing' | 'open' | 'fulfilled' | 'error'>('indexing');
     const [elapsed, setElapsed] = useState(0);
+    // Store fulfilled order details for informative display
+    const [fulfilledOrder, setFulfilledOrder] = useState<{ startPrice: string; destinationChain: number; withStake: boolean } | null>(null);
     const explorerBase = chainId === 84532 ? 'https://sepolia.basescan.org/tx/' : 'https://testnet.snowtrace.io/tx/';
     const chain = chainId === 84532 ? 'Base Sepolia' : 'Fuji';
 
@@ -39,10 +41,16 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                 const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${userAddress}&chain=${chainParam}`);
                 if (!res.ok) return;
                 const data = await res.json();
-                const orders: Array<{ status: string; orderId?: string }> = data.data ?? data.orders ?? [];
+                const orders: Array<{ status: string; orderId?: string; startPrice?: string; destinationChain?: number; withStake?: boolean }> = data.data ?? data.orders ?? [];
                 // Match by tx hash or just check latest order status
                 const latestOrder = orders[0];
-                if (orders.some(o => o.status === 'FULFILLED')) {
+                const fulfilledEntry = orders.find(o => o.status === 'FULFILLED');
+                if (fulfilledEntry) {
+                    setFulfilledOrder({
+                        startPrice: fulfilledEntry.startPrice ?? '0',
+                        destinationChain: fulfilledEntry.destinationChain ?? 1,
+                        withStake: fulfilledEntry.withStake ?? false,
+                    });
                     setStatus('fulfilled');
                     clearInterval(poll);
                     clearInterval(ticker);
@@ -57,10 +65,31 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
         return () => { clearInterval(poll); clearInterval(ticker); };
     }, [txHash, chainId, userAddress]);
 
+    // Format the fulfilled receive amount from startPrice (lamports for SOL, wei for EVM)
+    const formatReceiveAmount = () => {
+        if (!fulfilledOrder) return null;
+        const { startPrice, destinationChain, withStake } = fulfilledOrder;
+        try {
+            const raw = BigInt(startPrice);
+            // Solana = 9 decimals, Sui = 9 decimals, EVM = 18 decimals
+            const decimals = (destinationChain === 1 || destinationChain === 21) ? 9 : 18;
+            const s = raw.toString().padStart(decimals + 1, '0');
+            const intPart = s.slice(0, -decimals) || '0';
+            const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
+            // If this order had withStake and Solana destination, show nSOL instead of SOL
+            const token = destinationChain === 1
+                ? (withStake ? 'nSOL' : 'SOL')
+                : destinationChain === 21 ? 'SUI' : 'ETH';
+            return `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
+        } catch { return null; }
+    };
+
+    const receiveLabel = formatReceiveAmount();
+
     const statusConfig = {
-        indexing:  { icon: 'sync',         color: 'text-slate-400', label: 'Indexing...',      spin: true,  dot: false },
-        open:      { icon: 'schedule',     color: 'text-amber-400', label: 'Awaiting solver',  spin: false, dot: true  },
-        fulfilled: { icon: 'check_circle', color: 'text-primary',   label: 'Fulfilled!',       spin: false, dot: false },
+        indexing:  { icon: 'sync',         color: 'text-slate-400', label: 'Indexing order...',  spin: true,  dot: false },
+        open:      { icon: 'schedule',     color: 'text-amber-400', label: 'Awaiting solver',    spin: false, dot: true  },
+        fulfilled: { icon: 'check_circle', color: 'text-primary',   label: 'Fulfilled!',         spin: false, dot: false },
         error:     { icon: 'warning',      color: 'text-slate-500', label: 'Check Intents panel', spin: false, dot: false },
     }[status];
 
@@ -70,7 +99,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                 <span className="material-symbols-outlined text-[18px]">{statusConfig.icon}</span>
             </div>
             <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     {statusConfig.dot && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                     )}
@@ -78,9 +107,22 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                     {status !== 'fulfilled' && status !== 'error' && (
                         <span className="text-[10px] text-slate-600 tabular-nums">{elapsed}s</span>
                     )}
-                    {status === 'fulfilled' && (
-                        <span className="text-[10px] text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full">SOL delivered</span>
-                    )}
+                    {status === 'fulfilled' && receiveLabel && (() => {
+                        const isLiquidStaked = fulfilledOrder?.withStake && fulfilledOrder?.destinationChain === 1;
+                        const verb = isLiquidStaked ? 'staked' : 'delivered';
+                        return (
+                            <span className="text-[10px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded-full border border-primary/20">
+                                {receiveLabel} {verb}
+                            </span>
+                        );
+                    })()}
+                    {status === 'fulfilled' && !receiveLabel && (() => {
+                        const isLiquidStaked = fulfilledOrder?.withStake && fulfilledOrder?.destinationChain === 1;
+                        const verb = isLiquidStaked ? 'staked' : 'delivered';
+                        return (
+                            <span className="text-[10px] text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full">{verb}</span>
+                        );
+                    })()}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-slate-600 font-mono truncate">{chain} · {txHash.slice(0,10)}…{txHash.slice(-6)}</span>
@@ -127,13 +169,35 @@ const IntentPage: React.FC = () => {
     const hasSubmittedTx = submittedTxs.length > 0;
 
     const handleOrderUpdate = useCallback((event: OrderUpdateEvent) => {
-        const { status, orderId, amount, chain, explorerUrl } = event;
+        const { status, orderId, amount, chain, explorerUrl, startPrice, destinationChain } = event as OrderUpdateEvent & { startPrice?: string; destinationChain?: number; withStake?: boolean };
+        const withStakeFromEvent = (event as OrderUpdateEvent & { withStake?: boolean }).withStake ?? false;
         const shortId = orderId.slice(0, 8);
         const chainLabel = chain === 'evm-base' ? 'Base Sepolia' : chain === 'evm-fuji' ? 'Fuji' : chain;
 
         let message = '';
         if (status === 'FULFILLED') {
-            message = `Order \`${shortId}\` fulfilled — **${amount} ETH** bridged successfully on ${chainLabel}. SOL is on its way to your wallet. [View tx](${explorerUrl})`;
+            // Format estimated receive amount
+            let receiveStr = '';
+            if (startPrice) {
+                try {
+                    const destChain = destinationChain ?? 1;
+                    const decimals = (destChain === 1 || destChain === 21) ? 9 : 18;
+                    const raw = BigInt(startPrice);
+                    const s = raw.toString().padStart(decimals + 1, '0');
+                    const intPart = s.slice(0, -decimals) || '0';
+                    const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
+                    // Use nSOL label if this order had withStake and destination is Solana
+                    const token = destChain === 1
+                        ? (withStakeFromEvent ? 'nSOL' : 'SOL')
+                        : destChain === 21 ? 'SUI' : 'ETH';
+                    receiveStr = `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
+                } catch { /* ignore */ }
+            }
+            const destChain = destinationChain ?? 1;
+            const isLiquidStaked = withStakeFromEvent && destChain === 1;
+            const verb = isLiquidStaked ? 'staked' : 'delivered';
+            const receiveInfo = receiveStr ? ` · estimated receive: **${receiveStr}** ${verb}` : '';
+            message = `Order \`${shortId}\` fulfilled — **${amount} ETH** locked on ${chainLabel}${receiveInfo}. [View tx](${explorerUrl})`;
         } else if (status === 'EXPIRED') {
             message = `Order \`${shortId}\` expired before a solver filled it. Your ETH is still locked — you can cancel and reclaim it via the Intents panel.`;
         } else if (status === 'CANCELLED') {
@@ -171,9 +235,10 @@ const IntentPage: React.FC = () => {
 
             // Inject system message directly into messages via sendMessage with tx info
             // We pass a special marker so the message bubble can render the monitor widget
-            const msgContent = `__TX_SUBMITTED__${JSON.stringify({ hash, chainId: tx.chainId, explorerBase })}`;
-            // Store for monitor widget
-            setSubmittedTxs(prev => [...prev, { hash, chainId: tx.chainId, msgIdx: -1 }]);
+            // Store for monitor widget — msgIdx will be set once agent replies
+            // We store current messages length so we know which assistant msg index to attach monitor to
+            const postSubmitAssistantIdx = messages.length + 1; // +1 user msg, next assistant msg
+            setSubmittedTxs(prev => [...prev, { hash, chainId: tx.chainId, msgIdx: postSubmitAssistantIdx }]);
             sendMessage(`Transaction submitted! Hash: ${hash}\n\nExplorer: ${explorerBase}${hash}`);
         } catch (err: unknown) {
             setTxStatus(null);
@@ -355,17 +420,13 @@ const IntentPage: React.FC = () => {
                     
                     {/* Render all messages */}
                     {messages.map((msg, idx) => {
-                        // Attach monitor widget to the LAST assistant message after a tx submit
+                        // Attach monitor widget ONLY to the specific assistant message
+                        // that was identified as the post-tx reply (by stored msgIdx)
                         let monitorTx: { hash: string; chainId: number; userAddress: string } | null = null;
-                        if (
-                            msg.role === 'assistant' &&
-                            submittedTxs.length > 0 &&
-                            idx === messages.length - 1 &&
-                            !isLoading
-                        ) {
-                            const latest = submittedTxs[submittedTxs.length - 1];
-                            if (latest && address) {
-                                monitorTx = { hash: latest.hash, chainId: latest.chainId, userAddress: address };
+                        if (msg.role === 'assistant' && submittedTxs.length > 0 && address) {
+                            const match = submittedTxs.find(s => s.msgIdx === idx);
+                            if (match) {
+                                monitorTx = { hash: match.hash, chainId: match.chainId, userAddress: address };
                             }
                         }
                         return (
@@ -485,11 +546,11 @@ const IntentPage: React.FC = () => {
                                                     <div className="grid grid-cols-3 gap-2">
                                                         <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
                                                             <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Start price</span>
-                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.startPriceEth).toFixed(4)} ETH</span>
+                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.startPriceFormatted).toFixed(4)} {d.destinationChain === 1 ? 'SOL' : d.destinationChain === 21 ? 'SUI' : 'ETH'}</span>
                                                         </div>
                                                         <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
                                                             <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Floor price</span>
-                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.floorPriceEth).toFixed(4)} ETH</span>
+                                                            <span className="text-[11px] font-mono text-slate-300">{parseFloat(d.floorPriceFormatted).toFixed(4)} {d.destinationChain === 1 ? 'SOL' : d.destinationChain === 21 ? 'SUI' : 'ETH'}</span>
                                                         </div>
                                                         <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
                                                             <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Auction</span>

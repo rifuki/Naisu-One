@@ -51,6 +51,16 @@ pub struct Config {
     /// Set via ENABLE_AUTO_STAKE=true in .env
     pub enable_auto_stake: bool,
 
+    // Solana Liquid Staking (mock-liquid-staking program: BK8wLw9FSw1n3SvQP8XDYoxWtcvaodSbgemtjVk96jkX)
+    pub liquid_staking_program_id: String,
+    /// Pool authority pubkey (base58) — used to derive the pool PDA (seeds=[\"pool\", authority])
+    pub liquid_staking_pool_authority: String,
+    /// If true, after solve_and_prove delivers SOL to recipient, the solver
+    /// wraps SOL→wSOL and stakes into mock-liquid-staking on behalf of the recipient.
+    /// Recipient gets nSOL (LST) tokens instead of raw SOL.
+    /// Set via ENABLE_LIQUID_STAKE=true in .env
+    pub enable_liquid_stake: bool,
+
     // Wormhole API
     pub wormhole_api_url: String,
 
@@ -109,12 +119,20 @@ impl Config {
             solana_wormhole_program_id: require_env("SOLANA_WORMHOLE_PROGRAM_ID")?,
             solana_emitter_address: require_env("SOLANA_EMITTER_ADDRESS")?,
 
-            solana_mock_staking_program_id: env::var("MOCK_STAKING_PROGRAM_ID")
-                .unwrap_or_default(),
+            solana_mock_staking_program_id: env::var("MOCK_STAKING_PROGRAM_ID").unwrap_or_default(),
 
             enable_auto_stake: env::var("ENABLE_AUTO_STAKE")
                 .unwrap_or_default()
-                .to_lowercase() == "true",
+                .to_lowercase()
+                == "true",
+
+            liquid_staking_program_id: env::var("LIQUID_STAKING_PROGRAM_ID").unwrap_or_default(),
+            liquid_staking_pool_authority: env::var("LIQUID_STAKING_POOL_AUTHORITY")
+                .unwrap_or_default(),
+            enable_liquid_stake: env::var("ENABLE_LIQUID_STAKE")
+                .unwrap_or_default()
+                .to_lowercase()
+                == "true",
 
             wormhole_api_url: env::var("WORMHOLE_RPC_URL")
                 .unwrap_or_else(|_| "https://api.testnet.wormholescan.io".to_string()),
