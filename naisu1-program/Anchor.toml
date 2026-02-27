@@ -7,12 +7,20 @@ skip-lint = false
 
 [programs.localnet]
 naisu1_program = "Ghy67cDnY1Vu1YncyJSwLYDs48hksH5fieMTS7QFtVDF"
+mock_swap_pool = "C8mdHSpvcb5MjtxZVT5Tp1dft2Kr1mxEo2aRkp6APs8Z"
+mock_liquid_staking = "BK8wLw9FSw1n3SvQP8XDYoxWtcvaodSbgemtjVk96jkX"
+mock_lending = "9DGDU4hhYBbdLzhU8wSZDJiuGekJZZ3AZGkUotZRUXZs"
+
+[programs.devnet]
+mock_swap_pool = "C8mdHSpvcb5MjtxZVT5Tp1dft2Kr1mxEo2aRkp6APs8Z"
+mock_liquid_staking = "BK8wLw9FSw1n3SvQP8XDYoxWtcvaodSbgemtjVk96jkX"
+mock_lending = "9DGDU4hhYBbdLzhU8wSZDJiuGekJZZ3AZGkUotZRUXZs"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

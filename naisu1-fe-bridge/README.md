@@ -1,0 +1,198 @@
+# Intent Bridge Frontend
+
+A modern, responsive frontend for the Intent Bridge - a cross-chain bridge between Sui and EVM chains using Dutch Auction pricing and Wormhole settlement.
+
+## Tech Stack
+
+- **Framework**: React 19 + TypeScript
+- **Build Tool**: Vite 7
+- **Package Manager**: Bun
+- **Styling**: Tailwind CSS v4
+- **UI Components**: shadcn/ui
+- **Routing**: TanStack Router
+- **State Management**: TanStack Query
+- **Wallet Integration**: @mysten/dapp-kit (Sui) + wagmi (EVM)
+
+## Getting Started
+
+### Prerequisites
+
+- [Bun](https://bun.sh) installed on your system
+
+### Installation
+
+```bash
+# Install dependencies
+bun install
+
+# Start development server
+bun run dev
+
+# Build for production
+bun run build
+
+# Preview production build
+bun run preview
+```
+
+### Environment Setup
+
+Create a `.env` file in the frontend directory:
+
+```env
+VITE_SUI_PACKAGE_ID=0xb559c0f042a7510e5a3c0381bd477815a67432cb49963562c73887175f2e3573
+```
+
+## Project Structure
+
+```
+frontend/
+├── src/
+│   ├── components/
+│   │   ├── ui/              # shadcn/ui components
+│   │   │   ├── button.tsx
+│   │   │   ├── card.tsx
+│   │   │   └── ...
+│   │   ├── bridge-form.tsx  # Main bridge form component
+│   │   ├── order-list.tsx   # Order management component
+│   │   └── wallet-connect.tsx # Wallet connection buttons
+│   ├── lib/
+│   │   ├── abi.ts           # EVM contract ABIs
+│   │   ├── constants.ts     # Contract addresses & chain IDs
+│   │   ├── evm-config.ts    # wagmi configuration
+│   │   ├── sui-config.ts    # Sui client configuration
+│   │   └── utils.ts         # Utility functions (cn helper)
+│   ├── providers/
+│   │   └── index.tsx        # App providers (QueryClient, Wagmi, etc.)
+│   ├── routes/
+│   │   ├── __root.tsx       # Root layout with navigation
+│   │   ├── index.tsx        # Bridge page (homepage)
+│   │   └── orders.tsx       # Orders page
+│   ├── main.tsx             # App entry point
+│   └── index.css            # Global styles & Tailwind CSS v4
+├── components.json          # shadcn/ui configuration
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
+```
+
+## Features
+
+### Bridge Form (`bridge-form.tsx`)
+
+- **Direction Toggle**: Switch between Sui → EVM and EVM → Sui
+- **Chain Selection**: Choose between Base Sepolia and Avalanche Fuji
+- **Real-time Market Rates**: CoinGecko integration for SUI/ETH rates
+- **Dutch Auction Parameters**: Set start price, floor price, and duration
+- **Auto-fill Prices**: One-click price calculation based on market rate
+- **Balance Display**: Real-time wallet balance with "Max" button
+- **Transaction Status**: Clear feedback during transaction lifecycle
+
+### Order List (`order-list.tsx`)
+
+- **Tabbed Interface**: Switch between Sui and EVM orders
+- **Live Price Updates**: Real-time Dutch auction price calculation
+- **Progress Visualization**: Visual progress bar showing auction status
+- **Chain Badges**: Clear identification of order chain
+- **Order Actions**: Cancel open orders or reclaim expired orders
+- **Explorer Links**: Direct links to block explorers
+- **Empty States**: Helpful messaging when no orders exist
+
+### Wallet Connection (`wallet-connect.tsx`)
+
+- **Dual Wallet Support**: Sui and EVM wallets side-by-side
+- **Address Display**: Truncated addresses with copy functionality
+- **Dropdown Menus**: Wallet actions (copy, disconnect)
+- **Visual Indicators**: Color-coded status indicators (blue for Sui, purple for EVM)
+
+## shadcn/ui Components Used
+
+- **button**: Primary actions and CTAs
+- **card**: Container components
+- **input**: Form inputs
+- **label**: Form labels
+- **select**: Chain selection dropdown
+- **tabs**: Direction toggle and order list tabs
+- **badge**: Status indicators and chain labels
+- **separator**: Visual dividers
+- **tooltip**: Helpful hover information
+- **scroll-area**: Scrollable order lists
+- **dropdown-menu**: Wallet action menus
+
+## Adding New shadcn Components
+
+```bash
+# Add a new component
+bunx shadcn@latest add [component-name]
+
+# Examples
+bunx shadcn@latest add dialog
+bunx shadcn@latest add skeleton
+bunx shadcn@latest add toast
+```
+
+## Tailwind CSS v4 Configuration
+
+The project uses Tailwind CSS v4 with the new CSS-first configuration approach. Styles are defined in `src/index.css` using:
+
+- `@import "tailwindcss"` - Import Tailwind
+- `@theme` - Define custom theme variables
+- CSS custom properties for colors and spacing
+- Dark mode support via `.dark` class
+
+## Development Tips
+
+### Type Safety
+
+All components are written in TypeScript with strict mode enabled. Run type checking:
+
+```bash
+bunx tsc --noEmit
+```
+
+### Code Organization
+
+- Keep UI components in `src/components/ui/`
+- Feature components go in `src/components/`
+- Configuration files in `src/lib/`
+- Routes auto-generated by TanStack Router in `src/routeTree.gen.ts`
+
+### Icons
+
+Using Lucide React for all icons:
+
+```tsx
+import { ArrowRightLeft, Wallet, Clock } from "lucide-react";
+```
+
+## Production Deployment
+
+The frontend is built as a static site and can be deployed to any static hosting service:
+
+```bash
+# Build production assets
+bun run build
+
+# Assets will be in dist/ directory
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Bun not found**: Install Bun from https://bun.sh
+2. **Build errors**: Ensure all dependencies are installed with `bun install`
+3. **Type errors**: Run `bunx tsc --noEmit` to check for type issues
+
+### Reset Everything
+
+```bash
+rm -rf node_modules bun.lock
+cd ..
+cd frontend
+bun install
+```
+
+## License
+
+MIT License - See main project LICENSE file

@@ -1,0 +1,12 @@
+[package]
+name = "intent-bridge"
+edition = "2024"
+
+[dependencies]
+Wormhole = { local = "deps/wormhole" }
+
+[addresses]
+intent_bridge = "0x0"
+
+# Read more about the package management system options:
+# https://docs.sui.io/guides/developer/sui-101/move-package-management
