@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "agent-infra-api-collection",
-    "name": "Agent Infra API",
-    "description": "API collection for Agent Infra - AI Agent with LLM, Memory, RAG, and Tools",
+    "name": "Naisu Agent API",
+    "description": "API collection for Naisu Agent - AI Agent with LLM, Memory, RAG, and Tools",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [

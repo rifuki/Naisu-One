@@ -1,6 +1,6 @@
 {
   "id": "agent-infra-env",
-  "name": "Agent Infra Local",
+  "name": "Naisu Agent Local",
   "values": [
     {
       "key": "baseUrl",
