@@ -1,4 +1,4 @@
-import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage, AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import type { MemoryProvider } from "../memory/provider.js";
 import type { SessionProvider } from "../session/provider.js";
 import type { ToolRegistry } from "../tools/tool-registry.js";
@@ -107,7 +107,7 @@ export class AgentRuntime {
     log.debug("Tools bound", { toolCount: toolkit.length });
 
     // Build message context
-    const messages = [
+    const messages: BaseMessage[] = [
       new SystemMessage(systemPrompt),
       ...session.messages.map((m) =>
         m.role === "user"
@@ -149,12 +149,12 @@ export class AgentRuntime {
       // If no tool calls, we have the final answer
       if (!ai.tool_calls || ai.tool_calls.length === 0) {
         answer = typeof ai.content === "string" ? ai.content : JSON.stringify(ai.content);
-        log.info("No tool calls, got final answer");
+        log.debug("No tool calls, got final answer");
         break;
       }
 
       // Process tool calls
-      log.info(`Processing ${ai.tool_calls.length} tool calls`);
+      log.debug(`Processing ${ai.tool_calls.length} tool calls`);
       
       for (const call of ai.tool_calls) {
         const toolName = call.name;

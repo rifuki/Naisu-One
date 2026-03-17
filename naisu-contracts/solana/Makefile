@@ -4,18 +4,21 @@
 # the nightly toolchain for its internal IDL build subprocess.
 ANCHOR := RUSTUP_TOOLCHAIN=nightly-2025-01-01 PATH="/opt/homebrew/opt/node@20/bin:$(PATH)" anchor
 
-.PHONY: build build-no-idl deploy clean test
+.PHONY: build build-no-idl deploy clean test _use-anchor
 
-build:
+_use-anchor:
+	avm use 0.30.1
+
+build: _use-anchor
 	$(ANCHOR) build
 
-build-no-idl:
+build-no-idl: _use-anchor
 	anchor build --no-idl
 
-deploy:
+deploy: _use-anchor
 	$(ANCHOR) deploy --provider.cluster devnet
 
-test:
+test: _use-anchor
 	$(ANCHOR) test --provider.cluster localnet
 
 clean:

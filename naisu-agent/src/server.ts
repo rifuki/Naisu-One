@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -48,6 +48,15 @@ const app = Fastify({
       }
     }
   }
+});
+
+app.setErrorHandler((error: FastifyError, _request, reply) => {
+  log.error("Unhandled error", error instanceof Error ? error : new Error(String(error)));
+  const statusCode = error.statusCode ?? 500;
+  reply.code(statusCode).send({
+    ok: false,
+    error: statusCode >= 500 ? "Internal server error" : error.message,
+  });
 });
 
 // Initialize services
@@ -1122,6 +1131,7 @@ app.post("/v1/admin/projects", async (req, reply) => {
       name: `${parsed.data.name} API Key`,
       description: `Auto-generated API key for project: ${parsed.data.name}`,
       permissions: ["chat:write", "tools:read", "tools:execute"],
+      expiresInDays: undefined,
     }, "master");
     
     // Then create the project

@@ -3,7 +3,7 @@ export interface Project {
   name: string;
   apiKeyId: string;
   keyPrefix: string;
-  description?: string;
+  description?: string | undefined;
   character: string; // The markdown content
   createdAt: string;
   updatedAt: string;
@@ -12,17 +12,17 @@ export interface Project {
 
 export interface CreateProjectInput {
   name: string;
-  description?: string;
-  character?: string;
+  description?: string | undefined;
+  character?: string | undefined;
 }
 
 export interface UpdateProjectInput {
-  name?: string;
-  description?: string;
-  character?: string;
-  isActive?: boolean;
+  name?: string | undefined;
+  description?: string | undefined;
+  character?: string | undefined;
+  isActive?: boolean | undefined;
 }
 
 export interface ProjectWithApiKey extends Project {
-  apiKey?: string; // Only returned on creation
+  apiKey?: string | undefined; // Only returned on creation
 }

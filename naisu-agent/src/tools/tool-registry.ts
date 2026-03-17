@@ -297,6 +297,16 @@ export class ToolRegistry {
       url = url.replace(new RegExp(`{{${key}}}`, "g"), String(value));
     }
 
+    // Validate URL to prevent SSRF
+    try {
+      const parsedUrl = new URL(url);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error(`Invalid URL protocol: ${parsedUrl.protocol}`);
+      }
+    } catch (e) {
+      throw new Error(`Invalid tool URL: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     // Build headers with parameter substitution
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

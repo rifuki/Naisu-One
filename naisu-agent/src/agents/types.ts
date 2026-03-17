@@ -11,11 +11,11 @@ export type AgentRole =
 export interface Agent {
   id: string;
   name: string;
-  description?: string;
+  description?: string | undefined;
   projectId: string;
   role: AgentRole;
   character: string; // Markdown content
-  model?: string; // Optional model override (gpt-4, kimi-k2, etc.)
+  model?: string | undefined; // Optional model override (gpt-4, kimi-k2, etc.)
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -23,20 +23,20 @@ export interface Agent {
 
 export interface CreateAgentInput {
   name: string;
-  description?: string;
+  description?: string | undefined;
   projectId: string;
-  role?: AgentRole;
-  character?: string;
-  model?: string;
+  role?: AgentRole | undefined;
+  character?: string | undefined;
+  model?: string | undefined;
 }
 
 export interface UpdateAgentInput {
-  name?: string;
-  description?: string;
-  role?: AgentRole;
-  character?: string;
-  model?: string;
-  isActive?: boolean;
+  name?: string | undefined;
+  description?: string | undefined;
+  role?: AgentRole | undefined;
+  character?: string | undefined;
+  model?: string | undefined;
+  isActive?: boolean | undefined;
 }
 
 // Role templates for quick agent creation

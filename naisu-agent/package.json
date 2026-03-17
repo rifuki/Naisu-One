@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "generate-key": "node scripts/generate-api-key.cjs"
+    "generate-key": "node -e \"console.log('sk-' + require('crypto').randomBytes(32).toString('hex'))\""
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

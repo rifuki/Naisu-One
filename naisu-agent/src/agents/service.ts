@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { createLogger } from "../utils/logger.js";
 import type { Agent, CreateAgentInput, UpdateAgentInput, AgentRole, getRoleTemplate } from "./types.js";
@@ -81,8 +81,7 @@ export class AgentService {
     try {
       const characterPath = this.getCharacterPath(agentId);
       if (existsSync(characterPath)) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require("fs").unlinkSync(characterPath);
+        unlinkSync(characterPath);
       }
     } catch (error) {
       log.error("Failed to delete character file", error instanceof Error ? error : new Error(String(error)));
