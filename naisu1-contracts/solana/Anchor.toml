@@ -1,4 +1,5 @@
 [toolchain]
+anchor_version = "0.30.1"
 
 [features]
 resolution = true
@@ -10,7 +11,7 @@ intent_bridge_solana = "Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN"
 mock_staking = "9W1HN3QiTTUjBgr6ACPQT6jR6SQwgBdi2mFbb44aiWvJ"
 
 [programs.localnet]
-intent_bridge_solana = "F3R1Jp1M7gvn85P3T2N9E6hL9t2Y8v3Xc4Z5b6A7d8E9"
+intent_bridge_solana = "Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN"
 mock_staking = "9W1HN3QiTTUjBgr6ACPQT6jR6SQwgBdi2mFbb44aiWvJ"
 
 [registry]

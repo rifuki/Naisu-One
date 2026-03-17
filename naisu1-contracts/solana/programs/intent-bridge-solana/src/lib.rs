@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use mock_staking;
 use wormhole_anchor_sdk::wormhole;
+use wormhole_anchor_sdk::wormhole::program::Wormhole;
 
 declare_id!("Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN");
 
@@ -234,12 +235,9 @@ pub mod intent_bridge_solana {
         // Using checked_sub, so if fee_collector < last_lamports it returns InsufficientFees.
         // We pay: bridge.fee + max(0, last_lamports - fee_collector) to guarantee the check passes.
         {
-            let bridge_data = wormhole::BridgeData::try_deserialize_unchecked(
-                &mut &ctx.accounts.wormhole_bridge.data.borrow()[..],
-            )?;
-            let fee = bridge_data.fee();
-            let last_lamports = bridge_data.last_lamports;
-            let current = ctx.accounts.wormhole_fee_collector.lamports();
+            let fee = ctx.accounts.wormhole_bridge.fee();
+            let last_lamports = ctx.accounts.wormhole_bridge.last_lamports;
+            let current = ctx.accounts.wormhole_fee_collector.to_account_info().lamports();
             let topup = fee.saturating_add(last_lamports.saturating_sub(current));
             if topup > 0 {
                 anchor_lang::system_program::transfer(
@@ -309,12 +307,9 @@ pub mod intent_bridge_solana {
 
         // ── Pay Wormhole fee ─────────────────────────────────────────────────
         {
-            let bridge_data = wormhole::BridgeData::try_deserialize_unchecked(
-                &mut &ctx.accounts.wormhole_bridge.data.borrow()[..],
-            )?;
-            let fee = bridge_data.fee();
-            let last_lamports = bridge_data.last_lamports;
-            let current = ctx.accounts.wormhole_fee_collector.lamports();
+            let fee = ctx.accounts.wormhole_bridge.fee();
+            let last_lamports = ctx.accounts.wormhole_bridge.last_lamports;
+            let current = ctx.accounts.wormhole_fee_collector.to_account_info().lamports();
             let topup = fee.saturating_add(last_lamports.saturating_sub(current));
             if topup > 0 {
                 anchor_lang::system_program::transfer(
@@ -380,7 +375,7 @@ pub mod intent_bridge_solana {
         );
 
         // Decode payload
-        let payload = &posted_vaa.payload;
+        let payload = posted_vaa.data();
         require!(payload.len() >= 96, IntentBridgeError::InvalidVaa);
 
         let mut intent_id = [0u8; 32];
@@ -462,6 +457,7 @@ pub struct RegisterEmitter<'info> {
 pub struct CreateIntent<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
+    /// CHECK: payment account — validated by the instruction logic (lamport balance check)
     #[account(mut)]
     pub payment: AccountInfo<'info>,
     #[account(init, payer = creator, space = 8 + Intent::INIT_SPACE, seeds = [INTENT_SEED, &intent_id], bump)]
@@ -473,7 +469,7 @@ pub struct CreateIntent<'info> {
 pub struct CancelIntent<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
-    #[account(mut, seeds = [INTENT_SEED, &intent.intent_id], bump = intent.bump, constraint = intent.creator == creator.key())]
+    #[account(mut, seeds = [INTENT_SEED, &intent.intent_id], bump = intent.bump)]
     pub intent: Account<'info, Intent>,
 }
 
@@ -481,22 +477,23 @@ pub struct CancelIntent<'info> {
 pub struct SolveAndProve<'info> {
     #[account(mut)]
     pub solver: Signer<'info>,
+    /// CHECK: recipient account — validated by the solver (destination address in intent)
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
-    /// CHECK: Wormhole program
-    pub wormhole_program: AccountInfo<'info>,
-    #[account(mut, seeds = [b"Bridge"], bump, seeds::program = wormhole_program)]
-    pub wormhole_bridge: AccountInfo<'info>,
+    pub wormhole_program: Program<'info, Wormhole>,
+    #[account(mut, seeds = [wormhole::BridgeData::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_bridge: Account<'info, wormhole::BridgeData>,
     #[account(mut)]
     pub wormhole_message: Signer<'info>,
+    /// CHECK: Wormhole Emitter PDA — our program's emitter, validated by seeds
     #[account(seeds = [EMITTER_SEED], bump)]
     pub wormhole_emitter: AccountInfo<'info>,
-    #[account(mut, seeds = [b"Sequence", wormhole_emitter.key().as_ref()], bump, seeds::program = wormhole_program)]
-    pub wormhole_sequence: AccountInfo<'info>,
-    #[account(mut, seeds = [b"fee_collector"], bump, seeds::program = wormhole_program)]
-    pub wormhole_fee_collector: AccountInfo<'info>,
+    #[account(mut, seeds = [wormhole::SequenceTracker::SEED_PREFIX, wormhole_emitter.key().as_ref()], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_sequence: Account<'info, wormhole::SequenceTracker>,
+    #[account(mut, seeds = [wormhole::FeeCollector::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_fee_collector: Account<'info, wormhole::FeeCollector>,
     pub clock: Sysvar<'info, Clock>,
     pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
@@ -519,18 +516,18 @@ pub struct SolveStakeAndProve<'info> {
     pub stake_account: AccountInfo<'info>,
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
-    /// CHECK: Wormhole program
-    pub wormhole_program: AccountInfo<'info>,
-    #[account(mut, seeds = [b"Bridge"], bump, seeds::program = wormhole_program)]
-    pub wormhole_bridge: AccountInfo<'info>,
+    pub wormhole_program: Program<'info, Wormhole>,
+    #[account(mut, seeds = [wormhole::BridgeData::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_bridge: Account<'info, wormhole::BridgeData>,
     #[account(mut)]
     pub wormhole_message: Signer<'info>,
+    /// CHECK: Wormhole Emitter PDA — our program's emitter, validated by seeds
     #[account(seeds = [EMITTER_SEED], bump)]
     pub wormhole_emitter: AccountInfo<'info>,
-    #[account(mut, seeds = [b"Sequence", wormhole_emitter.key().as_ref()], bump, seeds::program = wormhole_program)]
-    pub wormhole_sequence: AccountInfo<'info>,
-    #[account(mut, seeds = [b"fee_collector"], bump, seeds::program = wormhole_program)]
-    pub wormhole_fee_collector: AccountInfo<'info>,
+    #[account(mut, seeds = [wormhole::SequenceTracker::SEED_PREFIX, wormhole_emitter.key().as_ref()], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_sequence: Account<'info, wormhole::SequenceTracker>,
+    #[account(mut, seeds = [wormhole::FeeCollector::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_fee_collector: Account<'info, wormhole::FeeCollector>,
     pub clock: Sysvar<'info, Clock>,
     pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
@@ -542,8 +539,7 @@ pub struct ClaimWithVaa<'info> {
     pub solver: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
-    /// CHECK: Posted VAA (verified by Wormhole Core Bridge before this ix)
-    pub posted_vaa: Account<'info, wormhole::PostedVaaData>,
+    pub posted_vaa: Account<'info, wormhole::PostedVaa<Vec<u8>>>,
     #[account(seeds = [FOREIGN_EMITTER_SEED, &posted_vaa.emitter_chain().to_le_bytes()], bump = foreign_emitter.bump)]
     pub foreign_emitter: Account<'info, ForeignEmitter>,
     #[account(mut, seeds = [INTENT_SEED, &intent.intent_id], bump = intent.bump)]

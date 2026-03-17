@@ -1,0 +1,1285 @@
+{
+  "address": "Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN",
+  "metadata": {
+    "name": "intent_bridge_solana",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Intent Bridge for Solana - Cross-chain bridge with Dutch Auction"
+  },
+  "instructions": [
+    {
+      "name": "cancel_intent",
+      "discriminator": [
+        67,
+        73,
+        238,
+        244,
+        208,
+        89,
+        225,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_with_vaa",
+      "discriminator": [
+        92,
+        43,
+        129,
+        129,
+        15,
+        98,
+        141,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "posted_vaa"
+        },
+        {
+          "name": "foreign_emitter",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  111,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110,
+                  95,
+                  101,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "posted_vaa"
+              }
+            ]
+          }
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "received",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  118,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "posted_vaa"
+              },
+              {
+                "kind": "account",
+                "path": "posted_vaa"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_intent",
+      "discriminator": [
+        216,
+        214,
+        79,
+        121,
+        23,
+        194,
+        96,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "payment",
+          "writable": true
+        },
+        {
+          "name": "intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "intent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "intent_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "destination_chain",
+          "type": "u16"
+        },
+        {
+          "name": "start_price",
+          "type": "u64"
+        },
+        {
+          "name": "floor_price",
+          "type": "u64"
+        },
+        {
+          "name": "duration_seconds",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "register_emitter",
+      "discriminator": [
+        217,
+        153,
+        40,
+        34,
+        190,
+        121,
+        144,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "foreign_emitter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  111,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110,
+                  95,
+                  101,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "chain"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "chain",
+          "type": "u16"
+        },
+        {
+          "name": "address",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "solve_and_prove",
+      "discriminator": [
+        242,
+        190,
+        212,
+        218,
+        103,
+        161,
+        149,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wormhole_program",
+          "address": "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5"
+        },
+        {
+          "name": "wormhole_bridge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  66,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "wormhole_message",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wormhole_emitter",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wormhole_sequence",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  83,
+                  101,
+                  113,
+                  117,
+                  101,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wormhole_emitter"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "wormhole_fee_collector",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  111,
+                  114
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "order_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "solver_address",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "amount_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "solve_stake_and_prove",
+      "discriminator": [
+        193,
+        144,
+        209,
+        252,
+        111,
+        132,
+        35,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "staking_program"
+        },
+        {
+          "name": "stake_pool",
+          "writable": true
+        },
+        {
+          "name": "stake_account",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wormhole_program",
+          "address": "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5"
+        },
+        {
+          "name": "wormhole_bridge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  66,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "wormhole_message",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wormhole_emitter",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wormhole_sequence",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  83,
+                  101,
+                  113,
+                  117,
+                  101,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wormhole_emitter"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "wormhole_fee_collector",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  111,
+                  114
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                43,
+                18,
+                70,
+                201,
+                238,
+                250,
+                60,
+                70,
+                103,
+                146,
+                37,
+                49,
+                17,
+                243,
+                95,
+                236,
+                30,
+                232,
+                238,
+                94,
+                157,
+                235,
+                196,
+                18,
+                210,
+                233,
+                173,
+                173,
+                254,
+                205,
+                204,
+                114
+              ]
+            }
+          }
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "order_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "solver_address",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "amount_lamports",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "ForeignEmitter",
+      "discriminator": [
+        209,
+        139,
+        241,
+        247,
+        96,
+        178,
+        159,
+        2
+      ]
+    },
+    {
+      "name": "Intent",
+      "discriminator": [
+        247,
+        162,
+        35,
+        165,
+        254,
+        111,
+        129,
+        109
+      ]
+    },
+    {
+      "name": "Received",
+      "discriminator": [
+        227,
+        186,
+        72,
+        102,
+        0,
+        233,
+        222,
+        41
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "IntentCancelled",
+      "discriminator": [
+        39,
+        174,
+        74,
+        165,
+        39,
+        101,
+        119,
+        29
+      ]
+    },
+    {
+      "name": "IntentCreated",
+      "discriminator": [
+        184,
+        46,
+        156,
+        205,
+        169,
+        254,
+        11,
+        108
+      ]
+    },
+    {
+      "name": "IntentFulfilled",
+      "discriminator": [
+        168,
+        116,
+        104,
+        206,
+        0,
+        206,
+        46,
+        195
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Not authorized"
+    },
+    {
+      "code": 6001,
+      "name": "AlreadyFulfilled",
+      "msg": "Already fulfilled"
+    },
+    {
+      "code": 6002,
+      "name": "NotCreator",
+      "msg": "Not creator"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidParams",
+      "msg": "Invalid params"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidEmitter",
+      "msg": "Invalid emitter"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidVaa",
+      "msg": "Invalid VAA"
+    },
+    {
+      "code": 6006,
+      "name": "IntentIdMismatch",
+      "msg": "Intent ID mismatch"
+    },
+    {
+      "code": 6007,
+      "name": "Expired",
+      "msg": "Expired"
+    },
+    {
+      "code": 6008,
+      "name": "PriceTooLow",
+      "msg": "Price too low"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ForeignEmitter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "chain",
+            "type": "u16"
+          },
+          {
+            "name": "address",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Intent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "destination_chain",
+            "type": "u16"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "start_price",
+            "type": "u64"
+          },
+          {
+            "name": "floor_price",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentFulfilled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "fulfilled_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Received",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "emitter_chain",
+            "type": "u16"
+          },
+          {
+            "name": "sequence",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
