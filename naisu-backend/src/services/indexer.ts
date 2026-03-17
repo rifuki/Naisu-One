@@ -24,7 +24,8 @@ import {
   PublicKey,
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js'
-import * as anchor from '@coral-xyz/anchor'
+import { BorshAccountsCoder } from '@coral-xyz/anchor'
+import IntentBridgeIDL from '../idl/intent_bridge_solana.json'
 import { config } from '@config/env'
 import { logger } from '@lib/logger'
 import { INTENT_BRIDGE } from '@config/constants'
@@ -300,12 +301,11 @@ async function indexEvmChain(
 // Solana Indexer
 // ============================================================================
 
-const SOL_DISCRIMINATOR = Buffer.from(
-  anchor.utils.sha256.hash('account:Intent').slice(0, 8)
-)
+const _intentAccountDef      = IntentBridgeIDL.accounts.find(a => a.name === 'Intent')!
+const SOL_DISCRIMINATOR       = Buffer.from(_intentAccountDef.discriminator)
+const _intentCoder            = new BorshAccountsCoder(IntentBridgeIDL as Parameters<typeof BorshAccountsCoder>[0])
 
 async function indexSolana(connection: Connection, programId: PublicKey): Promise<void> {
-  // Fetch all intent accounts (no creator filter — index everything)
   const accounts = await connection.getProgramAccounts(programId, {
     filters: [
       { memcmp: { offset: 0, bytes: SOL_DISCRIMINATOR.toString('base64'), encoding: 'base64' as const } },
@@ -314,22 +314,17 @@ async function indexSolana(connection: Connection, programId: PublicKey): Promis
 
   for (const { pubkey, account } of accounts) {
     try {
-      const buf = account.data
-      if (buf.length < 148) continue
-      let off = 8 // skip discriminator
-
-      const intentId        = buf.slice(off, off + 32).toString('hex'); off += 32
-      const creatorBytes    = buf.slice(off, off + 32);                  off += 32
-      const recipient       = buf.slice(off, off + 32).toString('hex'); off += 32
-      const destinationChain = buf.readUInt16LE(off);                   off += 2
-      const amount          = buf.readBigUInt64LE(off);                  off += 8
-      const startPrice      = buf.readBigUInt64LE(off);                  off += 8
-      const floorPrice      = buf.readBigUInt64LE(off);                  off += 8
-      const deadline        = buf.readBigInt64LE(off);                   off += 8
-      const createdAt       = buf.readBigInt64LE(off);                   off += 8
-      const statusByte      = buf[off]
-
-      const creator = new PublicKey(creatorBytes).toBase58()
+      const decoded          = _intentCoder.decode('intent', account.data)
+      const intentId         = Buffer.from(decoded.intentId as number[]).toString('hex')
+      const creator          = new PublicKey(decoded.creator as Uint8Array).toBase58()
+      const recipient        = Buffer.from(decoded.recipient as number[]).toString('hex')
+      const destinationChain = decoded.destinationChain as number
+      const amount           = BigInt((decoded.amount as { toString(): string }).toString())
+      const startPrice       = BigInt((decoded.startPrice as { toString(): string }).toString())
+      const floorPrice       = BigInt((decoded.floorPrice as { toString(): string }).toString())
+      const deadline         = BigInt((decoded.deadline as { toString(): string }).toString())
+      const createdAt        = BigInt((decoded.createdAt as { toString(): string }).toString())
+      const statusByte       = decoded.status as number
 
       const nowSec = BigInt(Math.floor(Date.now() / 1000))
       let currentPrice: string | null = null

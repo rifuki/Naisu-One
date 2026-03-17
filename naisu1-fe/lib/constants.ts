@@ -53,7 +53,3 @@ export const EXPLORERS = {
   solana:      "https://explorer.solana.com",
   sui:         "https://suiscan.xyz/testnet",
 } as const;
-
-// ── Solana Intent Anchor discriminator (sha256("account:Intent")[0..8]) ───────
-// Pre-computed: [247, 162, 35, 165, 254, 111, 129, 109]
-export const INTENT_DISCRIMINATOR = new Uint8Array([247, 162, 35, 165, 254, 111, 129, 109]);

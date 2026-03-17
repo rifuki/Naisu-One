@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
+        'global': 'globalThis',
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.OPENCLAW_API_URL': JSON.stringify(env.OPENCLAW_API_URL || 'https://ai.naisu.one/v1/chat/completions'),

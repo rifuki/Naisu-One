@@ -14,10 +14,12 @@ import { useSolanaAddress } from './useSolanaAddress'
 import {
   BASE_SEPOLIA_CONTRACT, FUJI_CONTRACT,
   BASE_SEPOLIA_RPC, AVALANCHE_FUJI_RPC,
-  SOLANA_PROGRAM_ID, INTENT_DISCRIMINATOR,
+  SOLANA_PROGRAM_ID,
   WORMHOLE_CHAIN_SOLANA,
 } from '../lib/constants'
 import { INTENT_BRIDGE_ABI } from '../lib/abi'
+import { BorshAccountsCoder } from '@coral-xyz/anchor'
+import IntentBridgeIDL from '../lib/idl/intent_bridge_solana.json'
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000'
 const BACKEND_TIMEOUT_MS = 5_000
@@ -167,6 +169,11 @@ async function fetchEvmFromRpc(evmAddress: string): Promise<IntentRow[]> {
   return allRows.sort((a, b) => b.createdAt - a.createdAt)
 }
 
+// ─── Anchor IDL coder (replaces hardcoded discriminator + manual buf parsing) ─
+const _intentAccountDef = IntentBridgeIDL.accounts.find(a => a.name === 'Intent')!
+const INTENT_DISCRIMINATOR_BYTES = new Uint8Array(_intentAccountDef.discriminator)
+const _intentCoder = new BorshAccountsCoder(IntentBridgeIDL as Parameters<typeof BorshAccountsCoder>[0])
+
 // ─── Solana RPC fallback ──────────────────────────────────────────────────────
 
 async function fetchSolanaFromRpc(
@@ -178,23 +185,20 @@ async function fetchSolanaFromRpc(
     const programId = new PublicKey(SOLANA_PROGRAM_ID)
     const accounts  = await connection.getProgramAccounts(programId, {
       filters: [
-        { memcmp: { offset: 0,  bytes: Buffer.from(INTENT_DISCRIMINATOR).toString('base64'), encoding: 'base64' } },
+        { memcmp: { offset: 0,  bytes: Buffer.from(INTENT_DISCRIMINATOR_BYTES).toString('base64'), encoding: 'base64' } },
         { memcmp: { offset: 40, bytes: solPubkey.toBase58() } },
       ],
     })
     const rows: IntentRow[] = await Promise.all(accounts.map(async ({ pubkey, account }) => {
-      const buf = account.data
-      let off = 8
-      const intentId         = buf.slice(off, off + 32).toString('hex'); off += 32
-      off += 32 // creator
-      off += 32 // recipient
-      const destinationChain = buf.readUInt16LE(off); off += 2
-      const amount           = Number(buf.readBigUInt64LE(off)) / 1e9; off += 8
-      const startPrice       = Number(buf.readBigUInt64LE(off)); off += 8
-      const floorPrice       = Number(buf.readBigUInt64LE(off)); off += 8
-      const deadline         = Number(buf.readBigInt64LE(off)) * 1000; off += 8
-      const createdAt        = Number(buf.readBigInt64LE(off)) * 1000; off += 8
-      const statusByte       = buf[off]
+      const decoded = _intentCoder.decode('intent', account.data)
+      const intentId         = Buffer.from(decoded.intentId as number[]).toString('hex')
+      const amount           = (decoded.amount as { toNumber(): number }).toNumber() / 1e9
+      const startPrice       = (decoded.startPrice as { toNumber(): number }).toNumber()
+      const floorPrice       = (decoded.floorPrice as { toNumber(): number }).toNumber()
+      const deadline         = (decoded.deadline as { toNumber(): number }).toNumber() * 1000
+      const createdAt        = (decoded.createdAt as { toNumber(): number }).toNumber() * 1000
+      const statusByte       = decoded.status as number
+      const destinationChain = decoded.destinationChain as number
       const statusMap: Record<number, IntentRow['status']> = { 0: 'Open', 1: 'Fulfilled', 2: 'Cancelled' }
 
       let fulfillTxHash: string | undefined
@@ -207,7 +211,7 @@ async function fetchSolanaFromRpc(
       return {
         id: pubkey.toBase58(), txDigest: intentId, amount, startPrice, floorPrice,
         createdAt, deadline, destinationChain,
-        status: statusMap[statusByte as number] ?? 'Open',
+        status: statusMap[statusByte] ?? 'Open',
         chain: 'solana' as const, fulfillTxHash,
       }
     }))
