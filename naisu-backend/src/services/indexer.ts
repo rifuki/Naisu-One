@@ -54,6 +54,7 @@ const ORDER_CREATED_EVENT = {
     { name: 'startPrice',       type: 'uint256', indexed: false },
     { name: 'floorPrice',       type: 'uint256', indexed: false },
     { name: 'deadline',         type: 'uint256', indexed: false },
+    { name: 'withStake',        type: 'bool',    indexed: false },
   ],
 } as const
 
@@ -83,6 +84,7 @@ const ORDERS_FUNCTION_ABI = [
       { name: 'deadline',         type: 'uint256'  },
       { name: 'createdAt',        type: 'uint256'  },
       { name: 'status',           type: 'uint8'    },
+      { name: 'withStake',        type: 'bool'     },
     ],
   },
   {
@@ -236,9 +238,9 @@ async function indexEvmChain(
       abi: ORDERS_FUNCTION_ABI,
       functionName: 'orders',
       args: [orderId],
-    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number]
+    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, boolean]
 
-    const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum] = raw
+    const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum, withStake] = raw
     const isOpen = statusNum === INTENT_BRIDGE.STATUS.OPEN
 
     let currentPrice: string | null = null
@@ -267,6 +269,7 @@ async function indexEvmChain(
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
       status:           fulfillInfo ? 'FULFILLED' : statusLabel(statusNum),
+      withStake:        withStake ?? false,
       explorerUrl:      evmExplorer(evmChain, log.transactionHash ?? ''),
     })
   }))

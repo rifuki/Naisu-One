@@ -59,6 +59,7 @@ export const INTENT_BRIDGE_ABI = [
       { name: "deadline", type: "uint256" },
       { name: "createdAt", type: "uint256" },
       { name: "status", type: "uint8" }, // 0=Open, 1=Fulfilled, 2=Cancelled
+      { name: "withStake", type: "bool" },
     ],
     stateMutability: "view",
   },

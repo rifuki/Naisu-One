@@ -64,6 +64,7 @@ export interface IntentOrder {
   deadline: number          // unix ms
   createdAt: number         // unix ms
   status: 'OPEN' | 'FULFILLED' | 'CANCELLED'
+  withStake: boolean
   explorerUrl: string
 }
 
@@ -178,6 +179,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'deadline', type: 'uint256' },
       { name: 'createdAt', type: 'uint256' },
       { name: 'status', type: 'uint8' },
+      { name: 'withStake', type: 'bool' },
     ],
   },
   {
@@ -310,6 +312,7 @@ async function listSuiOrders(creator: string): Promise<IntentOrder[]> {
         deadline:         Number(fields.deadline),
         createdAt:        Number(fields.created_at),
         status:           statusLabel(status),
+        withStake:        false,
         explorerUrl:      `https://suiexplorer.com/object/${intentId}?network=testnet`,
       })
     } catch {
@@ -386,9 +389,9 @@ async function listEvmOrders(
         abi: INTENT_BRIDGE_ABI,
         functionName: 'orders',
         args: [orderId],
-      }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number]
+      }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, boolean]
 
-      const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, status] = order
+      const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, status, withStake] = order
       const nowSec = BigInt(Math.floor(Date.now() / 1000))
       const isOpen = status === INTENT_BRIDGE.STATUS.OPEN
 
@@ -419,6 +422,7 @@ async function listEvmOrders(
         deadline:         Number(deadline) * 1000,
         createdAt:        Number(createdAt) * 1000,
         status:           statusLabel(status),
+        withStake:        withStake ?? false,
         explorerUrl:      evmExplorerTx(evmChain, log.transactionHash ?? ''),
       })
     } catch {
@@ -503,6 +507,7 @@ function parseSolanaIntent(
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
       status:           statusLabel,
+      withStake:        false,
       explorerUrl:      `https://explorer.solana.com/address/${pubkey.toBase58()}?cluster=devnet`,
     }
   } catch {
