@@ -71,7 +71,7 @@ const envSchema = z.object({
   // Intent Bridge — Solana (Anchor program, devnet)
   SOLANA_INTENT_PROGRAM_ID: z
     .string()
-    .default('FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k'),
+    .default('Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN'),
 
   // Intent Bridge — Sui (Testnet)
   SUI_PACKAGE_ID: z

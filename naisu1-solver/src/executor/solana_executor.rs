@@ -333,7 +333,7 @@ pub async fn relay_and_claim(
     let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("contracts/solana/scripts");
+        .join("naisu1-contracts/solana/scripts");
 
     info!(vaa_len = vaa_bytes.len(), "Relaying VAA to Solana...");
 
@@ -637,36 +637,63 @@ async fn solve_and_prove_inner(
     // ── Build account list ───────────────────────────────────────────────────
     // Solana message ordering: writable signers, readonly signers, writable non-signers, readonly non-signers
     //
-    // Writable signers:    [0] solver, [1] wormhole_message
-    // Readonly signers:    (none)
-    // Writable non-sig:   [2] recipient, [3] wormhole_bridge, [4] wormhole_sequence,
-    //                     [5] wormhole_fee_collector
-    // Readonly non-sig:   [6] config_pda, [7] wormhole_program, [8] wormhole_emitter,
-    //                     [9] clock, [10] rent, [11] system_program, [12] program_id
-    let accounts = vec![
-        AccountRef { pubkey: solver_pubkey,               is_signer: true,  is_writable: true  },
-        AccountRef { pubkey: wormhole_message_pubkey,     is_signer: true,  is_writable: true  },
-        AccountRef { pubkey: recipient,                   is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_bridge_pda,         is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_sequence_pda,       is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_fee_collector_pda,  is_signer: false, is_writable: true  },
-        AccountRef { pubkey: config_pda,                  is_signer: false, is_writable: false },
-        AccountRef { pubkey: wormhole_program_id,         is_signer: false, is_writable: false },
-        AccountRef { pubkey: wormhole_emitter_pda,        is_signer: false, is_writable: false },
-        AccountRef { pubkey: clock_sysvar,                is_signer: false, is_writable: false },
-        AccountRef { pubkey: rent_sysvar,                 is_signer: false, is_writable: false },
-        AccountRef { pubkey: SYSTEM_PROGRAM,              is_signer: false, is_writable: false },
-        AccountRef { pubkey: program_id,                  is_signer: false, is_writable: false },
-    ];
+    // Special case: when solver == recipient (e.g. bridge+liquid_stake flow where SOL
+    // goes to solver first), we must NOT include the same pubkey twice — Solana will
+    // reject with AccountLoadedTwice. Instead we de-duplicate and remap ix_accounts.
+    let solver_is_recipient = solver_pubkey == recipient;
 
-    // Anchor struct order for SolveAndProve:
-    // solver=0, recipient=2, config=6, wormhole_program=7, wormhole_bridge=3,
-    // wormhole_message=1, wormhole_emitter=8, wormhole_sequence=4,
-    // wormhole_fee_collector=5, clock=9, rent=10, system_program=11
-    let ix_accounts: Vec<u8> = vec![0, 2, 6, 7, 3, 1, 8, 4, 5, 9, 10, 11];
-
-    // program_id is at index 12
-    let program_id_index = 12u8;
+    let (accounts, ix_accounts, program_id_index) = if solver_is_recipient {
+        // Writable signers:    [0] solver/recipient, [1] wormhole_message
+        // Writable non-sig:   [2] wormhole_bridge, [3] wormhole_sequence, [4] wormhole_fee_collector
+        // Readonly non-sig:   [5] config_pda, [6] wormhole_program, [7] wormhole_emitter,
+        //                     [8] clock, [9] rent, [10] system_program, [11] program_id
+        let accts = vec![
+            AccountRef { pubkey: solver_pubkey,               is_signer: true,  is_writable: true  },
+            AccountRef { pubkey: wormhole_message_pubkey,     is_signer: true,  is_writable: true  },
+            AccountRef { pubkey: wormhole_bridge_pda,         is_signer: false, is_writable: true  },
+            AccountRef { pubkey: wormhole_sequence_pda,       is_signer: false, is_writable: true  },
+            AccountRef { pubkey: wormhole_fee_collector_pda,  is_signer: false, is_writable: true  },
+            AccountRef { pubkey: config_pda,                  is_signer: false, is_writable: false },
+            AccountRef { pubkey: wormhole_program_id,         is_signer: false, is_writable: false },
+            AccountRef { pubkey: wormhole_emitter_pda,        is_signer: false, is_writable: false },
+            AccountRef { pubkey: clock_sysvar,                is_signer: false, is_writable: false },
+            AccountRef { pubkey: rent_sysvar,                 is_signer: false, is_writable: false },
+            AccountRef { pubkey: SYSTEM_PROGRAM,              is_signer: false, is_writable: false },
+            AccountRef { pubkey: program_id,                  is_signer: false, is_writable: false },
+        ];
+        // Anchor order: solver=0, recipient=0 (same), config=5, wormhole_program=6,
+        // wormhole_bridge=2, wormhole_message=1, wormhole_emitter=7, wormhole_sequence=3,
+        // wormhole_fee_collector=4, clock=8, rent=9, system_program=10
+        let ix = vec![0u8, 0, 5, 6, 2, 1, 7, 3, 4, 8, 9, 10];
+        (accts, ix, 11u8)
+    } else {
+        // Normal case: solver and recipient are different accounts.
+        // Writable signers:    [0] solver, [1] wormhole_message
+        // Writable non-sig:   [2] recipient, [3] wormhole_bridge, [4] wormhole_sequence,
+        //                     [5] wormhole_fee_collector
+        // Readonly non-sig:   [6] config_pda, [7] wormhole_program, [8] wormhole_emitter,
+        //                     [9] clock, [10] rent, [11] system_program, [12] program_id
+        let accts = vec![
+            AccountRef { pubkey: solver_pubkey,               is_signer: true,  is_writable: true  },
+            AccountRef { pubkey: wormhole_message_pubkey,     is_signer: true,  is_writable: true  },
+            AccountRef { pubkey: recipient,                   is_signer: false, is_writable: true  },
+            AccountRef { pubkey: wormhole_bridge_pda,         is_signer: false, is_writable: true  },
+            AccountRef { pubkey: wormhole_sequence_pda,       is_signer: false, is_writable: true  },
+            AccountRef { pubkey: wormhole_fee_collector_pda,  is_signer: false, is_writable: true  },
+            AccountRef { pubkey: config_pda,                  is_signer: false, is_writable: false },
+            AccountRef { pubkey: wormhole_program_id,         is_signer: false, is_writable: false },
+            AccountRef { pubkey: wormhole_emitter_pda,        is_signer: false, is_writable: false },
+            AccountRef { pubkey: clock_sysvar,                is_signer: false, is_writable: false },
+            AccountRef { pubkey: rent_sysvar,                 is_signer: false, is_writable: false },
+            AccountRef { pubkey: SYSTEM_PROGRAM,              is_signer: false, is_writable: false },
+            AccountRef { pubkey: program_id,                  is_signer: false, is_writable: false },
+        ];
+        // Anchor order: solver=0, recipient=2, config=6, wormhole_program=7, wormhole_bridge=3,
+        // wormhole_message=1, wormhole_emitter=8, wormhole_sequence=4,
+        // wormhole_fee_collector=5, clock=9, rent=10, system_program=11
+        let ix = vec![0u8, 2, 6, 7, 3, 1, 8, 4, 5, 9, 10, 11];
+        (accts, ix, 12u8)
+    };
 
     // ── Fetch blockhash and submit ───────────────────────────────────────────
     let blockhash = get_latest_blockhash(&config.solana_rpc_url).await?;
@@ -1033,7 +1060,7 @@ pub async fn solve_and_liquid_stake(
     let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("contracts/solana/scripts");
+        .join("naisu1-contracts/solana/scripts");
 
     let liquid_stake_js = scripts_dir.join("dist/liquid_stake.js");
 

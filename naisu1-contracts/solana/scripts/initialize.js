@@ -1,7 +1,7 @@
 const anchor = require('@coral-xyz/anchor');
 const { PublicKey, SystemProgram } = require('@solana/web3.js');
 
-const PROGRAM_ID = new PublicKey('FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k');
+const PROGRAM_ID = new PublicKey('Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN');
 
 async function initialize() {
   const provider = anchor.AnchorProvider.env();
@@ -11,6 +11,7 @@ async function initialize() {
   const idl = {
     version: '0.1.0',
     name: 'intent_bridge_solana',
+    address: 'Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN',
     instructions: [
       {
         name: 'initialize',
@@ -24,7 +25,7 @@ async function initialize() {
     ],
   };
   
-  const program = new anchor.Program(idl, PROGRAM_ID, provider);
+  const program = new anchor.Program(idl, provider);
   
   const [configPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from('config')],

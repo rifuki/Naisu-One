@@ -95,7 +95,7 @@ export const SOLANA = {
 
 export const INTENT_BRIDGE = {
   // Solana intent bridge program (Anchor, devnet)
-  SOLANA_PROGRAM_ID: 'FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k',
+  SOLANA_PROGRAM_ID: 'Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN',
 
   // Sui intent bridge (testnet)
   SUI_PACKAGE_ID: '0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb',

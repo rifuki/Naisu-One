@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use mock_staking;
 use wormhole_anchor_sdk::wormhole;
 
-declare_id!("FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k");
+declare_id!("Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN");
 
 // Constants
 pub const CONFIG_SEED: &[u8] = b"config";

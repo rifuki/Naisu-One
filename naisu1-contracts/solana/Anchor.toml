@@ -6,12 +6,12 @@ skip-lint = false
 seeds = true
 
 [programs.devnet]
-intent_bridge_solana = "FSHrXSKTZtLisVCssJx5pyUmiL9U3VJL58zSRysBja4k"
-mock_staking = "Hf9NmwtXpzvr31q6v7q6gevDYfEi6NnqbihsRMDkTsii"
+intent_bridge_solana = "Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN"
+mock_staking = "9W1HN3QiTTUjBgr6ACPQT6jR6SQwgBdi2mFbb44aiWvJ"
 
 [programs.localnet]
 intent_bridge_solana = "F3R1Jp1M7gvn85P3T2N9E6hL9t2Y8v3Xc4Z5b6A7d8E9"
-mock_staking = "Hf9NmwtXpzvr31q6v7q6gevDYfEi6NnqbihsRMDkTsii"
+mock_staking = "9W1HN3QiTTUjBgr6ACPQT6jR6SQwgBdi2mFbb44aiWvJ"
 
 [registry]
 url = "https://api.apr.dev"
