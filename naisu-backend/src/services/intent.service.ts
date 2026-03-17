@@ -639,14 +639,19 @@ export async function getIntentOrders(params: {
     ? [chain]
     : ['sui', 'evm-fuji', 'evm-base', 'solana']
 
+  const isEvmAddress     = /^0x[0-9a-fA-F]{40}$/.test(user)
+  const isSolanaAddress  = !isEvmAddress && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(user)
+
   await Promise.allSettled(
     chains.map(async (c) => {
       try {
         if (c === 'sui') {
           results.push(...await listSuiOrders(user))
         } else if (c === 'evm-fuji' || c === 'evm-base') {
+          if (!isEvmAddress) return
           results.push(...await listEvmOrders(c, user))
         } else if (c === 'solana') {
+          if (!isSolanaAddress) return
           results.push(...await listSolanaOrders(user))
         }
       } catch (err) {

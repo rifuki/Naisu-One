@@ -42,14 +42,13 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                 if (!res.ok) return;
                 const data = await res.json();
                 const orders: Array<{ status: string; orderId?: string; startPrice?: string; destinationChain?: number; withStake?: boolean }> = data.data ?? data.orders ?? [];
-                // Match by tx hash or just check latest order status
+                // Only check the most recent order (orders[0]) to avoid picking up old fulfilled orders
                 const latestOrder = orders[0];
-                const fulfilledEntry = orders.find(o => o.status === 'FULFILLED');
-                if (fulfilledEntry) {
+                if (latestOrder && latestOrder.status === 'FULFILLED') {
                     setFulfilledOrder({
-                        startPrice: fulfilledEntry.startPrice ?? '0',
-                        destinationChain: fulfilledEntry.destinationChain ?? 1,
-                        withStake: fulfilledEntry.withStake ?? false,
+                        startPrice: latestOrder.startPrice ?? '0',
+                        destinationChain: latestOrder.destinationChain ?? 1,
+                        withStake: latestOrder.withStake ?? false,
                     });
                     setStatus('fulfilled');
                     clearInterval(poll);

@@ -104,6 +104,7 @@ function IntentDetailDialog({
   const isToSolana = intent.destinationChain === WORMHOLE_CHAIN_SOLANA;
   const evmExp = getEvmExplorer(intent.sourceChain);
   const currency = intent.chain === 'solana' ? 'SOL' : (intent.sourceChain === 'Base' ? 'ETH' : 'AVAX');
+  const dstCurrency = intent.destinationChain === WORMHOLE_CHAIN_SOLANA ? 'SOL' : intent.destinationChain === 21 ? 'SUI' : 'ETH';
   const srcLabel = intent.chain === 'evm' ? (intent.sourceChain ?? 'EVM') : 'Solana';
   const dstLabel = destChainLabel(intent.destinationChain);
   const currentPrice = calcCurrentPrice(intent.startPrice, intent.floorPrice, intent.createdAt, intent.deadline, now);
@@ -190,7 +191,7 @@ function IntentDetailDialog({
 
           {/* Auction Prices */}
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-3">
-            <div className="text-[10px] text-slate-500 mb-2 uppercase tracking-wider">Auction Prices ({currency})</div>
+            <div className="text-[10px] text-slate-500 mb-2 uppercase tracking-wider">Auction Prices ({dstCurrency})</div>
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
                 <div className="text-slate-500 mb-0.5">Start</div>
@@ -295,6 +296,7 @@ function OrderCard({
     : 100;
   const timeLeft = intent.deadline - now;
   const currency = intent.chain === 'solana' ? 'SOL' : (intent.sourceChain === 'Base' ? 'ETH' : 'AVAX');
+  const dstCurrency = intent.destinationChain === WORMHOLE_CHAIN_SOLANA ? 'SOL' : intent.destinationChain === 21 ? 'SUI' : 'ETH';
   const dstLabel = destChainLabel(intent.destinationChain);
   const evmExp = getEvmExplorer(intent.sourceChain);
   const isToSolana = intent.destinationChain === WORMHOLE_CHAIN_SOLANA;
@@ -337,7 +339,7 @@ function OrderCard({
           {isOpen && (
             <div className="text-right">
               <div className="text-[10px] text-slate-500">Current price</div>
-              <div className="text-xs font-mono text-slate-300">{(currentPrice / 1e9).toFixed(6)} {currency}</div>
+              <div className="text-xs font-mono text-slate-300">{(currentPrice / 1e9).toFixed(6)} {dstCurrency}</div>
             </div>
           )}
         </div>
@@ -358,7 +360,7 @@ function OrderCard({
               />
             </div>
             <div className="flex items-center justify-between text-[10px]">
-              <span className="text-slate-600">Floor: {(intent.floorPrice / 1e9).toFixed(6)} {currency}</span>
+              <span className="text-slate-600">Floor: {(intent.floorPrice / 1e9).toFixed(6)} {dstCurrency}</span>
               <span className={timeLeft < 60000 ? 'text-red-400 font-semibold' : 'text-slate-500'}>
                 <span className="material-symbols-outlined text-[10px] align-middle mr-0.5">timer</span>
                 {formatTimeRemaining(timeLeft)}

@@ -108,8 +108,8 @@ async fn process_evm_order(
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
 
-            // Per-order stake routing: with_stake field takes priority over global config flags
-            let use_liquid_stake = order.with_stake || config.enable_liquid_stake;
+            // Per-order stake routing: purely from order flag, no global override
+            let use_liquid_stake = order.with_stake;
             let use_auto_stake   = config.enable_auto_stake;
 
             let mode_label = if use_liquid_stake {
