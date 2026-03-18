@@ -21,6 +21,7 @@ import { uniswapV4Router } from './uniswap-v4'
 import { cetusRouter } from './cetus'
 import { solanaRouter } from './solana'
 import { intentRouter } from './intent'
+import { solverRouter } from './solver'
 import { docsRouter } from './docs'
 
 // ============================================================================
@@ -158,6 +159,9 @@ api.route('/solana', solanaRouter)
 
 // Intent Bridge routes (cross-chain Dutch auction)
 api.route('/intent', intentRouter)
+
+// Solver network routes (registry + RFQ + selection)
+api.route('/solver', solverRouter)
 
 // API Docs (mounted at root level, not under /api/v1)
 app.route('/docs', docsRouter)

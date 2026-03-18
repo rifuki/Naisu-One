@@ -3,7 +3,17 @@
  * Background tasks for the backend
  */
 import { logger } from '@lib/logger'
-import { startIndexer, stopIndexer } from '@services/indexer'
+import { startIndexer, stopIndexer, indexerEvents } from '@services/indexer'
+import {
+  broadcastRFQ,
+  checkFades,
+  markStaleOffline,
+  clearPendingExclusive,
+  getSolverSelection,
+  getSolverById,
+  recordFill,
+} from '@services/solver.service'
+import type { IntentOrder } from '@services/intent.service'
 
 // ============================================================================
 // Job Definitions
@@ -17,7 +27,16 @@ interface CronJob {
 }
 
 const jobs: CronJob[] = [
-  // Add cron jobs here if needed
+  {
+    name:       'solver-heartbeat-check',
+    intervalMs: 30_000,
+    fn:         async () => { markStaleOffline() },
+  },
+  {
+    name:       'solver-fade-detection',
+    intervalMs: 60_000,
+    fn:         async () => { checkFades() },
+  },
 ]
 
 let intervals: ReturnType<typeof setInterval>[] = []
@@ -28,6 +47,28 @@ let intervals: ReturnType<typeof setInterval>[] = []
 export function startCronJobs(): void {
   // Start intent indexer (background on-chain event polling)
   startIndexer()
+
+  // Wire solver service to indexer events
+  indexerEvents.on('order_created', (order: IntentOrder) => {
+    broadcastRFQ(order).catch((err: unknown) =>
+      logger.error({ err, orderId: order.orderId }, '[Solver] RFQ broadcast failed')
+    )
+  })
+
+  indexerEvents.on('order_update', (order: IntentOrder) => {
+    if (order.status === 'FULFILLED') {
+      // Look up who won this RFQ and credit them the fill
+      const selection = getSolverSelection(order.orderId)
+      if (selection?.winnerId) {
+        const solver = getSolverById(selection.winnerId)
+        if (solver) {
+          const fillTimeMs = Date.now() - selection.rfqSentAt
+          recordFill(solver.evmAddress, fillTimeMs)
+        }
+      }
+      clearPendingExclusive(order.orderId)
+    }
+  })
 
   if (jobs.length === 0) {
     logger.info('No additional cron jobs configured')
