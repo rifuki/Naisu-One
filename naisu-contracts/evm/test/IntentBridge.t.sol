@@ -35,7 +35,7 @@ contract IntentBridgeTest is Test {
         vm.prank(creator);
         bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
 
-        (address _creator,,, uint256 _amount,,,,,uint8 _status,) = bridge.orders(orderId);
+        (address _creator,,, uint256 _amount,,,,,uint8 _status,,,) = bridge.orders(orderId);
         assertEq(_creator, creator);
         assertEq(_amount, 1 ether);
         assertEq(_status, 0);
@@ -50,7 +50,7 @@ contract IntentBridgeTest is Test {
         bridge.cancelOrder(orderId);
 
         assertEq(creator.balance, beforeBalance + 1 ether);
-        (,,,,,,,,uint8 status,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
         assertEq(status, 2);
     }
 
@@ -120,7 +120,7 @@ contract IntentBridgeTest is Test {
         bridge.settleOrder(hex"deadbeef");
 
         assertEq(solver.balance, solverBefore + 1 ether);
-        (,,,,,,,,uint8 status,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
         assertEq(status, 1);
     }
 
@@ -144,7 +144,7 @@ contract IntentBridgeTest is Test {
         bridge.settleOrder(hex"cafe");
 
         assertEq(solver.balance, solverBefore + 1 ether);
-        (,,,,,,,,uint8 status,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
         assertEq(status, 1);
     }
 

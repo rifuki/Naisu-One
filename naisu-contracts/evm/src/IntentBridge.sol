@@ -30,48 +30,73 @@ interface IWormhole {
 }
 
 contract IntentBridge {
+    // === Constants ===
+    uint256 public constant MIN_SOLVER_BOND    = 0.05 ether;
+    uint256 public constant BOND_COOLDOWN      = 7 days;
+    uint256 public constant EXCLUSIVITY_WINDOW = 30;  // seconds
+
+    uint8 public constant STATUS_OPEN      = 0;
+    uint8 public constant STATUS_FULFILLED = 1;
+    uint8 public constant STATUS_CANCELLED = 2;
+
     // === Structs ===
     struct Order {
         address creator;
         bytes32 recipient;
-        uint16 destinationChain;
+        uint16  destinationChain;
         uint256 amount;
         uint256 startPrice;
         uint256 floorPrice;
         uint256 deadline;
         uint256 createdAt;
-        uint8 status;
-        bool withStake; // if true, solver should liquid-stake the delivered SOL on behalf of recipient
+        uint8   status;
+        bool    withStake;
+        // Solver network — set by backend after RFQ; zero = open race
+        address exclusiveSolver;
+        uint256 exclusivityDeadline;
+    }
+
+    struct SolverInfo {
+        string  name;
+        uint256 bond;
+        bool    active;
+        uint256 registeredAt;
+        uint256 unregisterAt;  // non-zero = unregister initiated
     }
 
     // === State ===
     address public owner;
-    mapping(bytes32 => Order) public orders;
+    mapping(bytes32  => Order)      public orders;
+    mapping(address  => SolverInfo) public solvers;
     uint256 public orderCount;
 
     // === Wormhole State ===
     IWormhole public wormhole;
-    /// chainId (Wormhole) => expected emitter address (bytes32)
-    mapping(uint16 => bytes32) public registeredEmitters;
-    mapping(bytes32 => bool) public processedVaas;
-    uint8 public immutable consistencyLevel; // 0=latest(fast), 1=safe(~18min), 200=finalized
+    mapping(uint16   => bytes32) public registeredEmitters;
+    mapping(bytes32  => bool)    public processedVaas;
+    uint8 public immutable consistencyLevel;
 
     // === Events ===
     event OrderCreated(
         bytes32 indexed orderId,
         address indexed creator,
         bytes32 recipient,
-        uint16 destinationChain,
+        uint16  destinationChain,
         uint256 amount,
         uint256 startPrice,
         uint256 floorPrice,
         uint256 deadline,
-        bool withStake
+        bool    withStake
     );
     event OrderFulfilled(bytes32 indexed orderId, address indexed solver);
     event OrderCancelled(bytes32 indexed orderId);
     event EmitterRegistered(uint16 indexed chainId, bytes32 emitter);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    event SolverRegistered(address indexed solver, string name, uint256 bond);
+    event SolverUnregistered(address indexed solver);
+    event BondWithdrawn(address indexed solver, uint256 amount);
+    event ExclusiveAssigned(bytes32 indexed orderId, address indexed solver, uint256 deadline);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -86,9 +111,6 @@ contract IntentBridge {
 
     // === Admin Functions ===
 
-    /// @notice Register (or update) the expected emitter for a source chain.
-    /// @param chainId  Wormhole chain ID of the source chain (e.g. 1=Solana, 21=Sui, 6=Fuji)
-    /// @param emitter  Expected 32-byte emitter address from that chain
     function registerEmitter(uint16 chainId, bytes32 emitter) external onlyOwner {
         require(emitter != bytes32(0), "Zero emitter");
         registeredEmitters[chainId] = emitter;
@@ -101,42 +123,97 @@ contract IntentBridge {
         owner = newOwner;
     }
 
+    /// @notice Called by the backend (owner key) after RFQ winner selection.
+    ///         Grants the winning solver a 30-second exclusive window to fill.
+    ///         If deadline passes without fill, anyone can settle (open race).
+    function setExclusiveSolver(bytes32 orderId, address solver) external onlyOwner {
+        Order storage order = orders[orderId];
+        require(order.status == STATUS_OPEN,       "Order not active");
+        require(block.timestamp < order.deadline,  "Order expired");
+        require(solver != address(0),              "Zero solver");
+
+        order.exclusiveSolver    = solver;
+        order.exclusivityDeadline = block.timestamp + EXCLUSIVITY_WINDOW;
+
+        emit ExclusiveAssigned(orderId, solver, order.exclusivityDeadline);
+    }
+
+    // === Solver Registry ===
+
+    /// @notice Register as a solver by depositing bond (min 0.05 ETH).
+    ///         Sybil resistance: creating 50 identities costs 2.5 ETH.
+    function registerSolver(string calldata name) external payable {
+        require(msg.value >= MIN_SOLVER_BOND,      "Insufficient bond");
+        require(!solvers[msg.sender].active,       "Already registered");
+        require(bytes(name).length > 0,            "Empty name");
+
+        solvers[msg.sender] = SolverInfo({
+            name:         name,
+            bond:         msg.value,
+            active:       true,
+            registeredAt: block.timestamp,
+            unregisterAt: 0
+        });
+
+        emit SolverRegistered(msg.sender, name, msg.value);
+    }
+
+    /// @notice Initiate unregistration — starts 7-day bond cooldown.
+    function unregisterSolver() external {
+        SolverInfo storage s = solvers[msg.sender];
+        require(s.active,           "Not registered");
+        s.active       = false;
+        s.unregisterAt = block.timestamp;
+        emit SolverUnregistered(msg.sender);
+    }
+
+    /// @notice Withdraw bond after 7-day cooldown following unregisterSolver().
+    function withdrawBond() external {
+        SolverInfo storage s = solvers[msg.sender];
+        require(s.unregisterAt > 0,                         "Not unregistered");
+        require(block.timestamp >= s.unregisterAt + BOND_COOLDOWN, "Cooldown active");
+        require(s.bond > 0,                                 "No bond");
+
+        uint256 amount = s.bond;
+        s.bond = 0;
+
+        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Withdrawal failed");
+
+        emit BondWithdrawn(msg.sender, amount);
+    }
+
     // === User Functions ===
 
-    /// @notice Lock ETH and request it be bridged to `destinationChain`.
-    /// @param recipient        Destination address (32 bytes — Sui object ID, Solana pubkey, etc.)
-    /// @param destinationChain Wormhole chain ID of destination (21=Sui, 1=Solana, …)
-    /// @param startPrice       Initial auction price (in destination-chain smallest unit)
-    /// @param floorPrice       Minimum acceptable price (same unit as startPrice)
-    /// @param durationSeconds  How long the Dutch auction runs
-    /// @param withStake        If true, the solver should liquid-stake the delivered assets on behalf of recipient
     function createOrder(
         bytes32 recipient,
-        uint16 destinationChain,
+        uint16  destinationChain,
         uint256 startPrice,
         uint256 floorPrice,
         uint256 durationSeconds,
-        bool withStake
+        bool    withStake
     ) external payable returns (bytes32 orderId) {
-        require(msg.value > 0, "No ETH sent");
-        require(startPrice >= floorPrice, "Invalid price range");
-        require(durationSeconds > 0, "Invalid duration");
-        require(recipient != bytes32(0), "Invalid recipient: zero");
+        require(msg.value > 0,              "No ETH sent");
+        require(startPrice >= floorPrice,   "Invalid price range");
+        require(durationSeconds > 0,        "Invalid duration");
+        require(recipient != bytes32(0),    "Invalid recipient");
 
         orderId = keccak256(abi.encodePacked(msg.sender, orderCount, block.timestamp));
         orderCount++;
 
         orders[orderId] = Order({
-            creator: msg.sender,
-            recipient: recipient,
-            destinationChain: destinationChain,
-            amount: msg.value,
-            startPrice: startPrice,
-            floorPrice: floorPrice,
-            deadline: block.timestamp + durationSeconds,
-            createdAt: block.timestamp,
-            status: 0,
-            withStake: withStake
+            creator:             msg.sender,
+            recipient:           recipient,
+            destinationChain:    destinationChain,
+            amount:              msg.value,
+            startPrice:          startPrice,
+            floorPrice:          floorPrice,
+            deadline:            block.timestamp + durationSeconds,
+            createdAt:           block.timestamp,
+            status:              STATUS_OPEN,
+            withStake:           withStake,
+            exclusiveSolver:     address(0),
+            exclusivityDeadline: 0
         });
 
         emit OrderCreated(
@@ -154,44 +231,31 @@ contract IntentBridge {
 
     function cancelOrder(bytes32 orderId) external {
         Order storage order = orders[orderId];
-        require(order.status == 0, "Order not active");
-        require(order.creator == msg.sender, "Not creator");
+        require(order.status == STATUS_OPEN,      "Order not active");
+        require(order.creator == msg.sender,      "Not creator");
 
-        order.status = 2;
+        order.status = STATUS_CANCELLED;
 
-        (bool success,) = payable(msg.sender).call{value: order.amount}("");
-        require(success, "Refund failed");
+        (bool ok,) = payable(msg.sender).call{value: order.amount}("");
+        require(ok, "Refund failed");
 
         emit OrderCancelled(orderId);
     }
 
     function getAuctionPrice(bytes32 orderId) external view returns (uint256) {
         Order storage order = orders[orderId];
-
         if (block.timestamp >= order.deadline) return order.floorPrice;
 
-        uint256 elapsed = block.timestamp - order.createdAt;
-        uint256 totalDuration = order.deadline - order.createdAt;
-        uint256 priceRange = order.startPrice - order.floorPrice;
-        uint256 decay = (priceRange * elapsed) / totalDuration;
+        uint256 elapsed       = block.timestamp - order.createdAt;
+        uint256 totalDuration = order.deadline  - order.createdAt;
+        uint256 priceRange    = order.startPrice - order.floorPrice;
+        uint256 decay         = (priceRange * elapsed) / totalDuration;
 
         return order.startPrice - decay;
     }
 
     // === Solver Functions (Wormhole) ===
 
-    /// @notice Cross-chain direction: Solver sends ETH to `recipient` on this chain
-    ///         and publishes a Wormhole proof for the destination chain to claim.
-    ///
-    /// Used for Sui→EVM and Solana→EVM flows (destination chain calls claim_with_vaa).
-    ///
-    /// Payload (96 bytes, same format as Sui/Solana programs):
-    ///   [0..32]  intentId / orderId
-    ///   [32..64] solver address (padded to 32 bytes)
-    ///   [64..96] amount (in gwei: amountToSend / 1e9) as uint256 big-endian
-    ///
-    /// @param intentId  The intent/order ID on the source chain (bytes32)
-    /// @param recipient The EVM address that receives ETH
     function fulfillAndProve(
         bytes32 intentId,
         address recipient
@@ -214,55 +278,51 @@ contract IntentBridge {
         sequence = wormhole.publishMessage{value: fee}(0, payload, consistencyLevel);
     }
 
-    /// @notice EVM→{Sui,Solana,...} direction: Solver submits a Wormhole VAA proving
-    ///         they paid on the destination chain, releasing locked ETH to solver.
-    ///
-    /// The VAA emitter must be registered via registerEmitter() for the source chain.
-    ///
-    /// Payload decoding (96 bytes):
-    ///   [0..32]  orderId (bytes32)
-    ///   [32..64] solver address (padded)
-    ///   [64..96] amount paid on dest chain (uint256, last 8 bytes = u64 value)
-    ///
-    /// @param encodedVaa The signed Wormhole VAA bytes
+    /// @notice Submit Wormhole VAA proving solver paid on destination chain.
+    ///         Enforces exclusive window if assigned — after deadline anyone can fill.
     function settleOrder(bytes calldata encodedVaa) external {
         (IWormhole.VM memory vm, bool valid, string memory reason) =
             wormhole.parseAndVerifyVM(encodedVaa);
         require(valid, reason);
 
-        // Verify the VAA came from a registered emitter on a registered chain
         bytes32 expectedEmitter = registeredEmitters[vm.emitterChainId];
         require(expectedEmitter != bytes32(0), "Unknown source chain");
         require(vm.emitterAddress == expectedEmitter, "Wrong emitter");
 
-        // Replay protection: key by (emitterChainId, emitterAddress, sequence)
-        // (vm.hash is unreliable due to the Signature[] field omitted in our IWormhole.VM)
         bytes32 vaaKey = keccak256(
             abi.encodePacked(vm.emitterChainId, vm.emitterAddress, vm.sequence)
         );
         require(!processedVaas[vaaKey], "VAA already processed");
         processedVaas[vaaKey] = true;
 
-        require(vm.payload.length >= 96, "Invalid payload length");
+        require(vm.payload.length >= 96, "Invalid payload");
         bytes32 orderId;
         bytes32 solverPadded;
         uint256 amountPaid;
         bytes memory payload = vm.payload;
         assembly {
-            orderId     := mload(add(payload, 32))
+            orderId      := mload(add(payload, 32))
             solverPadded := mload(add(payload, 64))
-            amountPaid  := mload(add(payload, 96))
+            amountPaid   := mload(add(payload, 96))
         }
         address solver = address(uint160(uint256(solverPadded)));
 
         Order storage order = orders[orderId];
-        require(order.status == 0, "Order not active");
+        require(order.status == STATUS_OPEN,      "Order not active");
         require(block.timestamp <= order.deadline, "Order expired");
-        // amountPaid (in dest-chain smallest unit) >= floorPrice confirms solver met the minimum
-        require(amountPaid >= order.floorPrice, "Amount below floor price");
+        require(amountPaid >= order.floorPrice,   "Below floor price");
+
+        // Enforce exclusive window if assigned and still active.
+        // If exclusiveSolver == address(0) OR exclusivityDeadline has passed → open race.
+        if (
+            order.exclusiveSolver != address(0) &&
+            block.timestamp < order.exclusivityDeadline
+        ) {
+            require(solver == order.exclusiveSolver, "Exclusive window active");
+        }
 
         // CEI: mark fulfilled before external call
-        order.status = 1;
+        order.status = STATUS_FULFILLED;
 
         (bool ok,) = payable(solver).call{value: order.amount}("");
         require(ok, "ETH payout failed");
