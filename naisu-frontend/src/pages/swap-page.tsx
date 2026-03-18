@@ -6,7 +6,7 @@ import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 import { useEthBalance } from '@/features/swap/hooks/use-eth-balance';
 import { useSolBalance } from '@/features/swap/hooks/use-sol-balance';
 import { SwapForm } from '@/features/swap/components/swap-form';
-import SolverAuctionCard from '@/components/SolverAuctionCard';
+import LiveProgressCard from '@/components/LiveProgressCard';
 import { secondsAgo } from '@/lib/utils/format';
 
 export default function SwapPage() {
@@ -166,10 +166,10 @@ export default function SwapPage() {
           buildError={buildError?.message ?? null}
         />
 
-        {/* SolverAuctionCard — shown after submit */}
+        {/* LiveProgressCard — shown after submit */}
         {submitted && evmAddress && (
           <div className="animate-fade-in-up">
-            <SolverAuctionCard userAddress={evmAddress} submittedAt={submitted.submittedAt} />
+            <LiveProgressCard userAddress={evmAddress} txHash={submitted.txHash} submittedAt={submitted.submittedAt} />
             <div className="flex justify-between items-center mt-2 px-1">
               <a
                 href={`https://sepolia.basescan.org/tx/${submitted.txHash}`}

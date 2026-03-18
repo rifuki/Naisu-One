@@ -15,6 +15,19 @@
 
 import { logger } from '@lib/logger'
 import type { IntentOrder } from '@services/intent.service'
+import { EventEmitter } from 'events'
+
+// ============================================================================
+// Shared event bus for real-time progress streaming
+// ============================================================================
+
+export const solverEvents = new EventEmitter()
+
+export interface SolverProgressEvent {
+  type: 'rfq_broadcast' | 'rfq_winner' | 'order_fulfilled'
+  orderId: string
+  data: Record<string, unknown>
+}
 
 // ============================================================================
 // Types
@@ -263,6 +276,16 @@ export async function broadcastRFQ(order: IntentOrder): Promise<RFQResult | null
     '[RFQ] Broadcasting to solvers'
   )
 
+  // Emit real-time event for SSE streaming
+  solverEvents.emit('rfq_broadcast', {
+    type: 'rfq_broadcast',
+    orderId: order.orderId,
+    data: {
+      solverCount: eligible.length,
+      solverNames: eligible.map(s => s.name),
+    },
+  })
+
   const rfqPayload = {
     orderId:          order.orderId,
     amount:           order.amount,
@@ -362,6 +385,21 @@ export async function broadcastRFQ(order: IntentOrder): Promise<RFQResult | null
       { orderId: order.orderId, winner, score: winnerQuote.score, quotes: scoredQuotes.length },
       '[RFQ] Winner selected'
     )
+
+    // Emit real-time event for SSE streaming
+    solverEvents.emit('rfq_winner', {
+      type: 'rfq_winner',
+      orderId: order.orderId,
+      data: {
+        winner,
+        winnerId,
+        score: winnerQuote.score,
+        reasoning,
+        quotedPrice: winnerQuote.quotedPrice,
+        estimatedETA: winnerQuote.estimatedETA,
+        exclusivityDeadline: Date.now() + EXCLUSIVITY_WINDOW_MS,
+      },
+    })
   }
 
   const result: RFQResult = {
@@ -412,6 +450,17 @@ export function recordFill(solverEvmAddress: string, fillTimeMs?: number): void 
   }
 
   solver.tier = computeTier(solver)
+
+  // Emit real-time fulfilled event for SSE streaming
+  solverEvents.emit('order_fulfilled', {
+    type: 'order_fulfilled',
+    orderId: '-', // caller should provide orderId; set from context
+    data: {
+      solverName: solver.name,
+      solverAddress: solver.evmAddress,
+      fillTimeMs,
+    },
+  })
 
   logger.info(
     { name: solver.name, totalFills: solver.totalFills, reliability: solver.reliabilityScore },

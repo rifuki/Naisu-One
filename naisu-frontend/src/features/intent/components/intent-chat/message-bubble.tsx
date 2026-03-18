@@ -1,5 +1,5 @@
 import ReactMarkdown from 'react-markdown';
-import SolverAuctionCard from '@/components/SolverAuctionCard';
+import LiveProgressCard from '@/components/LiveProgressCard';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -92,8 +92,9 @@ export function MessageBubble({ message, renderContent, monitorTx }: MessageBubb
           {renderContent(message.content)}
           {monitorTx && (
             <div className="mt-4 border-t border-white/10 pt-3">
-              <SolverAuctionCard
+              <LiveProgressCard
                 userAddress={monitorTx.userAddress}
+                txHash={monitorTx.hash}
                 submittedAt={monitorTx.submittedAt}
               />
               <div className="flex mt-2 justify-end">

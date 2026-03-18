@@ -13,7 +13,8 @@ import { z } from 'zod'
 import * as intentService from '@services/intent.service'
 import type { SupportedChain } from '@services/intent.service'
 import { getOrdersByCreator, getIndexerStatus, indexerEvents } from '@services/indexer'
-import { getActiveSolverCount } from '@services/solver.service'
+import { getActiveSolverCount, solverEvents } from '@services/solver.service'
+import type { SolverProgressEvent } from '@services/solver.service'
 import type { OrderUpdateEvent } from '@services/indexer'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
@@ -100,6 +101,14 @@ intentRouter.get('/watch', async (c) => {
       indexerEvents.on('order_update', onUpdate)
       indexerEvents.on('order_created', onCreated)
 
+      // Subscribe to solver pipeline events — forward all (not user-scoped, orderId on client)
+      const onSolverEvent = (evt: SolverProgressEvent) => {
+        send(evt.type, { orderId: evt.orderId, ...evt.data })
+      }
+      solverEvents.on('rfq_broadcast', onSolverEvent)
+      solverEvents.on('rfq_winner', onSolverEvent)
+      solverEvents.on('order_fulfilled', onSolverEvent)
+
       // Heartbeat every 30s to keep connection alive through proxies
       const heartbeat = setInterval(() => send('ping', { t: Date.now() }), 30_000)
 
@@ -116,6 +125,9 @@ intentRouter.get('/watch', async (c) => {
         clearTimeout(autoClose)
         indexerEvents.off('order_update', onUpdate)
         indexerEvents.off('order_created', onCreated)
+        solverEvents.off('rfq_broadcast', onSolverEvent)
+        solverEvents.off('rfq_winner', onSolverEvent)
+        solverEvents.off('order_fulfilled', onSolverEvent)
       }
 
       // Store cleanup on the controller cancel
