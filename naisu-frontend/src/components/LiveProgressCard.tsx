@@ -202,13 +202,25 @@ export default function LiveProgressCard({ userAddress, txHash, submittedAt, ord
       try {
         const data = JSON.parse(e.data) as { solverName?: string }
         const by = data.solverName ? ` by ${data.solverName}` : ''
-        // Complete any pending steps
-        setSteps(prev => prev.map(s => {
-          if (s.status === 'active' || s.status === 'pending') {
-            return { ...s, status: 'done' }
-          }
-          return s
-        }))
+        
+        setSteps(prev => {
+          const rfqDone = prev.find(s => s.id === 'rfq')?.status === 'done'
+          const winnerDone = prev.find(s => s.id === 'winner')?.status === 'done'
+          
+          return prev.map(s => {
+            if (s.id === 'rfq' && !rfqDone) {
+              return { ...s, status: 'done', icon: 'speed', label: 'Bypassed local RFQ', detail: 'Direct on-chain execution' }
+            }
+            if (s.id === 'winner' && !winnerDone) {
+              return { ...s, status: 'done', icon: 'flash_on', label: 'Open Dutch Auction', detail: 'Order claimed directly' }
+            }
+            if (s.status === 'active' || s.status === 'pending') {
+              return { ...s, status: 'done' }
+            }
+            return s
+          })
+        })
+        
         updateStep('fulfilled', { status: 'done', label: `Order fulfilled${by}! 🎉` })
         setIsDone(true)
       } catch { /* suppress */ }
@@ -218,10 +230,23 @@ export default function LiveProgressCard({ userAddress, txHash, submittedAt, ord
       try {
         const data = JSON.parse(e.data) as { status: string; orderId: string }
         if (data.status === 'FULFILLED') {
-          setSteps(prev => prev.map(s => ({
-            ...s,
-            status: (s.status === 'pending' || s.status === 'active') ? 'done' : s.status
-          })))
+          setSteps(prev => {
+            const rfqDone = prev.find(s => s.id === 'rfq')?.status === 'done'
+            const winnerDone = prev.find(s => s.id === 'winner')?.status === 'done'
+            
+            return prev.map(s => {
+              if (s.id === 'rfq' && !rfqDone) {
+                return { ...s, status: 'done', icon: 'speed', label: 'Bypassed local RFQ', detail: 'Direct on-chain execution' }
+              }
+              if (s.id === 'winner' && !winnerDone) {
+                return { ...s, status: 'done', icon: 'flash_on', label: 'Open Dutch Auction', detail: 'External solver claimed order directly' }
+              }
+              if (s.status === 'pending' || s.status === 'active') {
+                return { ...s, status: 'done' }
+              }
+              return s;
+            })
+          })
           updateStep('fulfilled', { status: 'done', label: 'Order fulfilled! 🎉' })
           setIsDone(true)
         } else if (data.status === 'EXPIRED') {
