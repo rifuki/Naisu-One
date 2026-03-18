@@ -22,6 +22,7 @@ interface TransactionReviewCardProps {
   txStatus: string | null;
   onConfirm: () => void;
   onDismiss: () => void;
+  isFailed?: boolean;
 }
 
 export function TransactionReviewCard({
@@ -29,14 +30,15 @@ export function TransactionReviewCard({
   txStatus,
   onConfirm,
   onDismiss,
+  isFailed,
 }: TransactionReviewCardProps) {
   const d = pendingTx.decoded;
 
   return (
     <div className="w-full px-4 sm:px-8 relative z-30">
       <div className="max-w-3xl mx-auto">
-        <div className="relative rounded-2xl overflow-hidden border border-primary/30 bg-[#070e0c] shadow-[0_0_40px_-8px_rgba(13,242,223,0.2)]">
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
+        <div className={`relative rounded-2xl overflow-hidden transition-colors border ${isFailed ? 'border-red-500/50 bg-[#140505] shadow-[0_0_40px_-8px_rgba(239,68,68,0.2)]' : 'border-primary/30 bg-[#070e0c] shadow-[0_0_40px_-8px_rgba(13,242,223,0.2)]'}`}>
+          <div className={`h-px w-full bg-gradient-to-r from-transparent to-transparent ${isFailed ? 'via-red-500/70' : 'via-primary/70'}`} />
 
           <div className="flex flex-col">
             {/* Header */}
@@ -144,8 +146,9 @@ export function TransactionReviewCard({
               <div className="flex flex-col justify-center gap-2 px-4 py-4 shrink-0 w-[148px]">
                 {txStatus ? (
                   <div className="flex flex-col items-center gap-2 py-2">
-                    <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    <span className="text-[11px] text-primary/80 text-center leading-tight">{txStatus}</span>
+                    {!isFailed && <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
+                    {isFailed && <span className="material-symbols-outlined text-red-500 text-lg">error</span>}
+                    <span className={`text-[11px] text-center leading-tight ${isFailed ? 'text-red-400 font-medium' : 'text-primary/80'}`}>{txStatus}</span>
                   </div>
                 ) : (
                   <>

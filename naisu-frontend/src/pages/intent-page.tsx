@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useAccount, useSendTransaction } from 'wagmi';
+import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
 import { useAgent } from '@/hooks/useAgent';
 import { useChatSessions } from '@/hooks/useChatSessions';
@@ -19,11 +19,13 @@ export default function IntentPage() {
   const initialSentRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isTxSent, setIsTxSent] = useState(false);
+  const [isTxFailed, setIsTxFailed] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>>([]);
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
+  const publicClient = usePublicClient();
   const solanaAddress = useSolanaAddress();
 
   // ── Session Management ────────────────────────────────────
@@ -78,7 +80,7 @@ export default function IntentPage() {
     async (tx: PendingTx) => {
       if (!address || !sendTransactionAsync) return;
 
-      setTxStatus('Signing...');
+      setTxStatus('Confirm in wallet...');
 
       try {
         const hash = await sendTransactionAsync({
@@ -88,21 +90,40 @@ export default function IntentPage() {
           chainId: tx.chainId,
         });
 
-        setTxStatus(null);
-
         if (hash) {
-          setSubmittedTxs((prev) => [
-            ...prev,
-            { hash, chainId: tx.chainId, msgIdx: currentMsgIdxRef.current, submittedAt: Date.now() },
-          ]);
-          setIsTxSent(true);
-          setTimeout(() => {
-            setPendingTx(undefined);
-            setIsTxSent(false);
-            window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
-          }, 600);
+          setTxStatus('Confirming block...');
+          let receipt;
+          try {
+            if (publicClient) {
+              receipt = await publicClient.waitForTransactionReceipt({ hash });
+            }
+          } catch (e) {
+            console.error('Error waiting for receipt:', e);
+          }
+
+          if (receipt?.status === 'reverted') {
+            setTxStatus('Transaction failed on-chain');
+            setIsTxFailed(true);
+            setTimeout(() => {
+              setIsTxFailed(false);
+              setTxStatus(null);
+            }, 3000);
+          } else {
+            setTxStatus('Transaction successful!');
+            setSubmittedTxs((prev) => [
+              ...prev,
+              { hash, chainId: tx.chainId, msgIdx: currentMsgIdxRef.current, submittedAt: Date.now() },
+            ]);
+            setIsTxSent(true);
+            setTimeout(() => {
+              setPendingTx(undefined);
+              setIsTxSent(false);
+              window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
+            }, 600);
+          }
         } else {
           setPendingTx(undefined);
+          setTxStatus(null);
         }
       } catch (err) {
         setTxStatus(null);
@@ -154,12 +175,17 @@ export default function IntentPage() {
         />
 
         {pendingTx && !isLoading && (
-          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isTxSent ? 'animate-throw-to-widget pointer-events-none' : ''}`}>
+          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isTxSent ? 'animate-throw-to-widget pointer-events-none' : ''} ${isTxFailed ? 'animate-shake' : ''}`}>
             <TransactionReviewCard
               pendingTx={pendingTx}
               txStatus={txStatus}
+              isFailed={isTxFailed}
               onConfirm={() => handleSendTx(pendingTx)}
-              onDismiss={() => setPendingTx(undefined)}
+              onDismiss={() => {
+                setPendingTx(undefined);
+                setTxStatus(null);
+                setIsTxFailed(false);
+              }}
             />
           </div>
         )}
