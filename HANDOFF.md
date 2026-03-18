@@ -1,6 +1,6 @@
 # Naisu One — Handoff Document
 
-_Last updated: 2026-03-18 (Session 2)_
+_Last updated: 2026-03-18 (Session 3)_
 
 ---
 
@@ -198,45 +198,74 @@ Implementation plan decentralized solver network Naisu:
 
 ---
 
-## Next Priorities (Belum Dikerjakan)
+## Session 3 Summary (2026-03-18)
 
-### Priority 1 — Decentralized Solver Network (Phase 1)
-Untuk demo dengan 3 solver. Detail lengkap di `SOLVER_NETWORK_PLAN.md`.
+Latest commit: `12fc471`
 
-**Backend changes:**
-- `POST /api/v1/solver/register` — solver daftar saat startup + heartbeat
-- `GET  /api/v1/solver/list` — list solver aktif + stats
-- `GET  /api/v1/solver/selection/:orderId` — hasil seleksi + reasoning
-- RFQ engine: broadcast ke semua solver aktif, collect quotes (timeout 3s)
-- Scoring engine: price 50% + reliability 25% + speed 15% + liquidity 10%
-- Fade detection + auto-suspend (3 fades → suspend 24 jam)
+### 7. Decentralized Solver Network — Phase 1 Complete
 
-**Contract changes (`IntentBridge.sol`):**
-```solidity
-// Tambah ke Order struct:
-address exclusiveSolver;
-uint256 exclusivityDeadline;
+#### 7A. Backend — Solver Registry + RFQ Engine
 
-// Tambah solver registry:
-mapping(address => SolverInfo) public solvers;
-function registerSolver() external payable { ... }  // MIN_BOND = 0.05 ETH
+**New files:**
+- `naisu-backend/src/services/solver.service.ts` — in-memory registry, register/heartbeat/list, RFQ broadcast (3s timeout), scoring formula (price 50% + reliability 25% + speed 15% + liquidity 10%), fade detection + auto-suspend 24h
+- `naisu-backend/src/routes/solver.ts` — `POST /register`, `POST /heartbeat` (Bearer auth), `GET /list`, `GET /selection/:orderId`
 
-// Update settleOrder():
-if (block.timestamp < order.exclusivityDeadline) {
-    require(msg.sender == order.exclusiveSolver, "Exclusive window active");
-}
-// Setelah deadline → open race (fallback tanpa backend)
+**Modified:**
+- `cron/index.ts` — wired `order_created` → `broadcastRFQ`, `order_update FULFILLED` → `recordFill + clearPendingExclusive`, 30s heartbeat checker, 60s fade detector
+- `routes/index.ts` — mount `/api/v1/solver`
+
+#### 7B. naisu-solver (Rust) — Coordinator
+
+**New file:** `src/coordinator.rs`
+- Auto-register to backend on startup (`POST /api/v1/solver/register`)
+- Heartbeat loop every 30s with live SOL + ETH balances
+- axum HTTP server on `SOLVER_RFQ_PORT` (default 3001) — backend calls `POST /rfq`, solver responds with quote
+
+**New config vars** (`config.rs`):
+```
+SOLVER_NAME               # unique name (alpha / beta / gamma)
+SOLVER_BACKEND_URL        # naisu-backend base URL
+SOLVER_RFQ_PORT           # port for RFQ server (unique per instance, default 3001)
+SOLVER_QUOTE_DISCOUNT_BPS # discount off startPrice (100 = 1%, default 200)
+SOLVER_ETA_SECONDS        # claimed fill time in seconds (default 11)
+SOLVER_TUI                # set false for plain logs when running 3 instances
 ```
 
-**Solver Rust changes:**
-- Tambah config: `SOLVER_NAME`, `SOLVER_BACKEND_URL`
-- Auto-register ke backend saat startup
-- Heartbeat loop setiap 30 detik
-- RFQ handler: terima RFQ → respond dengan quote (SOL balance + estimasi ETA + price)
+**Quote formula:** `quotedPrice = startPrice - (range × SOLVER_QUOTE_DISCOUNT_BPS / 10000)`
 
-**Frontend changes:**
-- AI Agent tampilkan solver comparison table real-time
-- `/solver` page untuk register + bond deposit
+#### 7C. IntentBridge.sol — Solver Registry + Exclusive Window
+
+- `SolverInfo` struct + `solvers` mapping
+- `registerSolver(name)` — `MIN_SOLVER_BOND = 0.05 ETH`
+- `unregisterSolver()` + `withdrawBond()` — 7-day cooldown
+- `Order.exclusiveSolver` + `Order.exclusivityDeadline` fields
+- `setExclusiveSolver(orderId, solver)` — `onlyOwner`, called by backend after RFQ
+- `settleOrder()` — enforces exclusive window; falls back to open race after deadline
+- Events: `SolverRegistered`, `SolverUnregistered`, `BondWithdrawn`, `ExclusiveAssigned`
+- `foundry.toml` — `via_ir = true` + optimizer (stack-too-deep fix for 12-field struct)
+
+**Redeployed to Base Sepolia:**
+| | Address |
+|---|---|
+| New | `0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1` |
+| Old | `0xFCDE966395c39ED59656BC0fd3a310747Eb68740` |
+
+All `.env` files + `env.ts` default updated to new address.
+
+#### 7D. Frontend — SolverAuctionCard
+
+**New file:** `naisu-frontend/components/SolverAuctionCard.tsx`
+- Injected into agent chat after tx submitted
+- Phase 1: polls orders to detect new orderId (~2-4s)
+- Phase 2: polls `/api/v1/solver/selection/:orderId` for RFQ result
+- Phase 3: renders comparison table with winner (★), scores, ETA, 30s exclusivity countdown
+
+---
+
+## Next Priorities
+
+### Priority 1 — Manual Swap UI
+
 
 ---
 
@@ -367,7 +396,7 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
 | Chain | Contract | Address |
 |-------|----------|---------|
-| Base Sepolia | IntentBridge | `0xFCDE966395c39ED59656BC0fd3a310747Eb68740` |
+| Base Sepolia | IntentBridge | `0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1` |
 | Solana Devnet | IntentBridge | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` |
 | Sui Testnet | IntentBridge | `0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb` |
 
