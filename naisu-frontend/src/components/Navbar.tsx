@@ -4,7 +4,7 @@ import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import { useSolanaAddress, setSkipSolanaAutoConnect } from '../hooks/useSolanaAddress';
+import { useSolanaAddress, setSkipSolanaAutoConnect } from '@/hooks/useSolanaAddress';
 
 // ── SVGs ─────────────────────────────────────────────────────────────────────
 

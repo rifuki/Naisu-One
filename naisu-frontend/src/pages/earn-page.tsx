@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useSolanaAddress } from '../../../hooks/useSolanaAddress';
-import { StakeTab } from './components/stake-tab';
-import { PositionsTab } from './components/positions-tab';
+import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { StakeTab } from '@/features/earn/components/stake-tab';
+import { PositionsTab } from '@/features/earn/components/positions-tab';
 
 type Tab = 'stake' | 'positions';
 

@@ -10,14 +10,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { encodeFunctionData } from 'viem';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { INTENT_BRIDGE_ABI } from '../lib/abi';
-import { useIntentOrders, type IntentRow } from '../hooks/useIntentOrders';
+import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi';
+import { useIntentOrders, type IntentRow } from '@/hooks/useIntentOrders';
 import {
   BASE_SEPOLIA_CONTRACT,
   BASE_SEPOLIA_CHAIN_ID,
   WORMHOLE_CHAIN_SOLANA,
   EXPLORERS,
-} from '../lib/constants';
+} from '@/lib/constants';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

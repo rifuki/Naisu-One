@@ -17,10 +17,10 @@ import {
   BASE_SEPOLIA_RPC,
   SOLANA_PROGRAM_ID,
   WORMHOLE_CHAIN_SOLANA,
-} from '../lib/constants'
-import { INTENT_BRIDGE_ABI } from '../lib/abi'
+} from '@/lib/constants'
+import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi'
 import { BorshAccountsCoder } from '@coral-xyz/anchor'
-import IntentBridgeIDL from '../lib/idl/intent_bridge_solana.json'
+import IntentBridgeIDL from '@/lib/idl/intent_bridge_solana.json'
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000'
 const BACKEND_TIMEOUT_MS = 5_000

@@ -3,7 +3,7 @@ import { useAccount, useConnect, useBalance } from 'wagmi';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { fmtUsd } from '@/lib/utils/format';
-import { useSolanaAddress } from '../../../../hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
 import type { YieldRate } from '../../api/get-yield-rates';

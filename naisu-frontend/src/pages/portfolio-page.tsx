@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { fmtUsd, rawToUi } from '@/lib/utils/format';
-import { useSolanaAddress } from '../../hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { usePortfolioBalances } from '@/features/earn/hooks/use-portfolio-balances';
 import { useUnstakeMsol } from '@/features/earn/hooks/use-unstake-msol';
 
