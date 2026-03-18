@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { parseEther } from 'viem';
-import { useAgent, type AgentMessage as ChatMessage, type TxData } from '@/hooks/useAgent';
+import { useAgent } from '@/hooks/useAgent';
+import { useChatSessions } from '@/hooks/useChatSessions';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
+import type { TxData } from '@/hooks/useAgent';
 
 export default function IntentPage() {
   const [inputValue, setInputValue] = useState('');
@@ -23,12 +25,25 @@ export default function IntentPage() {
   const { sendTransactionAsync } = useSendTransaction();
   const solanaAddress = useSolanaAddress();
 
-  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx, reset } = useAgent(
-    address || 'anonymous',
-    solanaAddress || ''
-  );
+  // ── Session Management ────────────────────────────────────
+  const { sessions, activeSessionId, activeSession, createSession, switchSession, updateActiveSession } =
+    useChatSessions(address ?? 'guest');
 
   const currentMsgIdxRef = useRef(0);
+
+  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx } = useAgent(
+    address || 'anonymous',
+    solanaAddress || '',
+    {
+      messages: activeSession?.messages ?? [],
+      backendSessionId: activeSession?.backendSessionId,
+      onMessagesChange: (msgs, backendSessionId) => {
+        // Auto-generate title from first user message
+        const title = msgs.find(m => m.role === 'user')?.content.slice(0, 40) ?? 'New Chat';
+        updateActiveSession({ messages: msgs, backendSessionId, title });
+      },
+    }
+  );
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim();
@@ -49,7 +64,6 @@ export default function IntentPage() {
     if (initialIntentRef.current && !initialSentRef.current) {
       initialSentRef.current = true;
       handleSend(initialIntentRef.current);
-      // Clear state so reload doesn't re-send
       navigate('/intent', { replace: true, state: {} });
     }
   }, [handleSend, navigate]);
@@ -84,13 +98,14 @@ export default function IntentPage() {
     [address, sendTransactionAsync]
   );
 
+  /** New Chat: create a new session, stay on /intent */
   const handleNewChat = useCallback(() => {
-    reset();
     setInputValue('');
     setSubmittedTxs([]);
     setPendingTx(undefined);
     currentMsgIdxRef.current = 0;
-  }, [reset, setPendingTx]);
+    createSession();
+  }, [createSession, setPendingTx]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
@@ -99,13 +114,16 @@ export default function IntentPage() {
     }
   }, [messages, sendMessage]);
 
-
-
-  // Active chat state
   return (
     <div className="flex-1 flex flex-row bg-[#070a09] overflow-hidden relative">
-      <ChatSidebar onNewChat={handleNewChat} onOpenSettings={() => setShowSettings(true)} />
-      
+      <ChatSidebar
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onNewChat={handleNewChat}
+        onSwitchSession={switchSession}
+        onOpenSettings={() => setShowSettings(true)}
+      />
+
       <div className="flex-1 flex flex-col relative overflow-hidden">
         <IntentChat
           messages={messages}

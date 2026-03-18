@@ -11,7 +11,6 @@ export { useIntentOrders } from './hooks/use-intent-orders'
 export { useDeleteIntentOrder } from './hooks/use-delete-intent-order'
 
 // Re-export all components
-export { IntentZeroState } from './components/intent-zero-state'
 export { IntentChat, type ChatMessage } from './components/intent-chat'
 export { TransactionReviewCard, type PendingTx, type DecodedTx } from './components/transaction-review-card'
 export { SettingsModal } from './components/settings-modal'

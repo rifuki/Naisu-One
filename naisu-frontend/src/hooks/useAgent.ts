@@ -145,29 +145,48 @@ function extractTxData(content: string): TxData | undefined {
   return undefined;
 }
 
-const SESSION_KEY = (addr: string) => `naisu_chat_${addr}`;
+export interface UseAgentOptions {
+  /** Messages from the active session — controlled externally */
+  messages: AgentMessage[];
+  /** Backend session ID from the active session */
+  backendSessionId?: string;
+  /** Called whenever messages change so the parent can persist to session storage */
+  onMessagesChange: (messages: AgentMessage[], backendSessionId?: string) => void;
+}
 
-export function useAgent(walletAddress?: string, solanaAddress?: string) {
-  const storageKey = SESSION_KEY(walletAddress ?? 'guest');
-
-  // Load persisted state from localStorage on first render
-  const loadStorage = () => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) return JSON.parse(saved);
-    } catch { /* ignore */ }
-    return null;
-  };
-  const [messages, setMessages] = useState<AgentMessage[]>(() => loadStorage()?.messages ?? []);
+export function useAgent(
+  walletAddress?: string,
+  solanaAddress?: string,
+  opts?: UseAgentOptions
+) {
+  const [internalMessages, setInternalMessages] = useState<AgentMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingTx, setPendingTx] = useState<TxData | undefined>();
-  const sessionIdRef = useRef<string | undefined>(loadStorage()?.sessionId);
+  const sessionIdRef = useRef<string | undefined>(opts?.backendSessionId);
+
+  // Keep sessionIdRef in sync when caller switches sessions
+  if (opts?.backendSessionId !== undefined && opts.backendSessionId !== sessionIdRef.current) {
+    sessionIdRef.current = opts.backendSessionId;
+  }
+
+  // The messages to display come from opts if provided, otherwise internal state
+  const messages = opts ? opts.messages : internalMessages;
+
+  const setMessages = (updater: (prev: AgentMessage[]) => AgentMessage[]) => {
+    if (opts) {
+      const next = updater(opts.messages);
+      opts.onMessagesChange(next, sessionIdRef.current);
+    } else {
+      setInternalMessages(updater);
+    }
+  };
 
   /** Inject an assistant message directly without an agent round-trip. */
   const addMessage = useCallback((content: string, role: 'assistant' | 'user' = 'assistant') => {
     setMessages(prev => [...prev, { role, content }]);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts?.messages]);
 
   const sendMessage = useCallback(async (userMessage: string) => {
     if (!userMessage.trim() || isLoading) return;
@@ -177,14 +196,9 @@ export function useAgent(walletAddress?: string, solanaAddress?: string) {
     setIsLoading(true);
 
     const newUserMsg: AgentMessage = { role: 'user', content: userMessage };
-    setMessages(prev => {
-      const next = [...prev, newUserMsg];
-      try { localStorage.setItem(storageKey, JSON.stringify({ messages: next, sessionId: sessionIdRef.current })); } catch { /* ignore */ }
-      return next;
-    });
+    setMessages(prev => [...prev, newUserMsg]);
 
-    // Auto-inject wallet addresses for bridge/intent messages
-    // NOTE: Selalu inject untuk SEMUA message, bukan cuma bridge/swap
+    // Auto-inject wallet addresses
     let messageToSend = userMessage.trim();
     const extras: string[] = [];
     if (walletAddress && !messageToSend.toLowerCase().includes(walletAddress.toLowerCase())) {
@@ -213,37 +227,34 @@ export function useAgent(walletAddress?: string, solanaAddress?: string) {
         sessionIdRef.current = data.sessionId;
         const tx = extractTxData(data.message);
         if (tx) setPendingTx(tx);
-        setMessages(prev => {
-          const next = [...prev, { role: 'assistant' as const, content: data.message }];
-          try { localStorage.setItem(storageKey, JSON.stringify({ messages: next, sessionId: data.sessionId })); } catch { /* ignore */ }
-          return next;
-        });
+        setMessages(prev => [...prev, { role: 'assistant' as const, content: data.message }]);
       } else {
         throw new Error(data.error ?? 'Unknown error');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setError(msg);
-      setMessages(prev => {
-        const next = [...prev, {
-          role: 'assistant' as const,
-          content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
-        }];
-        try { localStorage.setItem(storageKey, JSON.stringify({ messages: next, sessionId: sessionIdRef.current })); } catch { /* ignore */ }
-        return next;
-      });
+      setMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
+      }]);
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, walletAddress, solanaAddress]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, walletAddress, solanaAddress, opts?.messages]);
 
   const reset = useCallback(() => {
-    setMessages([]);
+    if (opts) {
+      opts.onMessagesChange([], undefined);
+    } else {
+      setInternalMessages([]);
+    }
     setError(null);
     setPendingTx(undefined);
     sessionIdRef.current = undefined;
-    try { localStorage.removeItem(storageKey); } catch { /* ignore */ }
-  }, [storageKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts?.onMessagesChange]);
 
   return {
     messages,
@@ -256,3 +267,4 @@ export function useAgent(walletAddress?: string, solanaAddress?: string) {
     reset,
   };
 }
+
