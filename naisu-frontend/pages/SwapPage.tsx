@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { useWallet } from '@solana/wallet-adapter-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useAccount, useConnect, useDisconnect, useBalance } from 'wagmi';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { PublicKey } from '@solana/web3.js';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useIntentQuote } from '@/hooks/useIntentQuote';
 import { useCreateOrder } from '@/hooks/useCreateOrder';
@@ -36,6 +37,32 @@ const SwapPage: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [withStake, setWithStake] = useState(false);
   const [submitted, setSubmitted] = useState<{ txHash: string; submittedAt: number } | null>(null);
+
+  // ETH balance (wagmi, auto-refreshes on block)
+  const { data: ethBalanceData } = useBalance({ address: evmAddress, chainId: 84532 });
+  const ethBalanceFmt = ethBalanceData
+    ? (Number(ethBalanceData.value) / 10 ** ethBalanceData.decimals).toFixed(4)
+    : null;
+  const ethBalanceRaw = ethBalanceData
+    ? (Number(ethBalanceData.value) / 10 ** ethBalanceData.decimals).toString()
+    : '';
+
+  // SOL balance (manual fetch + 15s poll)
+  const { connection } = useConnection();
+  const [solBalance, setSolBalance] = useState<string | null>(null);
+  const fetchSolBalance = useCallback(async () => {
+    if (!solanaAddress) { setSolBalance(null); return; }
+    try {
+      const lamports = await connection.getBalance(new PublicKey(solanaAddress));
+      setSolBalance((lamports / 1e9).toFixed(4));
+    } catch { /* ignore */ }
+  }, [connection, solanaAddress]);
+
+  useEffect(() => {
+    fetchSolBalance();
+    const id = setInterval(fetchSolBalance, 15_000);
+    return () => clearInterval(id);
+  }, [fetchSolBalance]);
 
   // Tick every second for quote age countdown
   const [, setTick] = useState(0);
@@ -129,6 +156,18 @@ const SwapPage: React.FC = () => {
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-medium text-slate-400">You send</label>
               <div className="flex items-center gap-2 text-xs text-slate-500">
+                {ethBalanceFmt !== null && (
+                  <span className="flex items-center gap-1">
+                    Balance: {ethBalanceFmt} ETH
+                    <button
+                      type="button"
+                      onClick={() => setAmount(ethBalanceRaw)}
+                      className="text-primary hover:text-primary/80 font-bold uppercase ml-1 transition-colors"
+                    >
+                      Max
+                    </button>
+                  </span>
+                )}
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-blue-400/80 inline-block" />
                   Base Sepolia
@@ -173,6 +212,9 @@ const SwapPage: React.FC = () => {
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-medium text-slate-400">You receive</label>
               <div className="flex items-center gap-2 text-xs text-slate-500">
+                {solBalance !== null && (
+                  <span>Balance: {solBalance} {withStake ? 'mSOL*' : 'SOL'}</span>
+                )}
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-purple-400/80 inline-block" />
                   Solana Devnet
