@@ -1,10 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
-import { useAgent } from '@/hooks/useAgent';
-import { useChatSessions } from '@/hooks/useChatSessions';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useGlobalAgent } from '@/components/providers/agent-provider';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
@@ -26,27 +24,14 @@ export default function IntentPage() {
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const publicClient = usePublicClient();
-  const solanaAddress = useSolanaAddress();
 
-  // ── Session Management ────────────────────────────────────
-  const { sessions, activeSessionId, activeSession, createSession, switchSession, updateActiveSession, deleteSession } =
-    useChatSessions(address ?? 'guest');
+  // ── Global Agent State ────────────────────────────────────
+  const { 
+    sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
+    messages, isLoading, error, sendMessage, pendingTx, setPendingTx 
+  } = useGlobalAgent();
 
   const currentMsgIdxRef = useRef(0);
-
-  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx } = useAgent(
-    address || 'anonymous',
-    solanaAddress || '',
-    {
-      messages: activeSession?.messages ?? [],
-      backendSessionId: activeSession?.backendSessionId,
-      onMessagesChange: (msgs, backendSessionId) => {
-        // Auto-generate title from first user message
-        const title = msgs.find(m => m.role === 'user')?.content.slice(0, 40) ?? 'New Chat';
-        updateActiveSession({ messages: msgs, backendSessionId, title });
-      },
-    }
-  );
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim();

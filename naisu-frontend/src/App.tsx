@@ -9,6 +9,7 @@ import EarnPage from '@/pages/earn-page';
 import PortfolioPage from '@/pages/portfolio-page';
 import IntentPage from '@/pages/intent-page';
 import { QueryProvider } from '@/components/providers/query-provider';
+import { AgentProvider } from '@/components/providers/agent-provider';
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -61,7 +62,9 @@ export default function App() {
   return (
     <QueryProvider>
       <HashRouter>
-        <AppContent />
+        <AgentProvider>
+          <AppContent />
+        </AgentProvider>
       </HashRouter>
     </QueryProvider>
   );
