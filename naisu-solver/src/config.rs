@@ -23,11 +23,11 @@ pub struct Config {
     pub evm_wormhole_address: String,
     pub evm_emitter_address: String,
 
-    // EVM chain 2 (Base Sepolia)
-    pub evm2_rpc_url: String,
+    // EVM (Base Sepolia)
+    pub base_rpc_url: String,
     pub evm_ws_url: Option<String>,  // BASE_SEPOLIA_WS_URL — optional, for WS mode (e.g. Alchemy wss://)
-    pub evm2_contract_address: String,
-    pub evm2_chain_id: u64,
+    pub base_contract_address: String,
+    pub base_chain_id: u64,
 
     // Solana
     pub solana_rpc_url: String,
@@ -80,11 +80,11 @@ impl Config {
             evm_emitter_address: require_env("EVM_EMITTER_ADDRESS")?,
             evm_wormhole_address: require_env("EVM_WORMHOLE_ADDRESS")?,
 
-            evm2_rpc_url: env::var("EVM2_RPC_URL")
+            base_rpc_url: env::var("BASE_SEPOLIA_RPC_URL")
                 .unwrap_or_else(|_| "https://sepolia.base.org".to_string()),
             evm_ws_url: env::var("BASE_SEPOLIA_WS_URL").ok(),
-            evm2_contract_address: require_env("EVM2_CONTRACT_ADDRESS")?,
-            evm2_chain_id: env::var("EVM2_CHAIN_ID")
+            base_contract_address: require_env("BASE_SEPOLIA_CONTRACT_ADDRESS")?,
+            base_chain_id: env::var("BASE_SEPOLIA_CHAIN_ID")
                 .unwrap_or_else(|_| "84532".to_string())
                 .parse()
                 .unwrap_or(84532),

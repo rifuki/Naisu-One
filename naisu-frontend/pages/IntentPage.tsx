@@ -19,8 +19,8 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
     const [elapsed, setElapsed] = useState(0);
     // Store fulfilled order details for informative display
     const [fulfilledOrder, setFulfilledOrder] = useState<{ startPrice: string; destinationChain: number; withStake: boolean } | null>(null);
-    const explorerBase = chainId === 84532 ? 'https://sepolia.basescan.org/tx/' : 'https://testnet.snowtrace.io/tx/';
-    const chain = chainId === 84532 ? 'Base Sepolia' : 'Fuji';
+    const explorerBase = 'https://sepolia.basescan.org/tx/';
+    const chain = 'Base Sepolia';
 
     useEffect(() => {
         const startTime = Date.now();
@@ -37,7 +37,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                 return;
             }
             try {
-                const chainParam = chainId === 84532 ? 'evm-base' : 'evm-fuji';
+                const chainParam = 'evm-base';
                 const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${userAddress}&chain=${chainParam}`);
                 if (!res.ok) return;
                 const data = await res.json();
@@ -171,7 +171,7 @@ const IntentPage: React.FC = () => {
         const { status, orderId, amount, chain, explorerUrl, startPrice, destinationChain } = event as OrderUpdateEvent & { startPrice?: string; destinationChain?: number; withStake?: boolean };
         const withStakeFromEvent = (event as OrderUpdateEvent & { withStake?: boolean }).withStake ?? false;
         const shortId = orderId.slice(0, 8);
-        const chainLabel = chain === 'evm-base' ? 'Base Sepolia' : chain === 'evm-fuji' ? 'Fuji' : chain;
+        const chainLabel = chain === 'evm-base' ? 'Base Sepolia' : chain;
 
         let message = '';
         if (status === 'FULFILLED') {
@@ -228,9 +228,7 @@ const IntentPage: React.FC = () => {
             window.dispatchEvent(new Event('refresh_intents'));
 
             // Add compact submitted message (no agent round-trip needed)
-            const explorerBase = tx.chainId === 84532
-                ? 'https://sepolia.basescan.org/tx/'
-                : 'https://testnet.snowtrace.io/tx/';
+            const explorerBase = 'https://sepolia.basescan.org/tx/';
 
             // Inject system message directly into messages via sendMessage with tx info
             // We pass a special marker so the message bubble can render the monitor widget
@@ -362,7 +360,7 @@ const IntentPage: React.FC = () => {
                     <div className="flex flex-wrap justify-center gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}>
                         {[
                             'Bridge 0.1 ETH from Base Sepolia to Solana',
-                            'Bridge 0.05 ETH from Fuji to Solana',
+                            'Bridge 0.001 ETH from Base Sepolia to Solana',
                             'How much SOL will I get for 0.1 ETH?',
                         ].map((text) => (
                             <button 
@@ -502,7 +500,7 @@ const IntentPage: React.FC = () => {
                                     </div>
                                     <span className="text-[11px] font-bold text-primary uppercase tracking-[0.12em]">Review Transaction</span>
                                     <span className="ml-auto text-[10px] font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
-                                        {pendingTx.chainId === 84532 ? 'Base Sepolia' : pendingTx.chainId === 43113 ? 'Avalanche Fuji' : `Chain ${pendingTx.chainId}`}
+                                        {pendingTx.chainId === 84532 ? 'Base Sepolia' : `Chain ${pendingTx.chainId}`}
                                     </span>
                                 </div>
 
@@ -623,7 +621,7 @@ const IntentPage: React.FC = () => {
                         <div className="flex flex-wrap gap-2 justify-center mb-4">
                             {[
                                 'Bridge 0.1 ETH from Base Sepolia to Solana',
-                                'Bridge 0.05 ETH from Fuji to Solana',
+                                'Bridge 0.001 ETH from Base Sepolia to Solana',
                                 'How much SOL will I get for 0.1 ETH?',
                             ].map((text) => (
                                 <button

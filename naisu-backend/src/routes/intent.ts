@@ -142,7 +142,7 @@ intentRouter.get('/watch', async (c) => {
 // Validators
 // ============================================================================
 
-const chainEnum = z.enum(['sui', 'evm-fuji', 'evm-base', 'solana'])
+const chainEnum = z.enum(['sui', 'evm-base', 'solana'])
 
 const quoteQuery = z.object({
   fromChain: chainEnum,
@@ -191,7 +191,7 @@ const buildTxBody = z.object({
  * Does NOT create any on-chain transaction.
  *
  * Example:
- *   GET /api/v1/intent/quote?fromChain=evm-fuji&toChain=sui&token=ETH&amount=0.1
+ *   GET /api/v1/intent/quote?fromChain=evm-base&toChain=sui&token=ETH&amount=0.1
  */
 intentRouter.get('/quote', zValidator('query', quoteQuery), async (c) => {
   const { fromChain, toChain, token, amount } = c.req.valid('query')
@@ -216,7 +216,7 @@ intentRouter.get('/quote', zValidator('query', quoteQuery), async (c) => {
  * Returns all intent orders for a wallet address (optionally filtered by chain).
  *
  * Example:
- *   GET /api/v1/intent/orders?user=0xabc...&chain=evm-fuji
+ *   GET /api/v1/intent/orders?user=0xabc...&chain=evm-base
  *   GET /api/v1/intent/orders?user=0xdF3...  (all chains)
  */
 intentRouter.get('/orders', zValidator('query', ordersQuery), async (c) => {
@@ -250,7 +250,7 @@ intentRouter.get('/orders', zValidator('query', ordersQuery), async (c) => {
  * Returns estimated FX rate between two chain tokens (via CoinGecko).
  *
  * Example:
- *   GET /api/v1/intent/price?fromChain=evm-fuji&toChain=sui
+ *   GET /api/v1/intent/price?fromChain=evm-base&toChain=sui
  */
 intentRouter.get('/price', zValidator('query', priceQuery), async (c) => {
   const { fromChain, toChain } = c.req.valid('query')
@@ -278,7 +278,7 @@ intentRouter.get('/price', zValidator('query', priceQuery), async (c) => {
  *
  * Example body:
  * {
- *   "chain": "evm-fuji",
+ *   "chain": "evm-base",
  *   "action": "create_order",
  *   "senderAddress": "0xYourAddress",
  *   "recipientAddress": "0xDestinationOrSuiAddress",
@@ -320,7 +320,7 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
 // ============================================================================
 
 /**
- * Returns native ETH balance for an EVM address on evm-base or evm-fuji.
+ * Returns native ETH balance for an EVM address on evm-base.
  *
  * Example:
  *   GET /api/v1/intent/evm-balance?chain=evm-base&address=0xABC...
@@ -328,7 +328,7 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
 intentRouter.get(
   '/evm-balance',
   zValidator('query', z.object({
-    chain:   z.enum(['evm-base', 'evm-fuji']),
+    chain:   z.enum(['evm-base']),
     address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address'),
   })),
   async (c) => {
@@ -337,7 +337,7 @@ intentRouter.get(
     logger.info({ chain, address }, 'EVM balance requested')
 
     const balance = await intentService.getEvmNativeBalance({
-      chain: chain as 'evm-base' | 'evm-fuji',
+      chain,
       address,
     })
 

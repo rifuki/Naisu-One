@@ -60,9 +60,6 @@ pub fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
                 AppEvent::Tx(tx) => app.add_transaction(tx),
                 AppEvent::TxUpdate(id, status) => app.update_transaction_status(id, status),
                 AppEvent::Log(msg) => app.add_log(msg),
-                AppEvent::Shutdown => {
-                    app.should_quit = true;
-                }
             }
         }
 

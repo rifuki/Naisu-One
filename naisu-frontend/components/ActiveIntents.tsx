@@ -3,7 +3,7 @@
  *
  * Data strategy:
  *  Primary  → GET /api/v1/intent/orders dari backend indexer (instant, cached)
- *  Fallback → RPC langsung (Base Sepolia + Fuji getLogs, Solana getProgramAccounts)
+ *  Fallback → RPC langsung (Base Sepolia getLogs, Solana getProgramAccounts)
  *             dipakai otomatis kalau backend tidak respond dalam 5 detik.
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -13,8 +13,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { INTENT_BRIDGE_ABI } from '../lib/abi';
 import { useIntentOrders, type IntentRow } from '../hooks/useIntentOrders';
 import {
-  BASE_SEPOLIA_CONTRACT, FUJI_CONTRACT,
-  BASE_SEPOLIA_CHAIN_ID, AVALANCHE_FUJI_CHAIN_ID,
+  BASE_SEPOLIA_CONTRACT,
+  BASE_SEPOLIA_CHAIN_ID,
   WORMHOLE_CHAIN_SOLANA,
   EXPLORERS,
 } from '../lib/constants';
@@ -49,15 +49,14 @@ function shortHash(h: string, pre = 8, suf = 6): string {
   return `${h.slice(0, pre)}...${h.slice(-suf)}`;
 }
 
-function getEvmExplorer(sourceChain?: string): string {
-  return sourceChain === 'Base' ? EXPLORERS.baseSepolia : EXPLORERS.fuji;
+function getEvmExplorer(_sourceChain?: string): string {
+  return EXPLORERS.baseSepolia;
 }
 
 function destChainLabel(wormholeId: number): string {
   if (wormholeId === 1)     return 'Solana';
   if (wormholeId === 21)    return 'Sui';
   if (wormholeId === 10004) return 'Base Sepolia';
-  if (wormholeId === 6)     return 'Fuji';
   return `Chain ${wormholeId}`;
 }
 
@@ -103,7 +102,7 @@ function IntentDetailDialog({
   const expired = now > intent.deadline;
   const isToSolana = intent.destinationChain === WORMHOLE_CHAIN_SOLANA;
   const evmExp = getEvmExplorer(intent.sourceChain);
-  const currency = intent.chain === 'solana' ? 'SOL' : (intent.sourceChain === 'Base' ? 'ETH' : 'AVAX');
+  const currency = intent.chain === 'solana' ? 'SOL' : 'ETH';
   const dstCurrency = intent.destinationChain === WORMHOLE_CHAIN_SOLANA ? 'SOL' : intent.destinationChain === 21 ? 'SUI' : 'ETH';
   const srcLabel = intent.chain === 'evm' ? (intent.sourceChain ?? 'EVM') : 'Solana';
   const dstLabel = destChainLabel(intent.destinationChain);
@@ -295,7 +294,7 @@ function OrderCard({
     ? Math.min(100, ((now - intent.createdAt) / (intent.deadline - intent.createdAt)) * 100)
     : 100;
   const timeLeft = intent.deadline - now;
-  const currency = intent.chain === 'solana' ? 'SOL' : (intent.sourceChain === 'Base' ? 'ETH' : 'AVAX');
+  const currency = intent.chain === 'solana' ? 'SOL' : 'ETH';
   const dstCurrency = intent.destinationChain === WORMHOLE_CHAIN_SOLANA ? 'SOL' : intent.destinationChain === 21 ? 'SUI' : 'ETH';
   const dstLabel = destChainLabel(intent.destinationChain);
   const evmExp = getEvmExplorer(intent.sourceChain);
@@ -482,7 +481,7 @@ export default function ActiveIntents() {
     }
     if (!evmAddress) { showToast('Connect EVM wallet first', 'error'); return; }
 
-    const contractAddress = intent.sourceChain === 'Base' ? BASE_SEPOLIA_CONTRACT : FUJI_CONTRACT;
+    const contractAddress = BASE_SEPOLIA_CONTRACT;
     setCancellingId(intent.id);
     try {
       const data = encodeFunctionData({
@@ -490,7 +489,7 @@ export default function ActiveIntents() {
         functionName: 'cancelOrder',
         args: [intent.id as `0x${string}`],
       });
-      const chainId = intent.sourceChain === 'Base' ? BASE_SEPOLIA_CHAIN_ID : AVALANCHE_FUJI_CHAIN_ID;
+      const chainId = BASE_SEPOLIA_CHAIN_ID;
       await sendTransactionAsync({ to: contractAddress, data, chainId });
       showToast('Order cancelled — ETH refunded!', 'success');
       setTimeout(refresh, 2000); // re-fetch after cancel

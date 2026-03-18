@@ -68,8 +68,8 @@ async fn main() -> Result<()> {
     let evm_address = format!("{:?}", evm_wallet.address());
 
     info!(
-        base_contract = %config.evm2_contract_address,
-        base_chain_id = config.evm2_chain_id,
+        base_contract = %config.base_contract_address,
+        base_chain_id = config.base_chain_id,
         solana_program = %config.solana_program_id,
         evm_solver_address = %evm_address,
         "Starting Intent Solver..."
@@ -106,9 +106,9 @@ async fn main() -> Result<()> {
             info!("Starting Base Sepolia → Solana solver (WS)...");
             if let Err(e) = chains::evm_listener::run_with_config(
                 Arc::clone(&cfg_base),
-                cfg_base.evm2_chain_id,
-                &cfg_base.evm2_rpc_url.clone(),
-                &cfg_base.evm2_contract_address.clone(),
+                cfg_base.base_chain_id,
+                &cfg_base.base_rpc_url.clone(),
+                &cfg_base.base_contract_address.clone(),
             )
             .await
             {
@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
 }
 
 /// Update ETH balance for TUI.
-/// WS mode (per-block) if EVM2_WS_URL is set, otherwise HTTP poll every 15s.
+/// WS mode (per-block) if BASE_SEPOLIA_WS_URL is set, otherwise HTTP poll every 15s.
 async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
     use ethers::providers::{Http, Middleware, Provider, StreamExt, Ws};
 
@@ -167,8 +167,8 @@ async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
         }
     } else {
         // No WS URL — HTTP poll every 15s
-        let Ok(provider) = Provider::<Http>::try_from(config.evm2_rpc_url.as_str()) else { return };
-        let _ = tx.send(AppEvent::Mode(Chain::Base, "HTTP".to_string(), config.evm2_rpc_url.clone())).await;
+        let Ok(provider) = Provider::<Http>::try_from(config.base_rpc_url.as_str()) else { return };
+        let _ = tx.send(AppEvent::Mode(Chain::Base, "HTTP".to_string(), config.base_rpc_url.clone())).await;
         loop {
             if let Ok(balance) = provider.get_balance(address, None).await {
                 let eth: f64 = ethers::utils::format_ether(balance).parse().unwrap_or(0.0);

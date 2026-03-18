@@ -28,7 +28,6 @@ const STATUS_CANCELLED: u8 = 2;
 
 // === Wormhole Chain IDs ===
 const BASE_SEPOLIA_CHAIN_ID: u16 = 10004; // Base Sepolia testnet
-const AVALANCHE_FUJI_CHAIN_ID: u16 = 6;   // Avalanche Fuji testnet
 
 // === Structs ===
 
@@ -115,7 +114,7 @@ public fun register_evm_emitter(
 ) {
     // Validate chain ID
     assert!(
-        chain_id == BASE_SEPOLIA_CHAIN_ID || chain_id == AVALANCHE_FUJI_CHAIN_ID,
+        chain_id == BASE_SEPOLIA_CHAIN_ID,
         E_INVALID_PARAMS
     );
     // Validate emitter address (32 bytes)

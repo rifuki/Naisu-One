@@ -366,7 +366,7 @@ async fn handle_order_log(
 }
 
 /// Listen for OrderCreated events.
-/// - If EVM2_WS_URL is set: uses WS subscription (instant) with HTTP catchup on reconnect.
+/// - If BASE_SEPOLIA_WS_URL is set: uses WS subscription (instant) with HTTP catchup on reconnect.
 /// - Otherwise: falls back to HTTP polling every 5s.
 pub async fn run_with_config(
     config: Arc<Config>,

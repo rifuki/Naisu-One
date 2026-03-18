@@ -50,8 +50,8 @@ fn make_client(config: &Config) -> Result<Client> {
     let wallet: LocalWallet = config
         .evm_private_key
         .parse::<LocalWallet>()?
-        .with_chain_id(config.evm2_chain_id);
-    let provider = Provider::<Http>::try_from(config.evm2_rpc_url.as_str())?;
+        .with_chain_id(config.base_chain_id);
+    let provider = Provider::<Http>::try_from(config.base_rpc_url.as_str())?;
     Ok(SignerMiddleware::new(provider, wallet))
 }
 
@@ -75,7 +75,7 @@ pub async fn fulfill_and_prove(
     amount_wei: u64,
 ) -> Result<(String, u64)> {
     let client = make_client(config)?;
-    let contract_addr: Address = config.evm2_contract_address.parse()?;
+    let contract_addr: Address = config.base_contract_address.parse()?;
 
     // Fetch Wormhole message fee from the Wormhole Core Bridge (not IntentBridge)
     let wormhole_addr: Address = config.evm_wormhole_address.parse()?;
@@ -240,10 +240,6 @@ pub async fn settle_order(
         .to(contract_addr)
         .data(Bytes::from(calldata));
 
-    // Avalanche Fuji requires minimum 25 gwei
-    if chain_id == 43113 {
-        tx = tx.gas_price(U256::from(25_000_000_000u64));
-    }
 
     // M4: Pending nonce
     if let Ok(nonce) = get_pending_nonce(&client).await {
@@ -356,12 +352,8 @@ pub async fn settle_order_urgent(
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    // URGENT: Use 2x gas price for faster inclusion
-    let gas_price = if chain_id == 43113 {
-        50_000_000_000u64 // 50 gwei for Avalanche (2x normal)
-    } else {
-        2_000_000_000u64  // 2 gwei for Base (2x normal)
-    };
+    // Use 2x gas price for faster inclusion (Base Sepolia)
+    let gas_price = 2_000_000_000u64; // 2 gwei (2x normal)
 
     let mut tx = TransactionRequest::new()
         .to(contract_addr)

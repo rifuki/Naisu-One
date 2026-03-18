@@ -175,7 +175,7 @@ pub async fn start(config: Arc<Config>) {
         let token2       = token.clone();
         let backend_url2 = backend_url.clone();
         let rpc_url      = config.solana_rpc_url.clone();
-        let evm_rpc_url  = config.evm2_rpc_url.clone();
+        let evm_rpc_url  = config.base_rpc_url.clone();
         let sol_addr     = sol_address.clone();
         let evm_addr     = evm_address.clone();
 

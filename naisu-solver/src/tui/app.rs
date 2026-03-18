@@ -5,7 +5,6 @@ use ratatui::widgets::TableState;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chain {
     Sui,
-    Avax,
     Solana,
     Base,
 }
@@ -34,7 +33,6 @@ pub enum AppEvent {
     Tx(Transaction),
     TxUpdate(String, TxStatus), // intent_id_prefix (8 chars), new status
     Log(String),
-    Shutdown,
 }
 
 pub struct App {
@@ -116,7 +114,7 @@ impl App {
     pub fn update_balance(&mut self, chain: Chain, amount: String) {
         match chain {
             Chain::Sui => self.sui_balance = amount,
-            Chain::Avax | Chain::Base => self.eth_balance = amount,
+            Chain::Base => self.eth_balance = amount,
             Chain::Solana => self.sol_balance = amount,
         }
     }
@@ -124,14 +122,14 @@ impl App {
     pub fn update_address(&mut self, chain: Chain, address: String) {
         match chain {
             Chain::Sui => self.sui_address = address,
-            Chain::Avax | Chain::Base => self.evm_address = address,
+            Chain::Base => self.evm_address = address,
             Chain::Solana => self.solana_address = address,
         }
     }
 
     pub fn set_mode(&mut self, chain: Chain, mode: String, url: String) {
         match chain {
-            Chain::Avax | Chain::Base => { self.evm_mode = mode; self.evm_conn_url = url; }
+            Chain::Base => { self.evm_mode = mode; self.evm_conn_url = url; }
             Chain::Solana => { self.sol_mode = mode; self.sol_conn_url = url; }
             Chain::Sui => { self.sui_mode = mode; self.sui_conn_url = url; }
         }

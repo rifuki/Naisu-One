@@ -10,20 +10,13 @@ export const BASE_SEPOLIA_CONTRACT = requireEnv(
   import.meta.env.VITE_CONTRACT_BASE_SEPOLIA,
 ) as `0x${string}`;
 
-export const FUJI_CONTRACT = requireEnv(
-  "VITE_CONTRACT_FUJI",
-  import.meta.env.VITE_CONTRACT_FUJI,
-) as `0x${string}`;
-
 // ── Chain IDs ─────────────────────────────────────────────────────────────────
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
-export const AVALANCHE_FUJI_CHAIN_ID = 43113;
 
 // ── Wormhole Chain IDs ────────────────────────────────────────────────────────
 export const WORMHOLE_CHAIN_SOLANA = 1;
 export const WORMHOLE_CHAIN_SUI    = 21;
 export const WORMHOLE_CHAIN_BASE   = 10004;
-export const WORMHOLE_CHAIN_FUJI   = 6;
 
 // ── Solana ───────────────────────────────────────────────────────────────────
 export const SOLANA_PROGRAM_ID = requireEnv(
@@ -44,12 +37,10 @@ export const SUI_ALL_PACKAGE_IDS: string[] = [SUI_PACKAGE_ID];
 
 // ── EVM RPC URLs ──────────────────────────────────────────────────────────────
 export const BASE_SEPOLIA_RPC  = "https://sepolia.base.org";
-export const AVALANCHE_FUJI_RPC = "https://avalanche-fuji-c-chain-rpc.publicnode.com";
 
 // ── Explorers ─────────────────────────────────────────────────────────────────
 export const EXPLORERS = {
   baseSepolia: "https://sepolia.basescan.org",
-  fuji:        "https://testnet.snowtrace.io",
   solana:      "https://explorer.solana.com",
   sui:         "https://suiscan.xyz/testnet",
 } as const;

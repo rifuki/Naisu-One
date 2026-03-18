@@ -53,7 +53,7 @@ function extractTxData(content: string): TxData | undefined {
   // Strategy 2: regex fallback (handles Markdown tables, lists, and backticks)
   const toMatch = content.match(/(?:To|Contract|address)[^\w]*(0x[a-fA-F0-9]{40})/i) || content.match(/`(0x[a-fA-F0-9]{40})`/i);
   const chainMatch = content.match(/Chain ID[^\d]*(\d+)/i);
-  const valueMatch = content.match(/(?:Value|Amount)[^\d]*(\d+\.?\d*)\s*(?:ETH|AVAX)/i) || content.match(/(\d+\.?\d*)\s*ETH/i);
+  const valueMatch = content.match(/(?:Value|Amount)[^\d]*(\d+\.?\d*)\s*ETH/i) || content.match(/(\d+\.?\d*)\s*ETH/i);
   const dataMatch = content.match(/(?:Data|Calldata|data)[^\w]*(0x[a-fA-F0-9]{64,})/i) || content.match(/`(0x[a-fA-F0-9]{64,})`/i);
 
   if (toMatch && chainMatch && valueMatch && dataMatch) {
@@ -69,8 +69,8 @@ function extractTxData(content: string): TxData | undefined {
 }
 
 function TxCard({ tx, onSend }: { tx: TxData; onSend: (tx: TxData) => void }) {
-  const chainName = tx.chainId === 84532 ? 'Base Sepolia' : tx.chainId === 43113 ? 'Avalanche Fuji' : `Chain ${tx.chainId}`;
-  const explorerBase = tx.chainId === 84532 ? 'https://sepolia.basescan.org' : 'https://testnet.snowtrace.io';
+  const chainName = tx.chainId === 84532 ? 'Base Sepolia' : `Chain ${tx.chainId}`;
+  const explorerBase = 'https://sepolia.basescan.org';
 
   return (
     <div className="mt-3 rounded-xl border border-primary/30 bg-gradient-to-b from-primary/5 to-black/20 overflow-hidden">
@@ -323,9 +323,7 @@ export default function AgentPage() {
         }]);
       }
 
-      const explorerBase = tx.chainId === 84532
-        ? 'https://sepolia.basescan.org/tx/'
-        : 'https://testnet.snowtrace.io/tx/';
+      const explorerBase = 'https://sepolia.basescan.org/tx/';
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',

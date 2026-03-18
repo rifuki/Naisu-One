@@ -34,7 +34,6 @@ const WORMHOLE_CHAIN_LABELS: Record<number, string> = {
   1:     'Solana',
   21:    'Sui',
   10004: 'Base Sepolia',
-  6:     'Fuji',
 }
 
 function destLabel(chainId: number): string {

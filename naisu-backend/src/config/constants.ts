@@ -101,16 +101,11 @@ export const INTENT_BRIDGE = {
   SUI_PACKAGE_ID: '0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb',
   SUI_BRIDGE_STATE_ID: '0x7aac5f895e7071fc33a65fe4325365bb287c64d229d1af1d03e613c8153b3703',
 
-  // EVM — Avalanche Fuji (testnet)
-  FUJI_CONTRACT: '0x274768b4B16841d23B8248d1311fBDC760803E65' as `0x${string}`,
-  FUJI_CHAIN_ID: 43113,
-
   // Wormhole chain IDs
   WORMHOLE: {
     SOLANA: 1,
     SUI: 21,
     BASE_SEPOLIA: 10004,
-    FUJI: 6,
   },
 
   // Intent status codes

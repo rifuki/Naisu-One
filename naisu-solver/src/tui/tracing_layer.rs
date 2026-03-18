@@ -119,8 +119,6 @@ fn extract_intent_prefix(msg: &str) -> Option<String> {
 fn detect_route(msg: &str) -> String {
     if msg.contains("Base") && msg.contains("Solana") {
         "Base→Solana".to_string()
-    } else if msg.contains("Fuji") && msg.contains("Sui") {
-        "Fuji→Sui".to_string()
     } else if msg.contains("Solana") && msg.contains("EVM") {
         "Solana→EVM".to_string()
     } else if msg.contains("Sui") && msg.contains("EVM") {

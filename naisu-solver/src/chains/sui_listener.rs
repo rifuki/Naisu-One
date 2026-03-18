@@ -74,15 +74,8 @@ pub async fn run(config: &Config) -> Result<()> {
                 continue;
             }
 
-            // VAA buffer depends on chain:
-            //   Base Sepolia (CL=1, safe block): ~18-20 min → 25 min buffer
-            //   Avalanche Fuji (CL=200, instant): ~30s-2 min → 3 min buffer
-            let chain_id_env = std::env::var("EVM_CHAIN_ID").unwrap_or_else(|_| "84532".to_string());
-            let vaa_buffer_ms: u64 = if chain_id_env == "43113" {
-                3 * 60 * 1000
-            } else {
-                25 * 60 * 1000
-            };
+            // Base Sepolia (CL=1, safe block): ~18-20 min → 25 min buffer
+            let vaa_buffer_ms: u64 = 25 * 60 * 1000;
             if intent.deadline.saturating_sub(now_ms) < vaa_buffer_ms {
                 info!(
                     id = %intent.intent_id,
@@ -179,8 +172,7 @@ pub async fn run(config: &Config) -> Result<()> {
             };
 
             // Step 2: Fetch Wormhole VAA
-            let chain_id_str = std::env::var("EVM_CHAIN_ID").unwrap_or_else(|_| "84532".to_string());
-            let wh_chain_id = if chain_id_str == "43113" { 6 } else { 10004 };
+            let wh_chain_id = 10004u16; // Base Sepolia wormhole chain ID
 
             let vaa = match wormhole::fetch_vaa(
                 &config.wormhole_api_url,

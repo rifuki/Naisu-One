@@ -34,7 +34,6 @@ const EthLogo = ({ className = '' }: { className?: string }) => (
 function chainLabel(name?: string): string {
   if (!name) return '';
   return name
-    .replace('Avalanche Fuji', 'Fuji')
     .replace('Base Sepolia Testnet', 'Base')
     .replace(' Sepolia Testnet', '')
     .replace(' Testnet', '')
@@ -217,8 +216,6 @@ const Navbar: React.FC = () => {
       onClick: () => {
         const base = chain?.id === 84532
           ? 'https://sepolia.basescan.org'
-          : chain?.id === 43113
-          ? 'https://testnet.snowtrace.io'
           : 'https://etherscan.io';
         window.open(`${base}/address/${address}`, '_blank');
       },

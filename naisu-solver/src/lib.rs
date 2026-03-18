@@ -15,8 +15,8 @@ pub async fn run_headless() -> eyre::Result<()> {
     let config = Arc::new(config::Config::load()?);
 
     tracing::info!(
-        base_contract = %config.evm2_contract_address,
-        base_chain_id = config.evm2_chain_id,
+        base_contract = %config.base_contract_address,
+        base_chain_id = config.base_chain_id,
         sui_package = %config.sui_package_id,
         solana_program = %config.solana_program_id,
         "Starting Intent Solver (Headless)..."
@@ -28,9 +28,9 @@ pub async fn run_headless() -> eyre::Result<()> {
             tracing::info!("Starting Base Sepolia → Solana solver...");
             if let Err(e) = chains::evm_listener::run_with_config(
                 Arc::clone(&cfg_base),
-                cfg_base.evm2_chain_id,
-                &cfg_base.evm2_rpc_url.clone(),
-                &cfg_base.evm2_contract_address.clone(),
+                cfg_base.base_chain_id,
+                &cfg_base.base_rpc_url.clone(),
+                &cfg_base.base_contract_address.clone(),
             ).await {
                 tracing::error!("Base listener error: {e} — restarting in 10s...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;

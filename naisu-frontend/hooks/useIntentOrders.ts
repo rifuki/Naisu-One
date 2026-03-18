@@ -13,8 +13,8 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { useSolanaAddress } from './useSolanaAddress'
 import { useOrderWatch } from './useOrderWatch'
 import {
-  BASE_SEPOLIA_CONTRACT, FUJI_CONTRACT,
-  BASE_SEPOLIA_RPC, AVALANCHE_FUJI_RPC,
+  BASE_SEPOLIA_CONTRACT,
+  BASE_SEPOLIA_RPC,
   SOLANA_PROGRAM_ID,
   WORMHOLE_CHAIN_SOLANA,
 } from '../lib/constants'
@@ -54,7 +54,7 @@ function fromBackend(o: Record<string, unknown>): IntentRow {
     CANCELLED: 'Cancelled',
   }
   const chain     = (o['chain'] as string) === 'solana' ? 'solana' : 'evm'
-  const srcChain  = (o['chain'] as string) === 'evm-base' ? 'Base' : (o['chain'] as string) === 'evm-fuji' ? 'Fuji' : undefined
+  const srcChain  = (o['chain'] as string) === 'evm-base' ? 'Base' : undefined
   return {
     id:               o['orderId']  as string,
     txDigest:         o['explorerUrl'] as string,
@@ -93,11 +93,10 @@ async function fetchFromBackend(user: string, chain?: string): Promise<IntentRow
 
 async function fetchEvmFromRpc(evmAddress: string): Promise<IntentRow[]> {
   const { createPublicClient, http } = await import('viem')
-  const { baseSepolia, avalancheFuji } = await import('viem/chains')
+  const { baseSepolia } = await import('viem/chains')
 
   const chains = [
-    { chain: baseSepolia,   label: 'Base', contract: BASE_SEPOLIA_CONTRACT, rpc: BASE_SEPOLIA_RPC },
-    { chain: avalancheFuji, label: 'Fuji', contract: FUJI_CONTRACT,         rpc: AVALANCHE_FUJI_RPC },
+    { chain: baseSepolia, label: 'Base', contract: BASE_SEPOLIA_CONTRACT, rpc: BASE_SEPOLIA_RPC },
   ] as const
 
   const allRows: IntentRow[] = []

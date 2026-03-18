@@ -1,6 +1,6 @@
 /**
  * Intent Bridge Service
- * Queries on-chain state across Sui, EVM (Fuji/Base Sepolia), and Solana
+ * Queries on-chain state across Sui, EVM (Base Sepolia), and Solana
  * for the intent-bridge Dutch auction protocol.
  *
  * All write-path functions return unsigned transaction data for the frontend
@@ -28,12 +28,12 @@ import { ERROR_CODES, INTENT_BRIDGE } from '@config/constants'
 // Types
 // ============================================================================
 
-export type SupportedChain = 'sui' | 'evm-fuji' | 'evm-base' | 'solana'
+export type SupportedChain = 'sui' | 'evm-base' | 'solana'
 
 function getChainDecimals(chain: SupportedChain): number {
   if (chain === 'sui') return 9
   if (chain === 'solana') return 9
-  return 18 // evm-fuji, evm-base
+  return 18 // evm-base
 }
 
 export interface IntentQuote {
@@ -201,8 +201,7 @@ function wormholeChainId(chain: SupportedChain): number {
   switch (chain) {
     case 'solana':   return INTENT_BRIDGE.WORMHOLE.SOLANA
     case 'sui':      return INTENT_BRIDGE.WORMHOLE.SUI
-    case 'evm-base':
-    case 'evm-fuji': return INTENT_BRIDGE.WORMHOLE.BASE_SEPOLIA
+    case 'evm-base': return INTENT_BRIDGE.WORMHOLE.BASE_SEPOLIA
   }
 }
 
@@ -214,9 +213,7 @@ function statusLabel(status: number): 'OPEN' | 'FULFILLED' | 'CANCELLED' {
   }
 }
 
-function evmExplorerTx(chain: SupportedChain, hash: string): string {
-  if (chain === 'evm-fuji')
-    return `https://testnet.snowtrace.io/tx/${hash}`
+function evmExplorerTx(_chain: SupportedChain, hash: string): string {
   return `https://sepolia.basescan.org/tx/${hash}`
 }
 
@@ -326,13 +323,13 @@ function formatSuiMist(mist: bigint): string {
 // ============================================================================
 
 async function listEvmOrders(
-  evmChain: 'evm-fuji' | 'evm-base',
+  evmChain: 'evm-base',
   creator: string
 ): Promise<IntentOrder[]> {
   const client   = getBaseClient()
   const contract = config.intent.evm.baseSepolia.contract
 
-  // Base Sepolia & Fuji public RPCs limit getLogs to 10,000 block ranges.
+  // Base Sepolia public RPC limits getLogs to 10,000 block ranges.
   // We scan backwards in 10k-block windows (up to 5 windows = ~50k blocks ≈ 40 days)
   // until we find logs or exhaust the search window.
   const WINDOW   = 9_999n
@@ -674,7 +671,6 @@ export async function getCrossChainPrice(params: {
 
   const tokenMap: Record<SupportedChain, string> = {
     'sui':      'sui',
-    'evm-fuji': 'avalanche-2',
     'evm-base': 'ethereum',
     'solana':   'solana',
   }
@@ -778,9 +774,9 @@ export async function buildIntentTx(params: {
     })
   }
 
-  if ((chain === 'evm-fuji' || chain === 'evm-base') && action === 'create_order') {
+  if (chain === 'evm-base' && action === 'create_order') {
     return buildEvmCreateOrder({
-      chain: chain as 'evm-fuji' | 'evm-base',
+      chain,
       recipientAddress,
       destinationChain,
       amount,
@@ -884,7 +880,7 @@ async function buildSuiCreateIntent(params: {
 // ─── EVM: build createOrder calldata ─────────────────────────────────────────
 
 async function buildEvmCreateOrder(params: {
-  chain: 'evm-fuji' | 'evm-base'
+  chain: 'evm-base'
   recipientAddress: string
   destinationChain: SupportedChain
   amount: string
@@ -1065,7 +1061,7 @@ async function buildSolanaCreateIntent(params: {
  * Returns balanceWei (string) and balanceEth (string).
  */
 export async function getEvmNativeBalance(params: {
-  chain: 'evm-fuji' | 'evm-base'
+  chain: 'evm-base'
   address: string
 }): Promise<{ chain: string; address: string; balanceWei: string; balanceEth: string }> {
   const { chain, address } = params
