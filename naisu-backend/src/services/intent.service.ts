@@ -1103,21 +1103,30 @@ async function buildSolanaCreateIntent(params: {
 
 /**
  * Get native ETH balance of an EVM address on a given chain.
- * Returns balanceWei (string) and balanceEth (string).
+ * Returns balanceWei, balanceEth, estimatedGasWei, estimatedGasEth.
  */
 export async function getEvmNativeBalance(params: {
   chain: 'evm-base'
   address: string
-}): Promise<{ chain: string; address: string; balanceWei: string; balanceEth: string }> {
+}): Promise<{ chain: string; address: string; balanceWei: string; balanceEth: string; estimatedGasWei: string; estimatedGasEth: string }> {
   const { chain, address } = params
   const client = getBaseClient()
 
-  const balanceWei = await client.getBalance({ address: address as `0x${string}` })
+  // Parallel fetch: balance and current gas price
+  const [balanceWei, gasPrice] = await Promise.all([
+    client.getBalance({ address: address as `0x${string}` }),
+    client.getGasPrice().catch(() => 500000000n) // fallback to 0.5 gwei if RPC fails gas estimation
+  ])
+
+  // createOrder typically consumes ~150k gas. We use 200k as a safe upper bound.
+  const estimatedGasWei = gasPrice * 200000n
 
   return {
     chain,
     address,
     balanceWei: balanceWei.toString(),
     balanceEth: formatEther(balanceWei),
+    estimatedGasWei: estimatedGasWei.toString(),
+    estimatedGasEth: formatEther(estimatedGasWei),
   }
 }
