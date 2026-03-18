@@ -4,10 +4,10 @@ import Navbar from './components/Navbar';
 import ActiveIntents from './components/ActiveIntents';
 import LandingPage from './pages/LandingPage';
 import DashboardPage from './pages/DashboardPage';
-import SwapPage from './pages/SwapPage';
+import SwapPage from './src/pages/swap-page';
 import EarnPage from './pages/EarnPage';
 import PortfolioPage from './pages/PortfolioPage';
-import IntentPage from './pages/IntentPage';
+import IntentPage from './src/pages/intent-page';
 import AgentPage from './pages/AgentPage';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {

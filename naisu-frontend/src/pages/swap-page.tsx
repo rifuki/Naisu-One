@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useSolanaAddress } from '../../hooks/useSolanaAddress';
 import { useSwapQuote } from '@/features/swap/hooks/use-swap-quote';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 import { useEthBalance } from '@/features/swap/hooks/use-eth-balance';
 import { useSolBalance } from '@/features/swap/hooks/use-sol-balance';
 import { SwapForm } from '@/features/swap/components/swap-form';
-import SolverAuctionCard from '@/components/SolverAuctionCard';
+import SolverAuctionCard from '../../components/SolverAuctionCard';
 import { secondsAgo } from '@/lib/utils/format';
 
 export default function SwapPage() {
