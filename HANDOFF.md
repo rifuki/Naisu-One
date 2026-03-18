@@ -362,13 +362,13 @@ BASE_SEPOLIA_WS_URL set → subscribe_logs WS (OrderCreated events real-time)
 # Base Sepolia
 EVM2_RPC_URL=https://sepolia.base.org
 BASE_SEPOLIA_WS_URL=wss://base-sepolia.g.alchemy.com/v2/KEY
-EVM2_CONTRACT_ADDRESS=0xFCDE966395c39ED59656BC0fd3a310747Eb68740
+EVM2_CONTRACT_ADDRESS=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
 EVM2_CHAIN_ID=84532
 
 # EVM shared
 EVM_PRIVATE_KEY=0x...
-EVM_WORMHOLE_ADDRESS=0x...
-EVM_EMITTER_ADDRESS=0x...
+EVM_WORMHOLE_ADDRESS=0x79A1027a6A159502049F10906D333EC57E95F083
+EVM_EMITTER_ADDRESS=0x000000000000000000000000d0d1856674ba1feabee7dd3d4b22cc80488ac2f1
 
 # Solana
 SOLANA_RPC_URL=https://api.devnet.solana.com
@@ -376,16 +376,20 @@ SOLANA_WS_URL=wss://api.devnet.solana.com
 SOLANA_PRIVATE_KEY=<32-byte-seed-hex>
 SOLANA_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
-# NEW (untuk decentralized solver network nanti)
-# SOLVER_NAME=alpha
-# SOLVER_BACKEND_URL=http://localhost:3000
+# Solver network (enable for 3-solver demo)
+SOLVER_NAME=alpha                          # alpha / beta / gamma
+SOLVER_BACKEND_URL=http://localhost:3000
+SOLVER_RFQ_PORT=3001                       # 3001 / 3002 / 3003 per instance
+SOLVER_QUOTE_DISCOUNT_BPS=100             # 100 / 300 / 200
+SOLVER_ETA_SECONDS=8                       # 8 / 15 / 11
+SOLVER_TUI=false                           # recommended when running 3 instances
 ```
 
 ### naisu-backend `.env`
 ```bash
 BASE_SEPOLIA_RPC=https://sepolia.base.org
 BASE_SEPOLIA_WS_URL=wss://base-sepolia.g.alchemy.com/v2/KEY
-BASE_SEPOLIA_INTENT_CONTRACT=0xFCDE966395c39ED59656BC0fd3a310747Eb68740
+BASE_SEPOLIA_INTENT_CONTRACT=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
 SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 ```
@@ -404,17 +408,31 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
 ## Known Issues / Todo
 
-- `cetus.service.ts` — pre-existing TS error `'name' specified more than once` (bukan kode kita, skip)
-- `Chain::Avax` dan `AppEvent::Shutdown` di `tui/app.rs` — dead code warnings, intentional (kept for future)
+- `cetus.service.ts` — pre-existing TS error `'name' specified more than once` (not our code, skip)
+- `Chain::Avax` and `AppEvent::Shutdown` in `tui/app.rs` — dead code warnings, intentional (kept for future)
 - Sui listener (`sui_listener.rs`) — full dead code, `#![allow(dead_code)]` applied
-- WS EVM `watchContractEvent` edge case: jika `OrderFulfilled` datang sebelum `OrderCreated` di-index → trigger `initialEvmBackfill` otomatis sebagai fallback
+- WS EVM `watchContractEvent` edge case: if `OrderFulfilled` arrives before `OrderCreated` is indexed → triggers `initialEvmBackfill` as fallback
+- Solver stats are in-memory — reset on backend restart (Phase 2: persist to DB)
+- `setExclusiveSolver()` requires owner key tx after each RFQ — acceptable for demo, Phase 3 moves this on-chain
 
 ---
 
+## Commit Log Session 3
+
+| Commit | Description |
+|--------|-------------|
+| `18b1678` | feat(backend): add solver registry + RFQ engine + scoring (Phase 1) |
+| `89aae95` | feat(solver): add coordinator — register + heartbeat + RFQ server (Phase 1C) |
+| `cb356cb` | docs(solver): update .env.example with solver network vars |
+| `8a0ea3e` | feat(contracts): add solver registry + exclusive window to IntentBridge |
+| `eb47d8f` | feat(frontend): add solver auction card in agent chat after tx submit |
+| `12fc471` | feat(contracts): redeploy IntentBridge to Base Sepolia with solver registry |
+| `f470304` | docs: update HANDOFF.md — session 3 summary + solver network complete |
+
 ## Commit Log Session 2
 
-| Commit | Deskripsi |
-|--------|-----------|
+| Commit | Description |
+|--------|-------------|
 | `cb5122d` | fix(indexer): correct OrderFulfilled ABI + add WS safety net |
 | `2ad1f7d` | feat(indexer+sse): push order_created via SSE for real-time new intent |
 | `ed45db4` | docs: add solver architecture research |
