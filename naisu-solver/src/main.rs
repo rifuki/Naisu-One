@@ -31,16 +31,12 @@ async fn main() -> Result<()> {
     let file_filter = EnvFilter::new("intent_solver=info");
 
     let (tui_tx, tui_rx) = tokio::sync::mpsc::channel::<AppEvent>(2048);
-    let balance_notify = Arc::new(tokio::sync::Notify::new());
 
     if use_tui {
         tracing_subscriber::registry()
             .with(
-                tui::TuiLayer {
-                    tx: tui_tx.clone(),
-                    balance_notify: Arc::clone(&balance_notify),
-                }
-                .with_filter(EnvFilter::new("intent_solver=info")),
+                tui::TuiLayer { tx: tui_tx.clone() }
+                    .with_filter(EnvFilter::new("intent_solver=info")),
             )
             .with(
                 fmt::layer()
@@ -84,13 +80,12 @@ async fn main() -> Result<()> {
         // Send EVM address immediately
         let _ = tui_tx.send(AppEvent::Address(Chain::Base, evm_address.clone())).await;
 
-        // Balance poller (every 30s, or immediately after order fulfilled)
-        let bal_tx = tui_tx.clone();
-        let bal_config = Arc::clone(&config);
-        let bal_notify = Arc::clone(&balance_notify);
-        tokio::spawn(async move {
-            poll_balances(bal_config, bal_tx, bal_notify).await;
-        });
+        // EVM: subscribe to new blocks → update ETH balance per block (real-time)
+        tokio::spawn(watch_evm_balance(Arc::clone(&config), tui_tx.clone()));
+        // SOL: accountSubscribe WS → balance pushed on every account change (real-time)
+        tokio::spawn(watch_sol_balance(Arc::clone(&config), tui_tx.clone()));
+        // SUI: HTTP poll every 30s (WS not practical for balance on SUI)
+        tokio::spawn(poll_sui_balance(Arc::clone(&config), tui_tx.clone()));
 
         // TUI runs in a dedicated thread (crossterm is blocking)
         std::thread::spawn(move || {
@@ -163,60 +158,100 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Poll balances every 30s, or immediately when notified (e.g. after order fulfilled).
-async fn poll_balances(
-    config: Arc<Config>,
-    tx: tokio::sync::mpsc::Sender<AppEvent>,
-    notify: Arc<tokio::sync::Notify>,
-) {
-    use ethers::providers::{Http, Middleware, Provider};
+/// Subscribe to Base Sepolia new blocks via WS → fetch ETH balance on each block.
+async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
+    use ethers::providers::{Middleware, Provider, StreamExt, Ws};
 
-    // ── Derive Solana address ────────────────────────────────────────────────
-    let sol_address = derive_sol_address(&config.solana_private_key).unwrap_or_default();
-    if !sol_address.is_empty() {
-        let _ = tx.send(AppEvent::Address(Chain::Solana, sol_address.clone())).await;
-    }
-
-    // ── EVM provider (Base Sepolia) ──────────────────────────────────────────
+    let ws_url = http_to_ws(&config.evm2_rpc_url);
     let evm_wallet: ethers::signers::LocalWallet = match config.evm_private_key.parse() {
         Ok(w) => w,
         Err(_) => return,
     };
-    let evm_address = evm_wallet.address();
-    let provider = match Provider::<Http>::try_from(config.evm2_rpc_url.as_str()) {
-        Ok(p) => p,
-        Err(_) => return,
-    };
+    let address = evm_wallet.address();
 
     loop {
-        // ETH balance on Base Sepolia
-        if let Ok(balance) = provider.get_balance(evm_address, None).await {
-            let eth_f: f64 = ethers::utils::format_ether(balance)
-                .parse()
-                .unwrap_or(0.0);
-            let _ = tx
-                .send(AppEvent::Balance(Chain::Base, format!("{eth_f:.4} ETH")))
-                .await;
+        match Provider::<Ws>::connect(&ws_url).await {
+            Ok(provider) => match provider.subscribe_blocks().await {
+                Ok(mut stream) => {
+                    while stream.next().await.is_some() {
+                        if let Ok(balance) = provider.get_balance(address, None).await {
+                            let eth: f64 =
+                                ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
+                            let _ = tx
+                                .send(AppEvent::Balance(Chain::Base, format!("{eth:.4} ETH")))
+                                .await;
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("EVM WS subscribe_blocks: {e}"),
+            },
+            Err(e) => tracing::warn!("EVM WS connect failed ({ws_url}): {e}"),
         }
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+}
 
-        // SOL balance
-        if !sol_address.is_empty() {
-            if let Ok(bal) = fetch_sol_balance(&config.solana_rpc_url, &sol_address).await {
-                let _ = tx.send(AppEvent::Balance(Chain::Solana, bal)).await;
+/// Subscribe to Solana account changes via accountSubscribe WS → real-time balance push.
+async fn watch_sol_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+    let sol_address = match derive_sol_address(&config.solana_private_key) {
+        Ok(a) => a,
+        Err(_) => return,
+    };
+    let _ = tx
+        .send(AppEvent::Address(Chain::Solana, sol_address.clone()))
+        .await;
+
+    let ws_url = http_to_ws(&config.solana_rpc_url);
+    loop {
+        match connect_async(&ws_url).await {
+            Ok((mut ws, _)) => {
+                let sub = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "accountSubscribe",
+                    "params": [sol_address, {"encoding": "jsonParsed", "commitment": "confirmed"}]
+                });
+                if ws.send(Message::Text(sub.to_string().into())).await.is_err() {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+                while let Some(Ok(Message::Text(text))) = ws.next().await {
+                    let v: serde_json::Value =
+                        serde_json::from_str(&text).unwrap_or_default();
+                    if let Some(lamports) =
+                        v["params"]["result"]["value"]["lamports"].as_u64()
+                    {
+                        let sol = lamports as f64 / 1e9;
+                        let _ = tx
+                            .send(AppEvent::Balance(Chain::Solana, format!("{sol:.4} SOL")))
+                            .await;
+                    }
+                }
             }
+            Err(e) => tracing::warn!("SOL WS connect failed ({ws_url}): {e}"),
         }
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+}
 
-        // SUI balance
-        if let Ok((bal, addr)) = fetch_sui_balance(&config.sui_rpc_url, &config.sui_private_key).await {
+/// Poll SUI balance every 30s (WS not practical for balance on SUI).
+async fn poll_sui_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
+    loop {
+        if let Ok((bal, addr)) =
+            fetch_sui_balance(&config.sui_rpc_url, &config.sui_private_key).await
+        {
             let _ = tx.send(AppEvent::Balance(Chain::Sui, bal)).await;
             let _ = tx.send(AppEvent::Address(Chain::Sui, addr)).await;
         }
-
-        tokio::select! {
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {}
-            _ = notify.notified() => {}
-        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
     }
+}
+
+fn http_to_ws(url: &str) -> String {
+    url.replace("https://", "wss://").replace("http://", "ws://")
 }
 
 /// Derive base58 Solana pubkey from private key (hex or base58 keypair).
@@ -233,24 +268,6 @@ fn derive_sol_address(key: &str) -> eyre::Result<String> {
     };
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
     Ok(bs58::encode(signing_key.verifying_key().as_bytes()).into_string())
-}
-
-async fn fetch_sol_balance(rpc: &str, address: &str) -> eyre::Result<String> {
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getBalance",
-        "params": [address]
-    });
-    let resp: serde_json::Value = reqwest::Client::new()
-        .post(rpc)
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
-    let lamports = resp["result"]["value"].as_u64().unwrap_or(0);
-    Ok(format!("{:.4} SOL", lamports as f64 / 1e9))
 }
 
 async fn fetch_sui_balance(rpc: &str, private_key: &str) -> eyre::Result<(String, String)> {

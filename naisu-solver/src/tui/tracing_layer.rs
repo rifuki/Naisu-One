@@ -1,5 +1,4 @@
-use std::sync::Arc;
-use tokio::sync::{mpsc::Sender, Notify};
+use tokio::sync::mpsc::Sender;
 use tracing::{
     field::{Field, Visit},
     Event, Subscriber,
@@ -10,7 +9,6 @@ use crate::tui::{AppEvent, Transaction, TxStatus};
 
 pub struct TuiLayer {
     pub tx: Sender<AppEvent>,
-    pub balance_notify: Arc<Notify>,
 }
 
 struct EventVisitor {
@@ -94,8 +92,6 @@ impl<S: Subscriber> Layer<S> for TuiLayer {
             if let Some(id) = extract_intent_prefix(&log_msg) {
                 let _ = self.tx.try_send(AppEvent::TxUpdate(id, TxStatus::Success));
             }
-            // Trigger immediate balance refresh
-            self.balance_notify.notify_one();
         }
 
         // Detect failed order
