@@ -550,7 +550,7 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
 | Chain | Contract | Address |
 |-------|----------|---------|
-| Base Sepolia | IntentBridge (+ Pyth oracle) | `0xab32659262b0438b3837f0e4e5cb60ae2c9e7701` |
+| Base Sepolia | IntentBridge (+ Pyth oracle, stale-safe) | `0x0911fbFF3f5289259F697b03f63493316be90334` |
 | Solana Devnet | IntentBridge | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` |
 | Sui Testnet | IntentBridge | `0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb` |
 

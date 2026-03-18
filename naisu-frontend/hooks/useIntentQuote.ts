@@ -52,8 +52,9 @@ export function useIntentQuote(amount: string) {
         setError(json.error ?? 'Quote failed');
         setQuote(null);
       }
-    } catch {
-      setError('Network error — check backend');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       setQuote(null);
     } finally {
       setIsLoading(false);

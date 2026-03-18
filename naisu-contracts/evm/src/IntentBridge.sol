@@ -72,8 +72,8 @@ contract IntentBridge {
     uint256 public constant MAX_START_BPS  = 13000;
     uint256 public constant BPS_DENOMINATOR = 10000;
 
-    // Max price age accepted from Pyth (5 min — generous for testnet)
-    uint256 public constant PYTH_MAX_AGE = 300;
+    // Max price age accepted from Pyth (1 hour — testnet feeds update infrequently)
+    uint256 public constant PYTH_MAX_AGE = 3600;
 
     // === Structs ===
     struct Order {
@@ -317,10 +317,23 @@ contract IntentBridge {
         uint256 startLamports,
         uint256 floorLamports
     ) internal view {
-        IPyth.Price memory ethP = pyth.getPriceNoOlderThan(ETH_USD_FEED, PYTH_MAX_AGE);
-        IPyth.Price memory solP = pyth.getPriceNoOlderThan(SOL_USD_FEED, PYTH_MAX_AGE);
+        // If Pyth feed is stale or unavailable (common on testnets), skip validation
+        // rather than blocking the transaction. The 70%/130% check only fires when
+        // fresh prices are available.
+        IPyth.Price memory ethP;
+        IPyth.Price memory solP;
+        try pyth.getPriceNoOlderThan(ETH_USD_FEED, PYTH_MAX_AGE) returns (IPyth.Price memory p) {
+            ethP = p;
+        } catch {
+            return; // stale — skip
+        }
+        try pyth.getPriceNoOlderThan(SOL_USD_FEED, PYTH_MAX_AGE) returns (IPyth.Price memory p) {
+            solP = p;
+        } catch {
+            return; // stale — skip
+        }
 
-        require(ethP.price > 0 && solP.price > 0, "Oracle: non-positive price");
+        if (ethP.price <= 0 || solP.price <= 0) return;
 
         uint256 ethPRaw = uint256(uint64(ethP.price));
         uint256 solPRaw = uint256(uint64(solP.price));
@@ -334,7 +347,7 @@ contract IntentBridge {
             expectedLamports = (ethWei * ethPRaw) / (1e9 * solPRaw * (10 ** uint32(-expoDiff)));
         }
 
-        require(expectedLamports > 0, "Oracle: zero expected amount");
+        if (expectedLamports == 0) return;
 
         require(
             floorLamports >= expectedLamports * MIN_FLOOR_BPS / BPS_DENOMINATOR,

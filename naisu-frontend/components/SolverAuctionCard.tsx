@@ -41,14 +41,18 @@ interface SolverInfo {
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function fetchOrders(user: string): Promise<Array<{ orderId: string; createdAt: number }>> {
+async function fetchOrders(user: string): Promise<Array<{ orderId: string; createdAt: number; status: string }>> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${user}&chain=evm-base`, {
       signal: AbortSignal.timeout(3000),
     })
     if (!res.ok) return []
     const json = await res.json() as { data?: Array<Record<string, unknown>> }
-    return (json.data ?? []).map(o => ({ orderId: o['orderId'] as string, createdAt: o['createdAt'] as number }))
+    return (json.data ?? []).map(o => ({
+      orderId:   o['orderId']  as string,
+      createdAt: o['createdAt'] as number,
+      status:    (o['status'] as string) ?? 'OPEN',
+    }))
   } catch { return [] }
 }
 
@@ -94,7 +98,7 @@ interface Props {
 }
 
 export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
-  const [phase,   setPhase]   = useState<'indexing' | 'rfq' | 'done' | 'timeout'>('indexing')
+  const [phase,   setPhase]   = useState<'indexing' | 'rfq' | 'done' | 'filled' | 'timeout'>('indexing')
   const [orderId, setOrderId] = useState<string | null>(null)
   const [result,  setResult]  = useState<RFQResult | null>(null)
   const [solvers, setSolvers] = useState<SolverInfo[]>([])
@@ -146,6 +150,25 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
     return () => { stopped = true; clearTimeout(timeout) }
   }, [orderId, phase])
 
+  // Poll order status after RFQ result is shown — detect when solver fills
+  useEffect(() => {
+    if (phase !== 'done' || !orderId) return
+    let stopped = false
+    const poll = async () => {
+      while (!stopped) {
+        await new Promise(r => setTimeout(r, 3000))
+        const orders = await fetchOrders(userAddress)
+        const order  = orders.find(o => o.orderId === orderId)
+        if (order?.status === 'FULFILLED') {
+          setPhase('filled')
+          return
+        }
+      }
+    }
+    poll()
+    return () => { stopped = true }
+  }, [phase, orderId, userAddress])
+
   const onlineSolvers = solvers.filter(s => s.online && !s.suspended)
 
   return (
@@ -156,6 +179,12 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
           <span className="material-symbols-outlined text-sm text-primary">group</span>
           <span className="font-bold text-primary uppercase tracking-wider">Solver Auction</span>
         </div>
+        {phase === 'filled' && (
+          <div className="flex items-center gap-1.5 text-emerald-400">
+            <span className="material-symbols-outlined text-xs">check_circle</span>
+            <span className="font-bold">Filled</span>
+          </div>
+        )}
         {phase === 'done' && result?.exclusivityDeadline && countdown > 0 && (
           <div className="flex items-center gap-1.5 text-amber-400">
             <span className="material-symbols-outlined text-xs">timer</span>
@@ -253,6 +282,48 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
                     )
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* Phase: filled */}
+        {phase === 'filled' && result && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              <span className="font-semibold">Order fulfilled by <span className="text-primary">{result.winner}</span></span>
+            </div>
+            {result.quotes.length > 0 && (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-slate-500 border-b border-white/5">
+                    <th className="text-left pb-1.5 font-medium">Solver</th>
+                    <th className="text-right pb-1.5 font-medium">Quote</th>
+                    <th className="text-right pb-1.5 font-medium">ETA</th>
+                    <th className="text-right pb-1.5 font-medium">Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {result.quotes.map((q, i) => (
+                    <tr key={q.solverId} className={q.winner ? 'text-white' : 'text-slate-500'}>
+                      <td className="py-1.5 flex items-center gap-1.5">
+                        {q.winner
+                          ? <span className="text-primary font-bold">★</span>
+                          : <span className="text-slate-700">{i + 1}.</span>
+                        }
+                        <span className={q.winner ? 'font-semibold text-primary' : ''}>{q.solverName}</span>
+                      </td>
+                      <td className="text-right py-1.5 font-mono">
+                        {(parseInt(q.quotedPrice) / 1e9).toFixed(4)} SOL
+                      </td>
+                      <td className="text-right py-1.5">{q.estimatedETA}s</td>
+                      <td className={`text-right py-1.5 font-bold ${q.winner ? 'text-primary' : ''}`}>
+                        {q.score.toFixed(1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         )}
