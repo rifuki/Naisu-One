@@ -262,6 +262,67 @@ All `.env` files + `env.ts` default updated to new address.
 
 ---
 
+## Session 5 Summary (2026-03-18)
+
+Latest commit: (pending)
+
+### 10. Real Price Quotes via Pyth Network
+
+**New file:** `naisu-backend/src/services/pyth.service.ts`
+- Fetch ETH/USD, SOL/USD, SUI/USD dari Pyth Hermes REST API (no install, pure HTTP)
+- In-memory cache 10s — hindari spam ke Hermes
+- `getPythPrices(chains[])` + `getPythRate(from, to)` helpers
+
+**Modified:** `naisu-backend/src/services/intent.service.ts`
+- `IntentQuote` type dapat 5 field baru: `fromUsd`, `toUsd`, `rate`, `confidence`, `priceSource`
+- `getIntentQuote` — Pyth first, fallback CoinGecko, fallback 1:1
+- `startPrice`/`floorPrice` sekarang dihitung dari harga pasar real
+
+**Result:** `GET /quote?fromChain=evm-base&toChain=solana&amount=0.001` sekarang return harga real:
+```json
+{ "fromUsd": 2321, "toUsd": 94, "rate": 24.65, "priceSource": "pyth" }
+```
+
+---
+
+### 11. On-chain Price Validation via Pyth (Security Fix)
+
+**Problem:** `createOrder` (EVM) dan `create_intent` (Solana) menerima arbitrary `startPrice`/`floorPrice`.
+Attack vector: user set `floorPrice = 1 lamport` → colluding solver fill untuk hampir 0, klaim ETH.
+
+**EVM — `IntentBridge.sol`:**
+- Tambah `IPyth` interface (inline, no dependency)
+- Constructor tambah param `address _pyth`
+- Pyth contract Base Sepolia: `0xA2aa501b19aff244D90cc15a4Cf739D2725B5729`
+- Feed IDs: ETH/USD + SOL/USD (same di semua EVM chains)
+- `_validateEthToSolPrice()` internal function:
+  - Fetch harga dari Pyth (`getPriceNoOlderThan`, max staleness 5 menit)
+  - `floorPrice >= 70% of market rate` (prevent dust attack)
+  - `startPrice <= 130% of market rate` (prevent nonsensical high)
+  - Called di `createOrder` untuk `destinationChain == WORMHOLE_SOLANA (1)`
+
+**Solana — `lib.rs` (intent-bridge-solana):**
+- Tambah sanity bounds di `create_intent`:
+  - `floor_price >= 500_000 gwei` (min ~0.0005 ETH, prevent literal zero)
+  - `floor_price >= 70% of start_price`
+- Note: Full Pyth oracle di Solana = Phase 2 (butuh `pyth-sdk-solana` crate + price account di tx)
+
+**Test — `IntentBridge.t.sol`:**
+- Tambah `MockPyth.sol` contract untuk testing
+- Update `testSettleOrderSolana` dengan harga realistis (22 SOL start, 15 SOL floor untuk 1 ETH)
+- 14/14 tests pass
+
+**Redeployed:**
+| | Address |
+|---|---|
+| EVM IntentBridge (baru, dengan Pyth) | `0xab32659262b0438b3837f0e4e5cb60ae2c9e7701` |
+| Solana IntentBridge (upgraded, sama ID) | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` |
+| Old EVM | `0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1` |
+
+Semua `.env` + `env.ts` updated ke address EVM baru.
+
+---
+
 ## Next Priorities
 
 ### Priority 1 — Manual Swap UI
@@ -362,7 +423,7 @@ BASE_SEPOLIA_WS_URL set → subscribe_logs WS (OrderCreated events real-time)
 # Base Sepolia
 BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 BASE_SEPOLIA_WS_URL=wss://base-sepolia.g.alchemy.com/v2/KEY
-BASE_SEPOLIA_CONTRACT_ADDRESS=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
+BASE_SEPOLIA_CONTRACT_ADDRESS=0xab32659262b0438b3837f0e4e5cb60ae2c9e7701
 BASE_SEPOLIA_CHAIN_ID=84532
 
 # EVM shared
@@ -389,7 +450,7 @@ SOLVER_TUI=false                           # recommended when running 3 instance
 ```bash
 BASE_SEPOLIA_RPC=https://sepolia.base.org
 BASE_SEPOLIA_WS_URL=wss://base-sepolia.g.alchemy.com/v2/KEY
-BASE_SEPOLIA_INTENT_CONTRACT=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
+BASE_SEPOLIA_INTENT_CONTRACT=0xab32659262b0438b3837f0e4e5cb60ae2c9e7701
 SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 ```
@@ -400,7 +461,7 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
 | Chain | Contract | Address |
 |-------|----------|---------|
-| Base Sepolia | IntentBridge | `0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1` |
+| Base Sepolia | IntentBridge (+ Pyth oracle) | `0xab32659262b0438b3837f0e4e5cb60ae2c9e7701` |
 | Solana Devnet | IntentBridge | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` |
 | Sui Testnet | IntentBridge | `0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb` |
 

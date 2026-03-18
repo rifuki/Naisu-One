@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// === Pyth Oracle Interface (minimal) ===
+// Docs: https://docs.pyth.network/price-feeds/use-real-data/evm
+interface IPyth {
+    struct Price {
+        int64  price;       // price * 10^expo
+        uint64 conf;        // confidence interval * 10^expo
+        int32  expo;        // typically -8
+        uint   publishTime; // unix timestamp
+    }
+
+    /// Reverts if price is older than `age` seconds.
+    function getPriceNoOlderThan(bytes32 id, uint age) external view returns (Price memory);
+}
+
 // === Wormhole Interface ===
 interface IWormhole {
     struct VM {
@@ -38,6 +52,28 @@ contract IntentBridge {
     uint8 public constant STATUS_OPEN      = 0;
     uint8 public constant STATUS_FULFILLED = 1;
     uint8 public constant STATUS_CANCELLED = 2;
+
+    // === Pyth Price Oracle ===
+    // Base Sepolia: https://docs.pyth.network/price-feeds/contract-addresses/evm
+    IPyth public immutable pyth;
+
+    // Price feed IDs (same on all EVM chains)
+    bytes32 public constant ETH_USD_FEED =
+        0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
+    bytes32 public constant SOL_USD_FEED =
+        0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d;
+
+    // Wormhole chain IDs for known destinations
+    uint16 public constant WORMHOLE_SOLANA = 1;
+
+    // Price tolerance: floorPrice must be >= this % of market rate (prevent dust attacks)
+    // 7000 = 70% minimum. User can set startPrice up to 130% of market.
+    uint256 public constant MIN_FLOOR_BPS  = 7000;
+    uint256 public constant MAX_START_BPS  = 13000;
+    uint256 public constant BPS_DENOMINATOR = 10000;
+
+    // Max price age accepted from Pyth (5 min — generous for testnet)
+    uint256 public constant PYTH_MAX_AGE = 300;
 
     // === Structs ===
     struct Order {
@@ -103,10 +139,11 @@ contract IntentBridge {
         _;
     }
 
-    constructor(address _wormhole, uint8 _consistencyLevel) {
+    constructor(address _wormhole, uint8 _consistencyLevel, address _pyth) {
         owner = msg.sender;
         wormhole = IWormhole(_wormhole);
         consistencyLevel = _consistencyLevel;
+        pyth = IPyth(_pyth);
     }
 
     // === Admin Functions ===
@@ -198,6 +235,13 @@ contract IntentBridge {
         require(durationSeconds > 0,        "Invalid duration");
         require(recipient != bytes32(0),    "Invalid recipient");
 
+        // Validate prices against Pyth oracle for known destination chains.
+        // Prevents dust attacks where user (or compromised UI) sets floorPrice ≈ 0,
+        // allowing a colluding solver to fill for near-zero and claim the locked ETH.
+        if (destinationChain == WORMHOLE_SOLANA) {
+            _validateEthToSolPrice(msg.value, startPrice, floorPrice);
+        }
+
         orderId = keccak256(abi.encodePacked(msg.sender, orderCount, block.timestamp));
         orderCount++;
 
@@ -252,6 +296,54 @@ contract IntentBridge {
         uint256 decay         = (priceRange * elapsed) / totalDuration;
 
         return order.startPrice - decay;
+    }
+
+    // === Internal: Pyth Price Validation ===
+
+    /// @dev Validate that startPrice and floorPrice are within acceptable range
+    ///      of the current ETH/SOL market rate from Pyth.
+    ///
+    ///      startPrice: SOL lamports the solver is initially expected to pay.
+    ///      floorPrice: minimum SOL lamports accepted (Dutch auction floor).
+    ///
+    ///      Guards:
+    ///        - floorPrice >= 70% of market rate  → prevents "give away" via dust floor
+    ///        - startPrice <= 130% of market rate → prevents nonsensical high prices
+    ///
+    ///      Math (both feeds have expo = -8, so expo cancels):
+    ///        expectedLamports = ethWei * ethPriceRaw / (1e9 * solPriceRaw)
+    function _validateEthToSolPrice(
+        uint256 ethWei,
+        uint256 startLamports,
+        uint256 floorLamports
+    ) internal view {
+        IPyth.Price memory ethP = pyth.getPriceNoOlderThan(ETH_USD_FEED, PYTH_MAX_AGE);
+        IPyth.Price memory solP = pyth.getPriceNoOlderThan(SOL_USD_FEED, PYTH_MAX_AGE);
+
+        require(ethP.price > 0 && solP.price > 0, "Oracle: non-positive price");
+
+        uint256 ethPRaw = uint256(uint64(ethP.price));
+        uint256 solPRaw = uint256(uint64(solP.price));
+
+        // Adjust for different exponents (usually both -8, but handle generically)
+        uint256 expectedLamports;
+        int32 expoDiff = ethP.expo - solP.expo;
+        if (expoDiff >= 0) {
+            expectedLamports = (ethWei * ethPRaw * (10 ** uint32(expoDiff))) / (1e9 * solPRaw);
+        } else {
+            expectedLamports = (ethWei * ethPRaw) / (1e9 * solPRaw * (10 ** uint32(-expoDiff)));
+        }
+
+        require(expectedLamports > 0, "Oracle: zero expected amount");
+
+        require(
+            floorLamports >= expectedLamports * MIN_FLOOR_BPS / BPS_DENOMINATOR,
+            "Oracle: floorPrice below 70% of market rate"
+        );
+        require(
+            startLamports <= expectedLamports * MAX_START_BPS / BPS_DENOMINATOR,
+            "Oracle: startPrice exceeds 130% of market rate"
+        );
     }
 
     // === Solver Functions (Wormhole) ===

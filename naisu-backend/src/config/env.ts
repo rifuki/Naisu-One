@@ -89,7 +89,7 @@ const envSchema = z.object({
   BASE_SEPOLIA_INTENT_CONTRACT: z
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/)
-    .default('0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1'),
+    .default('0xab32659262b0438b3837f0e4e5cb60ae2c9e7701'),
   BASE_SEPOLIA_WS_URL: z.preprocess(
     (val) => (val === '' ? undefined : val),
     z.string().optional()

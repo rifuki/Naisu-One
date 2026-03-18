@@ -4,10 +4,12 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {IntentBridge} from "../src/IntentBridge.sol";
 import {MockWormhole} from "../src/MockWormhole.sol";
+import {MockPyth} from "../src/MockPyth.sol";
 
 contract IntentBridgeTest is Test {
     IntentBridge public bridge;
     MockWormhole public mockWormhole;
+    MockPyth     public mockPyth;
 
     address public creator = makeAddr("creator");
     address public solver  = makeAddr("solver");
@@ -19,9 +21,32 @@ contract IntentBridgeTest is Test {
 
     uint256 constant WORMHOLE_FEE = 0.001 ether;
 
+    // Mock prices: ETH=$2000, SOL=$100 (expo=-8)
+    // → 1 ETH = 20 SOL = 20_000_000_000 lamports
+    int64  constant ETH_PRICE_RAW = 200_000_000_000; // $2000 * 1e8
+    int64  constant SOL_PRICE_RAW =  10_000_000_000; // $100  * 1e8
+    int32  constant PRICE_EXPO    = -8;
+
+    // Safe startPrice/floorPrice for 1 ETH → Solana orders:
+    //   expected = 20_000_000_000, window ±30%
+    //   startPrice <= 130% = 26_000_000_000
+    //   floorPrice >= 70%  = 14_000_000_000
+    uint256 constant SOL_START = 22_000_000_000; // 22 SOL (within 130%)
+    uint256 constant SOL_FLOOR = 15_000_000_000; // 15 SOL (above 70%)
+
+    // Pyth feed IDs (same as contract constants)
+    bytes32 constant ETH_USD_FEED = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
+    bytes32 constant SOL_USD_FEED = 0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d;
+
     function setUp() public {
         mockWormhole = new MockWormhole(WORMHOLE_FEE);
-        bridge = new IntentBridge(address(mockWormhole), 1);
+        mockPyth     = new MockPyth(300); // 5-min staleness tolerance
+
+        // Set mock prices for ETH/USD and SOL/USD
+        mockPyth.setPrice(ETH_USD_FEED, ETH_PRICE_RAW, 1_000_000, PRICE_EXPO);
+        mockPyth.setPrice(SOL_USD_FEED, SOL_PRICE_RAW, 1_000_000, PRICE_EXPO);
+
+        bridge = new IntentBridge(address(mockWormhole), 1, address(mockPyth));
         bridge.registerEmitter(SUI_CHAIN_ID, SUI_EMITTER);
         bridge.registerEmitter(SOLANA_CHAIN_ID, SOLANA_EMITTER);
 
@@ -128,12 +153,14 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderSolana() public {
         // Solana-destined order (destinationChain=1)
+        // 1 ETH @ $2000, SOL @ $100 → expected = 20_000_000_000 lamports (20 SOL)
+        // startPrice=22 SOL (110% of market ✓), floorPrice=15 SOL (75% of market ✓)
         bytes32 solanaRecipient = bytes32(uint256(0xDA1C0B2C3D4E5F67));
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(solanaRecipient, 1, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(solanaRecipient, 1, SOL_START, SOL_FLOOR, 3600, false);
 
         // Solver sends SOL (amountLamports >= floorPrice)
-        uint256 amountLamports = 700;
+        uint256 amountLamports = SOL_FLOOR;
         bytes memory payload = abi.encodePacked(
             orderId, bytes32(uint256(uint160(solver))), bytes32(amountLamports)
         );

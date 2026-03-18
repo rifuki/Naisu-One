@@ -23,6 +23,7 @@ import { config } from '@config/env'
 import { logger } from '@lib/logger'
 import { AppError } from '@utils/validation'
 import { ERROR_CODES, INTENT_BRIDGE } from '@config/constants'
+import { getPythRate } from '@services/pyth.service'
 
 // ============================================================================
 // Types
@@ -48,6 +49,12 @@ export interface IntentQuote {
   durationMs: number        // default auction duration
   wormholeFromChainId: number
   wormholeToChainId: number
+  // Price metadata
+  fromUsd: number | null    // USD price of source token
+  toUsd: number | null      // USD price of destination token
+  rate: number | null       // FX rate: 1 fromToken = rate toTokens
+  confidence: number | null // max confidence % across both feeds (lower = more accurate)
+  priceSource: 'pyth' | 'coingecko' | 'fallback'
 }
 
 export interface IntentOrder {
@@ -574,16 +581,39 @@ export async function getIntentQuote(params: {
     amountRaw = parseEther(amount)
   }
 
-  // Fetch FX rate to compute estimated receive in destination token units
+  // Fetch FX rate — try Pyth first, fallback to CoinGecko
   const amountInNum = parseFloat(amount)
   let receiveAmountNum = amountInNum
+  let fromUsd: number | null = null
+  let toUsd: number | null = null
+  let rate: number | null = null
+  let confidence: number | null = null
+  let priceSource: IntentQuote['priceSource'] = 'fallback'
 
   try {
-    const price = await getCrossChainPrice({ fromChain, toChain })
-    receiveAmountNum = amountInNum * price.rate
-  } catch {
-    // Fallback: express in source token units (1:1 — better than a garbage number)
-    receiveAmountNum = amountInNum
+    const pyth = await getPythRate(fromChain, toChain)
+    if (pyth) {
+      rate             = pyth.rate
+      fromUsd          = pyth.fromUsd
+      toUsd            = pyth.toUsd
+      confidence       = pyth.confidence
+      receiveAmountNum = amountInNum * pyth.rate
+      priceSource      = 'pyth'
+    } else {
+      throw new Error('Pyth returned null — missing feed for this pair')
+    }
+  } catch (pythErr) {
+    logger.warn({ fromChain, toChain, err: pythErr }, 'Pyth price fetch failed, trying CoinGecko')
+    try {
+      const cg = await getCrossChainPrice({ fromChain, toChain })
+      rate             = cg.rate
+      receiveAmountNum = amountInNum * cg.rate
+      priceSource      = 'coingecko'
+    } catch {
+      // Fallback: 1:1 — better than crashing
+      receiveAmountNum = amountInNum
+      priceSource      = 'fallback'
+    }
   }
 
   const estimatedReceive = receiveAmountNum.toFixed(6)
@@ -615,6 +645,11 @@ export async function getIntentQuote(params: {
     durationMs,
     wormholeFromChainId:  wormholeChainId(fromChain),
     wormholeToChainId:    wormholeChainId(toChain),
+    fromUsd,
+    toUsd,
+    rate,
+    confidence,
+    priceSource,
   }
 }
 

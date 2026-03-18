@@ -8,12 +8,16 @@ contract Deploy is Script {
     function run() external {
         address wormholeAddress = vm.envAddress("WORMHOLE_ADDRESS");
         uint8 cl = uint8(vm.envOr("CONSISTENCY_LEVEL", uint256(1)));
+        // Pyth contract on Base Sepolia
+        // Ref: https://docs.pyth.network/price-feeds/contract-addresses/evm
+        address pythAddress = vm.envOr("PYTH_ADDRESS", address(0xA2aa501b19aff244D90cc15a4Cf739D2725B5729));
 
         vm.startBroadcast();
-        IntentBridge bridge = new IntentBridge(wormholeAddress, cl);
+        IntentBridge bridge = new IntentBridge(wormholeAddress, cl, pythAddress);
         console.log("IntentBridge deployed at:", address(bridge));
         console.log("Owner:", msg.sender);
         console.log("Wormhole:", wormholeAddress);
+        console.log("Pyth:", pythAddress);
         console.log("consistencyLevel:", cl);
 
         // Register Sui emitter (chain 21)

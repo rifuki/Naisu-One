@@ -147,6 +147,23 @@ pub mod intent_bridge_solana {
         let amount = ctx.accounts.payment.lamports();
         require!(amount > 0, IntentBridgeError::InvalidParams);
 
+        // Price sanity bounds — prevent dust-floor attacks where floor_price ≈ 0
+        // lets a colluding solver claim locked SOL for near-zero ETH.
+        //
+        // start_price / floor_price are in destination chain units (gwei for EVM Base Sepolia).
+        //   1. floor_price >= 70% of start_price  (floor cannot be near-zero dust)
+        //   2. Both prices >= 500_000 gwei         (min ~0.0005 ETH, blocks literal zero)
+        //
+        // Full on-chain Pyth oracle validation planned for Phase 2
+        // (requires pyth-sdk-solana crate + price account in tx accounts).
+        const MIN_PRICE_GWEI: u64 = 500_000;
+        require!(start_price >= MIN_PRICE_GWEI, IntentBridgeError::InvalidParams);
+        require!(floor_price >= MIN_PRICE_GWEI, IntentBridgeError::InvalidParams);
+        require!(
+            floor_price >= start_price.saturating_mul(7000) / 10000,
+            IntentBridgeError::PriceTooLow
+        );
+
         let clock = Clock::get()?;
         let deadline = clock.unix_timestamp + duration_seconds as i64;
 
