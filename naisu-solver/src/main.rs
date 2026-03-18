@@ -1,6 +1,7 @@
 mod auction;
 mod chains;
 mod config;
+mod coordinator;
 mod executor;
 mod strategy;
 mod tui;
@@ -91,6 +92,12 @@ async fn main() -> Result<()> {
                 eprintln!("TUI error: {e}");
             }
         });
+    }
+
+    // Solver network: register + heartbeat + RFQ server (no-op if env vars not set)
+    {
+        let cfg_coord = Arc::clone(&config);
+        tokio::spawn(async move { coordinator::start(cfg_coord).await });
     }
 
     let cfg_base = Arc::clone(&config);

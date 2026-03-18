@@ -267,6 +267,8 @@ export async function broadcastRFQ(order: IntentOrder): Promise<RFQResult | null
     orderId:          order.orderId,
     amount:           order.amount,
     amountRaw:        order.amountRaw,
+    startPrice:       order.startPrice,
+    floorPrice:       order.floorPrice,
     destinationChain: order.destinationChain,
     deadline:         order.deadline,
   }
