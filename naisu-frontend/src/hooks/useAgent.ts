@@ -221,6 +221,9 @@ export function useAgent(
     }
     if (extras.length) messageToSend += `\n\n[Wallet context]\n${extras.join('\n')}`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
     try {
       const res = await fetch(`${AGENT_URL}/v1/chat`, {
         method: 'POST',
@@ -231,7 +234,10 @@ export function useAgent(
           sessionId: sessionIdRef.current,
           message: messageToSend,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       const data = await res.json();
 
@@ -244,12 +250,21 @@ export function useAgent(
         throw new Error(data.error ?? 'Unknown error');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Network error';
-      setError(msg);
-      appendMessages(prev => [...prev, {
-        role: 'assistant' as const,
-        content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
-      }]);
+      if (err instanceof Error && err.name === 'AbortError') {
+        const timeoutMsg = "The agent is taking too long to respond (timeout). It might be stuck waiting for a solver or processing a long request. Please try again later.";
+        setError(timeoutMsg);
+        appendMessages(prev => [...prev, {
+          role: 'assistant' as const,
+          content: `⚠️ **Timeout Error:**\n\n${timeoutMsg}`,
+        }]);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Network error';
+        setError(msg);
+        appendMessages(prev => [...prev, {
+          role: 'assistant' as const,
+          content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
+        }]);
+      }
     } finally {
       setIsLoading(false);
     }

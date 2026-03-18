@@ -63,10 +63,15 @@ export default function IntentPage() {
   useEffect(() => {
     if (initialIntentRef.current && !initialSentRef.current) {
       initialSentRef.current = true;
-      handleSend(initialIntentRef.current);
+      // Force a pristine session for new intents from the home page
+      createSession();
+      // Delay slightly so the new session has time to become active
+      setTimeout(() => {
+        handleSend(initialIntentRef.current);
+      }, 50);
       navigate('/intent', { replace: true, state: {} });
     }
-  }, [handleSend, navigate]);
+  }, [handleSend, navigate, createSession]);
 
   const handleSendTx = useCallback(
     async (tx: PendingTx) => {
