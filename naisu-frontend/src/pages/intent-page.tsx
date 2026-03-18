@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { parseEther } from 'viem';
 import { useAgent, type AgentMessage as ChatMessage, type TxData } from '@/hooks/useAgent';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
-import { IntentZeroState } from '@/features/intent/components/intent-zero-state';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
@@ -11,7 +11,10 @@ import { SettingsModal } from '@/features/intent/components/settings-modal';
 
 export default function IntentPage() {
   const [inputValue, setInputValue] = useState('');
-  const [hasInteracted, setHasInteracted] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const initialIntentRef = useRef(location.state?.initialIntent as string | undefined);
+  const initialSentRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>>([]);
@@ -33,18 +36,17 @@ export default function IntentPage() {
 
     setInputValue('');
 
-    if (!hasInteracted) {
-      setHasInteracted(true);
-    }
+  }, [inputValue, isLoading, messages.length, sendMessage]);
 
-    currentMsgIdxRef.current = messages.length + 1;
-
-    try {
-      await sendMessage(text);
-    } catch {
-      // Error handled by useAgent
+  // Auto-send initial intent from Landing Page
+  useEffect(() => {
+    if (initialIntentRef.current && !initialSentRef.current) {
+      initialSentRef.current = true;
+      handleSend(initialIntentRef.current);
+      // Clear state so reload doesn't re-send
+      navigate('/intent', { replace: true, state: {} });
     }
-  }, [inputValue, isLoading, hasInteracted, messages.length, sendMessage]);
+  }, [handleSend, navigate]);
 
   const handleSendTx = useCallback(
     async (tx: PendingTx) => {
@@ -87,24 +89,7 @@ export default function IntentPage() {
     }
   }, [messages, sendMessage]);
 
-  const handleZeroStateSubmit = useCallback(
-    (input: string) => {
-      handleSend(input);
-    },
-    [handleSend]
-  );
 
-  // Zero state
-  if (!hasInteracted) {
-    return (
-      <div className="flex-1 flex flex-row bg-[#070a09] w-full h-full absolute inset-0 overflow-hidden relative">
-        <ChatSidebar onNewChat={handleNewChat} onOpenSettings={() => setShowSettings(true)} />
-        <div className="flex-1 flex flex-col relative overflow-hidden">
-          <IntentZeroState onSubmit={handleZeroStateSubmit} />
-        </div>
-      </div>
-    );
-  }
 
   // Active chat state
   return (

@@ -12,7 +12,7 @@ import { QueryProvider } from '@/components/providers/query-provider';
 
 const AppContent: React.FC = () => {
   const location = useLocation();
-  const isIntentPage = location.pathname === '/intent';
+  const isIntentPage = location.pathname === '/intent' || location.pathname === '/';
 
   return (
     <div className={`flex flex-col font-sans mesh-gradient selection:bg-primary selection:text-black ${isIntentPage ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
