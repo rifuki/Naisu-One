@@ -95,39 +95,10 @@ async fn main() -> Result<()> {
         });
     }
 
-    let cfg1 = Arc::clone(&config);
-    let sui_to_evm = tokio::spawn(async move {
-        loop {
-            info!("Starting Sui -> EVM solver...");
-            if let Err(e) = chains::sui_listener::run(&cfg1).await {
-                tracing::error!("Sui listener error: {e} — restarting in 10s...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            }
-        }
-    });
-
-    let cfg_fuji = Arc::clone(&config);
-    let evm_fuji_to_sui = tokio::spawn(async move {
-        loop {
-            info!("Starting Avalanche Fuji → Sui/Solana solver...");
-            if let Err(e) = chains::evm_listener::run_with_config(
-                Arc::clone(&cfg_fuji),
-                cfg_fuji.evm_chain_id,
-                &cfg_fuji.evm_rpc_url.clone(),
-                &cfg_fuji.evm_contract_address.clone(),
-            )
-            .await
-            {
-                tracing::error!("Fuji listener error: {e} — restarting in 10s...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            }
-        }
-    });
-
     let cfg_base = Arc::clone(&config);
     let evm_base_to_sol = tokio::spawn(async move {
         loop {
-            info!("Starting Base Sepolia → Solana solver...");
+            info!("Starting Base Sepolia → Solana solver (WS)...");
             if let Err(e) = chains::evm_listener::run_with_config(
                 Arc::clone(&cfg_base),
                 cfg_base.evm2_chain_id,
@@ -142,18 +113,18 @@ async fn main() -> Result<()> {
         }
     });
 
-    let cfg3 = Arc::clone(&config);
+    let cfg_sol = Arc::clone(&config);
     let solana_to_evm = tokio::spawn(async move {
         loop {
-            info!("Starting Solana -> EVM solver...");
-            if let Err(e) = chains::solana_listener::run(&cfg3).await {
+            info!("Starting Solana → Base solver (WS)...");
+            if let Err(e) = chains::solana_listener::run(&cfg_sol).await {
                 tracing::error!("Solana listener error: {e} — restarting in 10s...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             }
         }
     });
 
-    let _ = tokio::join!(sui_to_evm, evm_fuji_to_sui, evm_base_to_sol, solana_to_evm);
+    let _ = tokio::join!(evm_base_to_sol, solana_to_evm);
 
     Ok(())
 }

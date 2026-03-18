@@ -1,7 +1,7 @@
 use crate::{auction, config::Config, executor, wormhole};
 use bs58;
 use ethers::{
-    providers::{Http, Middleware, Provider},
+    providers::{Http, Middleware, Provider, StreamExt, Ws},
     types::{Address, Bytes, Filter, Log, TransactionRequest, U256},
 };
 use eyre::Result;
@@ -13,8 +13,8 @@ use tracing::{debug, error, info, warn};
 #[derive(Debug, Clone)]
 pub struct EvmOrder {
     pub order_id: [u8; 32],
-    pub creator: String,     // EVM address
-    pub recipient: [u8; 32], // Sui address
+    pub creator: String,
+    pub recipient: [u8; 32],
     pub destination_chain: u16,
     pub amount: u128,
     pub start_price: u128,
@@ -26,7 +26,6 @@ pub struct EvmOrder {
 
 fn evm_chain_name(chain_id: u64) -> &'static str {
     match chain_id {
-        43113 => "Avalanche Fuji",
         84532 => "Base Sepolia",
         _ => "EVM",
     }
@@ -40,7 +39,6 @@ fn dest_chain_name(chain: u16) -> &'static str {
     }
 }
 
-/// Format wei as human-readable ETH (6 decimal places).
 fn format_wei_eth(wei: u128) -> String {
     let whole = wei / 1_000_000_000_000_000_000u128;
     let frac = (wei % 1_000_000_000_000_000_000u128) / 1_000_000_000_000u128;
@@ -49,17 +47,18 @@ fn format_wei_eth(wei: u128) -> String {
 
 fn evm_explorer_tx(chain_id: u64, tx_hash: &str) -> String {
     match chain_id {
-        43113 => format!("https://testnet.snowtrace.io/tx/{}", tx_hash),
         84532 => format!("https://sepolia.basescan.org/tx/{}", tx_hash),
         _ => format!("(chain_id={}) {}", chain_id, tx_hash),
     }
 }
 
-const SEP: &str    = "=======================================================";
+const SEP: &str     = "=======================================================";
 const SEP_SUB: &str = "-------------------------------------------------------";
 
-/// Process a single EVM order end-to-end (solve, fetch VAA, settle).
-/// This runs in a separate Tokio task for concurrent order processing.
+const ORDER_CREATED_EVENT: &str =
+    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256,bool)";
+
+/// Process a single EVM order end-to-end (solve → VAA → settle).
 async fn process_evm_order(
     config: Arc<Config>,
     order: EvmOrder,
@@ -87,7 +86,6 @@ async fn process_evm_order(
         .as_secs();
     let deadline_min = order.deadline.saturating_sub(now_secs) / 60;
 
-    // ── ORDER HEADER ─────────────────────────────────────────────────────
     info!("{SEP}");
     info!(" NEW ORDER  |  {chain_name} → {dest_name}");
     info!(" id        : {order_id_hex}");
@@ -102,11 +100,9 @@ async fn process_evm_order(
     let mut solana_recipient_b58_cap: Option<String> = None;
     let mut payment_amount_lamports: u64 = 0;
 
-    // ── STEP 1 ───────────────────────────────────────────────────────────
     let (wh_chain_id, emitter_address, wh_sequence) =
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
-
             let mode_label = if order.with_stake { "bridge+liquid_stake" } else { "bridge" };
 
             info!("{SEP_SUB}");
@@ -116,13 +112,8 @@ async fn process_evm_order(
 
             if order.with_stake {
                 match executor::solana_executor::solve_and_liquid_stake(
-                    &config,
-                    order.order_id,
-                    &recipient_b58,
-                    price,
-                )
-                .await
-                {
+                    &config, order.order_id, &recipient_b58, price,
+                ).await {
                     Ok((sig, seq, lst_minted)) => {
                         let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
                         info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + liquid staked");
@@ -140,7 +131,7 @@ async fn process_evm_order(
                         error!(" [{short}] STEP 1/3 ✗  |  solve_and_liquid_stake failed: {e}");
                         if !err_str.contains("SolanaTransactionFailed") {
                             seen_orders.lock().await.remove(&order.order_id);
-                            warn!(" [{short}]  → removed from dedup, will retry on next poll");
+                            warn!(" [{short}]  → removed from dedup, will retry");
                         }
                         info!("{SEP}");
                         info!(" [{short}] ✗ ORDER ABORTED  |  Solana liquid stake step failed");
@@ -150,13 +141,8 @@ async fn process_evm_order(
                 }
             } else {
                 match executor::solana_executor::solve_and_prove(
-                    &config,
-                    order.order_id,
-                    &recipient_b58,
-                    price,
-                )
-                .await
-                {
+                    &config, order.order_id, &recipient_b58, price,
+                ).await {
                     Ok((sig, seq)) => {
                         let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
                         info!(" [{short}] STEP 1/3 ✓  |  SOL sent");
@@ -173,7 +159,7 @@ async fn process_evm_order(
                         error!(" [{short}] STEP 1/3 ✗  |  solve_and_prove failed: {e}");
                         if !err_str.contains("SolanaTransactionFailed") {
                             seen_orders.lock().await.remove(&order.order_id);
-                            warn!(" [{short}]  → removed from dedup, will retry on next poll");
+                            warn!(" [{short}]  → removed from dedup, will retry");
                         }
                         info!("{SEP}");
                         info!(" [{short}] ✗ ORDER ABORTED  |  Solana step failed");
@@ -203,7 +189,6 @@ async fn process_evm_order(
             }
         };
 
-    // ── STEP 2: Fetch Wormhole VAA ────────────────────────────────────────
     info!("{SEP_SUB}");
     info!(" [{short}] STEP 2/3  |  Waiting for Wormhole VAA");
     info!(" [{short}]           |  chain={wh_chain_id}  seq={wh_sequence}");
@@ -211,13 +196,8 @@ async fn process_evm_order(
 
     let vaa_start = std::time::Instant::now();
     let vaa = match wormhole::fetch_vaa(
-        &config.wormhole_api_url,
-        wh_chain_id,
-        &emitter_address,
-        wh_sequence,
-    )
-    .await
-    {
+        &config.wormhole_api_url, wh_chain_id, &emitter_address, wh_sequence,
+    ).await {
         Ok(v) => {
             let elapsed = vaa_start.elapsed().as_secs();
             info!(" [{short}] STEP 2/3 ✓  |  VAA ready  ({} bytes, {elapsed}s)", v.len());
@@ -232,7 +212,6 @@ async fn process_evm_order(
         }
     };
 
-    // Final deadline check — we MUST settle after sending SOL/SUI or we lose funds
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -240,7 +219,6 @@ async fn process_evm_order(
     let time_remaining = order.deadline.saturating_sub(current_time);
     let is_urgent = time_remaining < 120;
 
-    // ── STEP 3: Settle on EVM ─────────────────────────────────────────────
     info!("{SEP_SUB}");
     if is_urgent {
         warn!(" [{short}] STEP 3/3  |  ⚠ URGENT — {time_remaining}s to deadline, using HIGH GAS");
@@ -258,17 +236,12 @@ async fn process_evm_order(
         executor::evm_executor::settle_order(&config, vaa, chain_id, &rpc_url, &contract_addr_str).await
     };
 
-    // ── RESULT ───────────────────────────────────────────────────────────
     match settle_result {
         SettleOutcome::Success(tx_hash) => {
             let evm_explorer = evm_explorer_tx(chain_id, &tx_hash);
             info!("{SEP}");
-            if let (Some(sol_sig), Some(recipient)) =
-                (&solana_payment_sig, &solana_recipient_b58_cap)
-            {
-                let sol_explorer = format!(
-                    "https://explorer.solana.com/tx/{sol_sig}?cluster=devnet"
-                );
+            if let (Some(sol_sig), Some(recipient)) = (&solana_payment_sig, &solana_recipient_b58_cap) {
+                let sol_explorer = format!("https://explorer.solana.com/tx/{sol_sig}?cluster=devnet");
                 info!(" [{short}] ✓ ORDER FULFILLED  |  {chain_name} → Solana");
                 info!(" [{short}]  amount    : {payment_amount_lamports} lamports");
                 info!(" [{short}]  recipient : {recipient}");
@@ -285,20 +258,115 @@ async fn process_evm_order(
         }
         SettleOutcome::PermanentSkip(reason) => {
             info!("{SEP}");
-            warn!(" [{short}] ⚠ ORDER SKIPPED  |  already processed (permanent skip)");
+            warn!(" [{short}] ⚠ ORDER SKIPPED  |  already processed");
             warn!(" [{short}]  reason : {reason}");
             info!("{SEP}");
         }
         SettleOutcome::TransientError(reason) => {
             info!("{SEP}");
-            error!(" [{short}] ✗ ORDER FAILED  |  transient error, no auto-retry");
+            error!(" [{short}] ✗ ORDER FAILED  |  transient error");
             error!(" [{short}]  reason : {reason}");
             info!("{SEP}");
         }
     }
 }
 
-/// Run EVM listener with explicit chain config (avoids env var race conditions)
+/// Handle a single OrderCreated log: validate, deduplicate, price, and spawn processing.
+async fn handle_order_log(
+    log: Log,
+    http: &Provider<Http>,
+    config: &Arc<Config>,
+    chain_id: u64,
+    contract_addr: Address,
+    rpc_url: &str,
+    seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+) {
+    let chain_name = evm_chain_name(chain_id);
+    let tx_hash = log.transaction_hash.map(|h| format!("{h:?}")).unwrap_or_default();
+
+    let Some(order) = parse_order_created(&log, http).await else {
+        warn!("[{chain_name}] failed to parse order from tx {tx_hash}");
+        return;
+    };
+
+    let order_id_hex = hex::encode(order.order_id);
+    let short = &order_id_hex[..8];
+
+    if seen_orders.lock().await.contains(&order.order_id) {
+        debug!("[{chain_name}] {short} already in dedup — skip");
+        return;
+    }
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+
+    if now_ms >= order.deadline * 1000 {
+        info!("[{chain_name}] SKIP {short} — expired");
+        seen_orders.lock().await.insert(order.order_id);
+        return;
+    }
+
+    match query_order_status(http, contract_addr, order.order_id).await {
+        Ok(status) if status != 0 => {
+            info!("[{chain_name}] SKIP {short} — already settled (status={status})");
+            seen_orders.lock().await.insert(order.order_id);
+            return;
+        }
+        Err(e) => {
+            warn!("[{chain_name}] SKIP {short} — status query failed: {e}");
+            return;
+        }
+        Ok(_) => {}
+    }
+
+    let price = match auction::calculate_price(
+        order.start_price as u64,
+        order.floor_price as u64,
+        order.created_at * 1000,
+        order.deadline * 1000,
+        now_ms,
+    ) {
+        Some(p) => p,
+        None => {
+            error!("[{chain_name}] SKIP {short} — invalid auction params");
+            seen_orders.lock().await.insert(order.order_id);
+            return;
+        }
+    };
+
+    const DEADLINE_BUFFER_SECS: u64 = 90;
+    let time_until_deadline = order.deadline.saturating_sub(now_ms / 1000);
+    if time_until_deadline < DEADLINE_BUFFER_SECS {
+        warn!(
+            "[{chain_name}] SKIP {short} — deadline too close ({}min left, need 1.5min)",
+            time_until_deadline / 60
+        );
+        seen_orders.lock().await.insert(order.order_id);
+        return;
+    }
+
+    let eth_fmt = format_wei_eth(order.amount);
+    let dest_name = dest_chain_name(order.destination_chain);
+    info!(
+        "[{chain_name}→{dest_name}] ▶  {}  {} lps  {}min deadline  id={}",
+        eth_fmt, price, time_until_deadline / 60, order_id_hex
+    );
+
+    seen_orders.lock().await.insert(order.order_id);
+
+    let config_clone = Arc::clone(config);
+    let seen_clone = Arc::clone(&seen_orders);
+    let rpc_clone = rpc_url.to_string();
+
+    tokio::spawn(async move {
+        process_evm_order(config_clone, order, price, chain_id, contract_addr, rpc_clone, seen_clone).await;
+    });
+}
+
+/// Listen for OrderCreated events via WebSocket. Reconnects automatically.
+/// On reconnect, replays missed blocks via HTTP before re-subscribing.
 pub async fn run_with_config(
     config: Arc<Config>,
     chain_id: u64,
@@ -306,179 +374,64 @@ pub async fn run_with_config(
     contract: &str,
 ) -> Result<()> {
     let chain_name = evm_chain_name(chain_id);
-    let provider = Provider::<Http>::try_from(rpc_url)?;
+    let ws_url = rpc_url.replace("https://", "wss://").replace("http://", "ws://");
     let contract_addr: Address = contract.parse()?;
-    let current = provider.get_block_number().await?;
-    let mut last_block = current.saturating_sub(2000.into());
-
-    // Dedup: shared across polling loop and spawned tasks.
     let seen_orders: Arc<Mutex<HashSet<[u8; 32]>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    info!(
-        "[{}] Listener ready | contract {} | head={} | scanning from block {}",
-        chain_name, contract_addr, current, last_block
-    );
+    let http = Provider::<Http>::try_from(rpc_url)?;
+    let mut last_block = http.get_block_number().await?.saturating_sub(2000.into());
 
-    // RPC lag buffer: public RPCs often return latest block before eth_getLogs has
-    // indexed those blocks. Without this buffer, we advance last_block past un-indexed
-    // blocks and permanently miss orders. The seen_orders dedup prevents double-processing.
-    const RPC_LAG_BUFFER_BLOCKS: u64 = 5;
+    let order_filter = Filter::new()
+        .address(contract_addr)
+        .event(ORDER_CREATED_EVENT);
+
+    info!("[{chain_name}] Listener ready | contract={contract_addr} | from block={last_block}");
 
     loop {
-        let current_block = provider.get_block_number().await?;
-        let safe_block = current_block.saturating_sub(RPC_LAG_BUFFER_BLOCKS.into());
-
-        if safe_block > last_block {
-            debug!(
-                "[{}] scan blocks {}→{} (head: {})",
-                chain_name,
-                last_block + 1,
-                safe_block,
-                current_block
-            );
-
-            let filter = Filter::new()
-                .address(contract_addr)
-                .from_block(last_block + 1)
-                .to_block(safe_block)
-                .event(
-                    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256,bool)",
-                );
-
-            let logs = provider.get_logs(&filter).await?;
-
-            if !logs.is_empty() {
-                debug!(
-                    "[{}] {} order event(s) in blocks {}→{}",
-                    chain_name,
-                    logs.len(),
-                    last_block + 1,
-                    safe_block
-                );
+        // ── Catchup: replay events missed while disconnected ────────────────
+        if let Ok(current) = http.get_block_number().await {
+            let safe = current.saturating_sub(2.into());
+            if safe > last_block {
+                let catchup = order_filter.clone().from_block(last_block + 1).to_block(safe);
+                match http.get_logs(&catchup).await {
+                    Ok(logs) => {
+                        if !logs.is_empty() {
+                            info!("[{chain_name}] Catchup: {} event(s) in blocks {}→{}", logs.len(), last_block + 1, safe);
+                        }
+                        for log in logs {
+                            handle_order_log(log, &http, &config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                        }
+                    }
+                    Err(e) => warn!("[{chain_name}] Catchup get_logs failed: {e}"),
+                }
+                last_block = safe;
             }
-
-            for log in &logs {
-                let tx_hash = log.transaction_hash.map(|h| format!("{:?}", h)).unwrap_or_default();
-                debug!("[{}] parsing tx {}", chain_name, tx_hash);
-
-                let Some(order) = parse_order_created(log, &provider).await else {
-                    warn!("[{}] failed to parse order from tx {}", chain_name, tx_hash);
-                    continue;
-                };
-
-                let order_id_hex = hex::encode(order.order_id);
-                let short = &order_id_hex[..8];
-
-                debug!(
-                    "[{}] parsed order {}  dest={}  amount={}",
-                    chain_name, short, order.destination_chain, order.amount
-                );
-
-                // Skip orders already processed in this session
-                if seen_orders.lock().await.contains(&order.order_id) {
-                    debug!("[{}] {} already in dedup — skip", chain_name, short);
-                    continue;
-                }
-
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-
-                let expired = now_ms >= order.deadline * 1000;
-                if expired {
-                    info!("[{}] SKIP {} — expired", chain_name, short);
-                    seen_orders.lock().await.insert(order.order_id);
-                    continue;
-                }
-
-                // Query on-chain order status — skip if already fulfilled (1) or cancelled (2)
-                match query_order_status(&provider, contract_addr, order.order_id).await {
-                    Ok(status) if status != 0 => {
-                        info!(
-                            "[{}] SKIP {} — already settled on-chain (status={})",
-                            chain_name, short, status
-                        );
-                        seen_orders.lock().await.insert(order.order_id);
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!(
-                            "[{}] SKIP {} — status query failed, skipping to be safe: {}",
-                            chain_name, short, e
-                        );
-                        continue;
-                    }
-                    Ok(_) => {} // status == 0 (Open), proceed
-                }
-
-                let price = match auction::calculate_price(
-                    order.start_price as u64,
-                    order.floor_price as u64,
-                    order.created_at * 1000,
-                    order.deadline * 1000,
-                    now_ms,
-                ) {
-                    Some(p) => p,
-                    None => {
-                        error!(
-                            "[{}] SKIP {} — invalid auction params (floor > start or bad deadline)",
-                            chain_name, short
-                        );
-                        seen_orders.lock().await.insert(order.order_id);
-                        continue;
-                    }
-                };
-
-                // Ensure enough time before deadline for full processing (~10-20s + 1.5min buffer)
-                const DEADLINE_BUFFER_SECS: u64 = 90;
-                let time_until_deadline = order.deadline.saturating_sub(now_ms / 1000);
-                if time_until_deadline < DEADLINE_BUFFER_SECS {
-                    warn!(
-                        "[{}] SKIP {} — deadline too close ({}min left, need 1.5min)",
-                        chain_name, short, time_until_deadline / 60
-                    );
-                    seen_orders.lock().await.insert(order.order_id);
-                    continue;
-                }
-
-                let eth_fmt = format_wei_eth(order.amount);
-                let dest_name = dest_chain_name(order.destination_chain);
-                info!(
-                    "[{}→{}] ▶  {}  {} lps  {}min deadline  id={}",
-                    chain_name, dest_name, eth_fmt, price, time_until_deadline / 60, order_id_hex
-                );
-
-                // Mark as seen before spawning (prevents re-entry while processing)
-                seen_orders.lock().await.insert(order.order_id);
-
-                let config_clone = Arc::clone(&config);
-                let order_clone = order.clone();
-                let seen_orders_clone = Arc::clone(&seen_orders);
-                let rpc_url_clone = rpc_url.to_string();
-
-                tokio::spawn(async move {
-                    process_evm_order(
-                        config_clone,
-                        order_clone,
-                        price,
-                        chain_id,
-                        contract_addr,
-                        rpc_url_clone,
-                        seen_orders_clone,
-                    ).await;
-                });
-            }
-
-            last_block = safe_block;
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        // ── WS subscription ────────────────────────────────────────────────
+        match Provider::<Ws>::connect(&ws_url).await {
+            Ok(ws) => {
+                match ws.subscribe_logs(&order_filter).await {
+                    Ok(mut stream) => {
+                        info!("[{chain_name}] WS connected ✓  streaming OrderCreated events...");
+                        while let Some(log) = stream.next().await {
+                            if let Some(bn) = log.block_number {
+                                last_block = bn;
+                            }
+                            handle_order_log(log, &http, &config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                        }
+                        warn!("[{chain_name}] WS stream ended — reconnecting...");
+                    }
+                    Err(e) => warn!("[{chain_name}] subscribe_logs failed: {e} — retrying..."),
+                }
+            }
+            Err(e) => warn!("[{chain_name}] WS connect failed ({ws_url}): {e} — retrying..."),
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
     }
 }
 
-/// Query the `status` field of an order from the EVM contract.
-/// `orders(bytes32)` returns a tuple: (creator, recipient, destinationChain, amount,
-///  startPrice, floorPrice, deadline, createdAt, status)
 async fn query_order_status(
     provider: &Provider<Http>,
     contract_addr: Address,
@@ -498,21 +451,15 @@ async fn query_order_status(
     if result.len() < 9 * 32 {
         return Err(eyre::eyre!("orders() returned too few bytes: {}", result.len()));
     }
-    let status = result[8 * 32 + 31];
-    Ok(status)
+    Ok(result[8 * 32 + 31])
 }
 
 async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<EvmOrder> {
     let topics = &log.topics;
-
-    if topics.len() < 3 {
-        return None;
-    }
+    if topics.len() < 3 { return None; }
 
     let data: &[u8] = log.data.as_ref();
-    if data.len() < 224 {
-        return None;
-    }
+    if data.len() < 224 { return None; }
 
     let order_id: [u8; 32] = topics[1].as_bytes().try_into().ok()?;
     let creator = format!("{:?}", Address::from(topics[2]));
@@ -525,15 +472,10 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     let start_price = U256::from_big_endian(&data[96..128]).as_u128();
     let floor_price = U256::from_big_endian(&data[128..160]).as_u128();
     let deadline = U256::from_big_endian(&data[160..192]).as_u64();
-    // withStake is ABI-encoded bool (padded to 32 bytes): last byte of data[192..224]
     let with_stake = data[223] != 0;
 
     let created_at = if let Some(block_number) = log.block_number {
-        provider
-            .get_block(block_number)
-            .await
-            .ok()
-            .flatten()
+        provider.get_block(block_number).await.ok().flatten()
             .map(|b| b.timestamp.as_u64())
             .unwrap_or(0)
     } else {
@@ -541,16 +483,7 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     };
 
     Some(EvmOrder {
-        order_id,
-        creator,
-        recipient,
-        destination_chain,
-        amount,
-        start_price,
-        floor_price,
-        deadline,
-        created_at,
-        with_stake,
+        order_id, creator, recipient, destination_chain,
+        amount, start_price, floor_price, deadline, created_at, with_stake,
     })
 }
-
