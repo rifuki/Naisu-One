@@ -1,419 +1,407 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { parseUnits, formatUnits } from 'viem';
-import { useSwapBuild } from '@/hooks/useSwapBuild';
-import { useSwapQuote } from '@/hooks/useSwapQuote';
-import { useTokenBalance } from '@/hooks/useTokenBalance';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useIntentQuote } from '@/hooks/useIntentQuote';
+import { useCreateOrder } from '@/hooks/useCreateOrder';
+import SolverAuctionCard from '@/components/SolverAuctionCard';
 
-// Base Sepolia tokens for Uniswap V4 (build on backend, sign in wallet)
-// USDC = 6 decimals, WETH = 18 decimals (amounts from quote API are in raw units)
-const BASE_SEPOLIA_TOKENS = [
-  { symbol: 'USDC', name: 'USD Coin', address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', decimals: 6, icon: 'currency_bitcoin', color: 'bg-blue-500/20 text-blue-400' },
-  { symbol: 'WETH', name: 'Wrapped Ether', address: '0x4200000000000000000000000000000000000006', decimals: 18, icon: 'token', color: 'bg-slate-200 text-black' },
-];
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Normalize raw amount to integer string (API may return number or string with decimals) */
-function normalizeRawAmount(raw: string | number): string {
-  const s = String(raw).trim();
-  const idx = s.indexOf('.');
-  return idx === -1 ? s : s.slice(0, idx);
+function fmtRate(rate: number | null): string {
+  if (rate === null) return '—';
+  return rate >= 1000
+    ? rate.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : rate.toFixed(4).replace(/\.?0+$/, '');
 }
 
-/** Format raw quote amount for display (no scientific notation; trim trailing zeros) */
-function formatQuoteDisplay(raw: string | number, decimals: number): string {
-  const intStr = normalizeRawAmount(raw);
-  if (!intStr) return '0';
-  try {
-    const s = formatUnits(BigInt(intStr), decimals);
-    const num = parseFloat(s);
-    if (num === 0) return '0';
-    const maxDecimals = Math.min(12, decimals);
-    return num.toFixed(maxDecimals).replace(/\.?0+$/, '');
-  } catch {
-    return '0';
-  }
+function fmtUsd(usd: number | null): string {
+  if (usd === null) return '';
+  return `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
+
+function secondsAgo(ts: number): number {
+  return Math.floor((Date.now() - ts) / 1000);
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const SwapPage: React.FC = () => {
-  const { address, isConnected } = useAccount();
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
-  const { buildAndSign, isBusy, isBuilding, isSigning, error, clearError, txHashes } = useSwapBuild();
+  const solanaAddress = useSolanaAddress();
 
-  const [payToken, setPayToken] = useState(BASE_SEPOLIA_TOKENS[0]);
-  const [receiveToken, setReceiveToken] = useState(BASE_SEPOLIA_TOKENS[1]);
-  const [payAmount, setPayAmount] = useState('');
-  const [swapStatus, setSwapStatus] = useState<'idle' | 'building' | 'signing' | 'success'>('idle');
+  const [amount, setAmount] = useState('');
+  const [withStake, setWithStake] = useState(false);
+  const [submitted, setSubmitted] = useState<{ txHash: string; submittedAt: number } | null>(null);
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [tokenModalSide, setTokenModalSide] = useState<'pay' | 'receive' | null>(null);
-
-  // Raw amount for quote API (only when valid number > 0)
-  const amountInRaw = useMemo(() => {
-    const p = parseFloat(payAmount);
-    if (isNaN(p) || p <= 0) return '';
-    try {
-      return parseUnits(payAmount, payToken.decimals).toString();
-    } catch {
-      return '';
-    }
-  }, [payAmount, payToken.decimals]);
-
-  const hasValidAmount = Boolean(payAmount && parseFloat(payAmount) > 0);
-  const { quote, isLoading: isLoadingQuote, error: quoteError } = useSwapQuote(
-    payToken.address,
-    receiveToken.address,
-    amountInRaw,
-    hasValidAmount
-  );
-
-  // Display receive amount from quote (expectedOutput is raw units; use receive token decimals)
-  const receiveAmountDisplay = useMemo(() => {
-    if (!hasValidAmount) return '';
-    if (isLoadingQuote) return '...';
-    if (quote) return formatQuoteDisplay(quote.expectedOutput, receiveToken.decimals);
-    if (quoteError) return '—';
-    return '...';
-  }, [hasValidAmount, isLoadingQuote, quote, receiveToken.decimals, quoteError]);
-
+  // Tick every second for quote age countdown
+  const [, setTick] = useState(0);
   useEffect(() => {
-    if (quote) setIsDetailsOpen(true);
-  }, [quote]);
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  const handleSwapTokens = () => {
-    setPayToken(receiveToken);
-    setReceiveToken(payToken);
-    setPayAmount(receiveAmountDisplay && receiveAmountDisplay !== '...' && receiveAmountDisplay !== '—' ? receiveAmountDisplay : '');
-  };
+  const { quote, isLoading: isQuoteLoading, error: quoteError, lastFetch, refresh } = useIntentQuote(amount);
+  const { submit, isBuilding, isSigning, isBusy, error: buildError, clearError } = useCreateOrder();
 
-  const handleSwapAction = async () => {
-    if (!address || !payAmount || parseFloat(payAmount) <= 0) return;
-    if (!isConnected) {
-      connect({ connector: connectors[0] });
-      return;
-    }
-    
-    setSwapStatus('building');
+  const hasValidAmount = Boolean(amount && parseFloat(amount) > 0);
+  const activeSolvers = quote?.activeSolvers ?? 0;
+  const noSolvers = hasValidAmount && quote && activeSolvers === 0;
+  const canSwap = evmConnected && !!solanaAddress && hasValidAmount && !isBusy && !noSolvers;
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSwap = async () => {
+    if (!evmAddress || !solanaAddress || !amount) return;
     clearError();
-    
     try {
-      const amountInRaw = parseUnits(payAmount, payToken.decimals).toString();
-      console.log('[Swap] Starting swap:', {
-        sender: address,
-        tokenIn: payToken.address,
-        tokenOut: receiveToken.address,
-        amountIn: amountInRaw,
-      });
-      
-      const hashes = await buildAndSign({
-        sender: address,
-        tokenIn: payToken.address,
-        tokenOut: receiveToken.address,
-        amountIn: amountInRaw,
-        minAmountOut: '0',
-        deadlineSeconds: 3600,
-      });
-      
-      console.log('[Swap] Success! Tx hashes:', hashes);
-      setSwapStatus('success');
-      setPayAmount('');
-      setTimeout(() => setSwapStatus('idle'), 4000);
-    } catch (err) {
-      console.error('[Swap] Failed:', err);
-      setSwapStatus('idle');
+      const hash = await submit({ evmAddress, solanaAddress, amount, withStake });
+      setSubmitted({ txHash: hash, submittedAt: Date.now() });
+    } catch {
+      // error set in hook
     }
   };
 
-  const statusMessage = isBuilding 
-    ? 'Building transaction...' 
-    : isSigning 
-      ? 'Confirm in wallet...' 
-      : swapStatus === 'success' 
-        ? 'Swap successful!' 
-        : null;
-  const canSwap = isConnected && address && payAmount && parseFloat(payAmount) > 0 && !isBusy;
+  const handleReset = () => {
+    setSubmitted(null);
+    setAmount('');
+    clearError();
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
 
-  const { balance: payBalance, formatted: payBalanceFormatted, isLoading: payBalanceLoading } = useTokenBalance(
-    payToken.address as `0x${string}`,
-    address ?? undefined,
-    payToken.decimals
-  );
-  const { balance: receiveBalance, formatted: receiveBalanceFormatted, isLoading: receiveBalanceLoading } = useTokenBalance(
-    receiveToken.address as `0x${string}`,
-    address ?? undefined,
-    receiveToken.decimals
-  );
+  const quoteAge = lastFetch > 0 ? secondsAgo(lastFetch) : null;
+  const quoteExpiring = quoteAge !== null && quoteAge > 20;
 
-  const setMaxPayAmount = () => {
-    if (payBalanceFormatted !== undefined) setPayAmount(payBalanceFormatted);
+  // Button label
+  const btnLabel = () => {
+    if (!evmConnected) return 'Connect EVM Wallet';
+    if (!solanaAddress) return 'Connect Solana Wallet';
+    if (!hasValidAmount) return 'Enter Amount';
+    if (noSolvers) return 'No Active Solvers';
+    if (isBuilding) return 'Building transaction...';
+    if (isSigning) return 'Confirm in wallet...';
+    return 'Swap via Intent →';
   };
 
   return (
     <div className="flex items-center justify-center min-h-[80vh] px-4 relative">
-      <div className="absolute top-[20%] left-[25%] w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none z-0"></div>
-      <div className="absolute bottom-[20%] right-[25%] w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none z-0"></div>
+      {/* bg glows */}
+      <div className="absolute top-[20%] left-[25%] w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none z-0" />
+      <div className="absolute bottom-[20%] right-[25%] w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none z-0" />
 
-      <div className="w-full max-w-md relative z-10">
-        <div className="flex justify-between items-center mb-4 px-1">
-          <h1 className="text-xl font-bold text-white">Swap</h1>
-          <div className="flex items-center gap-2 relative">
-            {isConnected ? (
-              <>
-                <span className="text-xs text-slate-400 truncate max-w-[120px]">{address?.slice(0, 6)}…{address?.slice(-4)}</span>
-                <button type="button" onClick={() => disconnect()} className="text-slate-400 hover:text-white text-xs font-medium">Disconnect</button>
-              </>
-            ) : (
+      <div className="w-full max-w-md relative z-10 space-y-3">
+        {/* Header */}
+        <div className="flex justify-between items-center px-1">
+          <div>
+            <h1 className="text-xl font-bold text-white">Cross-chain Swap</h1>
+            <p className="text-xs text-slate-500 mt-0.5">ETH on Base Sepolia → SOL on Solana · via Intent Bridge</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {evmConnected && (
               <button
                 type="button"
-                onClick={() => connect({ connector: connectors[0] })}
-                disabled={isConnecting}
-                className="px-3 py-1.5 rounded-lg bg-primary text-black text-sm font-bold hover:opacity-90 disabled:opacity-50"
+                onClick={() => disconnect()}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
               >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+                {evmAddress?.slice(0, 6)}…{evmAddress?.slice(-4)}
               </button>
             )}
-            <button onClick={() => setPayAmount('')} className="text-slate-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/5">
-              <span className="material-symbols-outlined text-[20px]">refresh</span>
-            </button>
-            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="text-slate-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/5">
-              <span className="material-symbols-outlined text-[20px]">settings</span>
-            </button>
-            {isSettingsOpen && (
-              <div className="absolute top-full right-0 mt-2 w-56 bg-[#1a1f1e] border border-white/10 rounded-xl shadow-2xl p-4 z-50">
-                <h4 className="text-sm font-bold text-white mb-3">Slippage</h4>
-                <div className="flex gap-2">
-                  <button className="flex-1 bg-primary text-black text-xs font-bold py-1.5 rounded-lg">Auto</button>
-                  <button className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold py-1.5 rounded-lg">0.5%</button>
-                  <button className="flex-1 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold py-1.5 rounded-lg">1%</button>
-                </div>
-              </div>
+            {quoteAge !== null && (
+              <button
+                onClick={refresh}
+                title="Refresh quote"
+                className={`p-1.5 rounded-full transition-all ${quoteExpiring ? 'text-amber-400 hover:text-amber-300 animate-pulse' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">refresh</span>
+              </button>
             )}
           </div>
         </div>
 
+        {/* Main card */}
         <div className="glass-panel rounded-2xl p-2 relative before:absolute before:inset-[-1px] before:-z-10 before:rounded-2xl before:bg-gradient-to-br before:from-primary/20 before:to-transparent before:pointer-events-none">
-          {/* Pay */}
-          <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 focus-within:border-primary/30 transition-all mb-1">
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-medium text-slate-400">You pay</label>
-              {address && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-500">
-                    Balance: {payBalanceLoading ? '...' : payBalanceFormatted !== undefined ? `${Number(payBalanceFormatted).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${payToken.symbol}` : '—'}
-                  </span>
-                  {payBalanceFormatted !== undefined && parseFloat(payBalanceFormatted) > 0 && (
-                    <button type="button" onClick={setMaxPayAmount} className="text-[10px] font-bold text-primary hover:text-primary/80 uppercase">Max</button>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <input
-                className="bg-transparent border-none p-0 text-3xl font-medium text-white placeholder-slate-600 focus:ring-0 w-full outline-none"
-                placeholder="0"
-                type="text"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-              />
-              <button onClick={() => setTokenModalSide('pay')} className="flex items-center gap-2 bg-surface border border-white/10 hover:border-primary/40 rounded-full py-1.5 pl-2 pr-3 transition-all group shrink-0">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center overflow-hidden ${payToken.color}`}>
-                  <span className="material-symbols-outlined text-sm">{payToken.icon}</span>
-                </div>
-                <span className="font-bold text-lg text-white">{payToken.symbol}</span>
-                <span className="material-symbols-outlined text-slate-400 group-hover:text-white">expand_more</span>
-              </button>
-            </div>
-          </div>
 
-          <div className="relative h-2 flex items-center justify-center z-10">
-            <button onClick={handleSwapTokens} className="absolute bg-surface-light border-4 border-[#0e1716] rounded-xl p-2 text-primary hover:text-white hover:bg-surface rounded-full transition-all duration-300 shadow-lg">
-              <span className="material-symbols-outlined text-[20px] block">arrow_downward</span>
-            </button>
-          </div>
-
-          {/* Receive */}
-          <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 focus-within:border-primary/30 transition-all mt-1">
+          {/* You send */}
+          <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 focus-within:border-primary/30 transition-all">
             <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-medium text-slate-400">You receive</label>
-              {address && (
-                <span className="text-xs text-slate-500">
-                  Balance: {receiveBalanceLoading ? '...' : receiveBalanceFormatted !== undefined ? `${Number(receiveBalanceFormatted).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${receiveToken.symbol}` : '—'}
+              <label className="text-xs font-medium text-slate-400">You send</label>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-400/80 inline-block" />
+                  Base Sepolia
                 </span>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <input className="bg-transparent border-none p-0 text-3xl font-medium text-white placeholder-slate-600 w-full outline-none" placeholder="0" readOnly type="text" value={receiveAmountDisplay} />
-              <button onClick={() => setTokenModalSide('receive')} className="flex items-center gap-2 bg-surface border border-white/10 hover:border-primary/40 rounded-full py-1.5 pl-2 pr-3 transition-all group shrink-0">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center overflow-hidden ${receiveToken.color}`}>
-                  <span className="material-symbols-outlined text-sm">{receiveToken.icon}</span>
-                </div>
-                <span className="font-bold text-lg text-white">{receiveToken.symbol}</span>
-                <span className="material-symbols-outlined text-slate-400 group-hover:text-white">expand_more</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quote details */}
-          {hasValidAmount && (quote || isLoadingQuote || quoteError) && (
-            <div className="mt-3 rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                className="w-full flex justify-between items-center px-3 py-3 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
-              >
-                <span className="font-medium">Transaction details</span>
-                <span className={`material-symbols-outlined text-[16px] transition-transform duration-300 ${isDetailsOpen ? 'rotate-180' : ''}`}>expand_more</span>
-              </button>
-              <div className={`grid transition-all duration-300 ${isDetailsOpen ? 'grid-rows-[1fr] opacity-100 border-t border-white/5' : 'grid-rows-[0fr] opacity-0'}`}>
-                <div className="overflow-hidden">
-                  <div className="p-3 space-y-2.5 text-xs bg-black/20">
-                    {isLoadingQuote && (
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
-                        Getting quote...
-                      </div>
-                    )}
-                    {quoteError && (
-                      <div className="flex items-center gap-2 text-red-400">
-                        <span className="material-symbols-outlined text-base">error</span>
-                        {quoteError}
-                      </div>
-                    )}
-                    {quote && !quoteError && (
-                      <>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Amount in</span>
-                          <span className="text-slate-300">{formatQuoteDisplay(quote.amountIn, payToken.decimals)} {payToken.symbol}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Amount in (after fee)</span>
-                          <span className="text-slate-300">{formatQuoteDisplay(quote.amountInAfterFee, payToken.decimals)} {payToken.symbol}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Expected output</span>
-                          <span className="text-white font-medium">{receiveAmountDisplay} {receiveToken.symbol}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Price impact</span>
-                          <span className="text-emerald-400 font-medium">{quote.priceImpact}%</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Fee</span>
-                          <span className="text-slate-300">{(quote.fee / 10000).toFixed(2)}%</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Quote</span>
-                          <span className="text-slate-500 text-[10px]">Naisu aggregator</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400 pt-2 border-t border-white/5">
-                          <span>Rate</span>
-                          <span className="text-slate-300">1 {payToken.symbol} ≈ {quote && parseFloat(payAmount) > 0 && receiveAmountDisplay && !['...', '—'].includes(receiveAmountDisplay) ? (() => {
-                            const pay = parseFloat(payAmount);
-                            const recv = parseFloat(receiveAmountDisplay);
-                            if (pay <= 0 || !Number.isFinite(recv)) return '—';
-                            const r = recv / pay;
-                            if (r <= 0 || !Number.isFinite(r)) return '—';
-                            if (r >= 1e10) return '—';
-                            return r < 0.0001 ? r.toFixed(10).replace(/\.?0+$/, '') : r.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 });
-                          })() : '—'} {receiveToken.symbol}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
-          )}
+            <div className="flex items-center gap-3">
+              <input
+                ref={inputRef}
+                className="bg-transparent border-none p-0 text-3xl font-medium text-white placeholder-slate-600 focus:ring-0 w-full outline-none"
+                placeholder="0.0"
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9.]/g, '');
+                  if ((v.match(/\./g) ?? []).length <= 1) setAmount(v);
+                }}
+                autoFocus
+              />
+              <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-full py-1.5 pl-2 pr-3 shrink-0">
+                <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-indigo-300">Ξ</span>
+                </div>
+                <span className="font-bold text-white text-sm">ETH</span>
+              </div>
+            </div>
+            {quote?.fromUsd && hasValidAmount && (
+              <p className="text-xs text-slate-500 mt-1">{fmtUsd(quote.fromUsd * parseFloat(amount))}</p>
+            )}
+          </div>
 
-          {error && (
-            <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2">
-              <span className="material-symbols-outlined">error</span>
-              {error}
+          {/* Divider arrow */}
+          <div className="relative h-2 flex items-center justify-center z-10 my-1">
+            <div className="absolute bg-surface-light border-4 border-[#0e1716] rounded-xl p-2 text-slate-500">
+              <span className="material-symbols-outlined text-[18px] block">south</span>
+            </div>
+          </div>
+
+          {/* You receive */}
+          <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 transition-all">
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs font-medium text-slate-400">You receive</label>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-purple-400/80 inline-block" />
+                  Solana Devnet
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-3xl font-medium w-full">
+                {isQuoteLoading ? (
+                  <span className="text-slate-600 text-2xl">Fetching...</span>
+                ) : quote && hasValidAmount ? (
+                  <span className="text-white">{parseFloat(quote.estimatedReceive).toFixed(4)}</span>
+                ) : (
+                  <span className="text-slate-600">0.0</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-full py-1.5 pl-2 pr-3 shrink-0">
+                <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-purple-300">{withStake ? 'm' : '◎'}</span>
+                </div>
+                <span className="font-bold text-white text-sm">{withStake ? 'mSOL' : 'SOL'}</span>
+              </div>
+            </div>
+            {quote?.toUsd && hasValidAmount && quote.rate && (
+              <p className="text-xs text-slate-500 mt-1">
+                ≈ {fmtUsd(quote.toUsd * parseFloat(quote.estimatedReceive))}
+              </p>
+            )}
+          </div>
+
+          {/* Quote info */}
+          {hasValidAmount && (quote || isQuoteLoading || quoteError) && (
+            <div className="mt-2 px-1 space-y-1.5">
+              {quoteError && (
+                <div className="flex items-center gap-2 text-red-400 text-xs py-1">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  {quoteError}
+                </div>
+              )}
+              {quote && !quoteError && (
+                <>
+                  {/* Rate row */}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Rate</span>
+                    <span className="text-slate-300 font-medium">
+                      1 ETH ≈ {fmtRate(quote.rate)} {withStake ? 'mSOL' : 'SOL'}
+                    </span>
+                  </div>
+                  {/* Solvers + source row */}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Active solvers</span>
+                    <span className={`font-medium ${activeSolvers > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {activeSolvers} {activeSolvers > 0 ? '· competing' : '· none active'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Price source</span>
+                    <span className="text-slate-400">
+                      {quote.priceSource === 'pyth' ? '⚡ Pyth Network' : quote.priceSource === 'coingecko' ? '🦎 CoinGecko' : 'estimate'}
+                      {quoteAge !== null && (
+                        <span className={`ml-2 ${quoteExpiring ? 'text-amber-400' : 'text-slate-600'}`}>
+                          · {quoteAge}s ago
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Duration</span>
+                    <span className="text-slate-400">
+                      Dutch auction · {Math.round((quote.durationMs ?? 1800000) / 60000)} min
+                    </span>
+                  </div>
+                  {quote.confidence !== null && quote.confidence > 1 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Confidence</span>
+                      <span className="text-amber-400">±{quote.confidence.toFixed(2)}% spread</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
-          {txHashes.length > 0 && (
-            <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
-              <span className="material-symbols-outlined text-sm mr-1">check_circle</span>
-              {txHashes.length} tx(s) confirmed.{' '}
-              <a href={`https://sepolia.basescan.org/tx/${txHashes[0]}`} target="_blank" rel="noopener noreferrer" className="underline">View on BaseScan</a>
+          {/* No solvers warning */}
+          {noSolvers && (
+            <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">warning</span>
+              <span>No solver is currently active. Your ETH would be locked with no one to fill the order. Start a solver or try again later.</span>
             </div>
           )}
 
+          {/* Marinade stake toggle */}
+          {hasValidAmount && (
+            <label className="mt-3 flex items-center gap-3 px-1 cursor-pointer group">
+              <div
+                onClick={() => setWithStake((v) => !v)}
+                className={`relative w-9 h-5 rounded-full transition-colors duration-200 shrink-0 ${withStake ? 'bg-primary' : 'bg-white/10'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${withStake ? 'translate-x-4' : ''}`} />
+              </div>
+              <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors select-none">
+                Auto-stake via Marinade → receive <span className="font-semibold text-purple-300">mSOL</span>
+              </span>
+            </label>
+          )}
+
+          {/* Wallet status */}
+          <div className="mt-3 space-y-1.5 px-1">
+            {/* EVM wallet */}
+            {evmConnected ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span>EVM: {evmAddress?.slice(0, 8)}…{evmAddress?.slice(-6)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-amber-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span>EVM wallet not connected</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => connect({ connector: connectors[0] })}
+                  disabled={isConnecting}
+                  className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                >
+                  {isConnecting ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            )}
+
+            {/* Solana wallet */}
+            {solanaAddress ? (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span>Solana: {solanaAddress.slice(0, 8)}…{solanaAddress.slice(-6)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-amber-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span>Solana wallet not connected</span>
+                </div>
+                <div className="wallet-adapter-button-override">
+                  <WalletMultiButton />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Build error */}
+          {buildError && (
+            <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+              <span>{buildError}</span>
+            </div>
+          )}
+
+          {/* Swap button */}
           <button
-            onClick={handleSwapAction}
-            disabled={!canSwap && isConnected}
-            className={`w-full mt-4 font-extrabold text-lg py-4 rounded-xl shadow-[0_0_20px_rgba(13,242,223,0.3)] transition-all flex items-center justify-center gap-2
-              ${swapStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-gradient-to-r from-teal-400 to-cyan-400 hover:from-teal-300 hover:to-cyan-300 text-black'}
-              ${!canSwap && isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={!evmConnected ? () => connect({ connector: connectors[0] }) : handleSwap}
+            disabled={(evmConnected && !canSwap) || isBusy}
+            className={`w-full mt-4 font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2
+              ${noSolvers
+                ? 'bg-red-500/20 border border-red-500/30 text-red-400 cursor-not-allowed'
+                : canSwap || !evmConnected
+                  ? 'bg-gradient-to-r from-teal-400 to-cyan-400 hover:from-teal-300 hover:to-cyan-300 text-black shadow-[0_0_20px_rgba(13,242,223,0.25)]'
+                  : 'bg-white/5 text-slate-500 cursor-not-allowed'
+              }`}
           >
-            {!isConnected && 'Connect Wallet'}
-            {isConnected && !payAmount && !isBusy && 'Enter Amount'}
-            {isConnected && isBusy && statusMessage && (
-              <>
-                <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                {statusMessage}
-              </>
+            {isBusy && (
+              <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
             )}
-            {isConnected && payAmount && !isBusy && swapStatus !== 'success' && 'Swap'}
-            {isConnected && swapStatus === 'success' && !isBusy && (
-              <>
-                <span className="material-symbols-outlined">check</span>
-                Success
-              </>
-            )}
+            {btnLabel()}
           </button>
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-600">
-          Build on backend · You sign in wallet. Base Sepolia.
-        </p>
-
-        {/* Token modal */}
-        {tokenModalSide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setTokenModalSide(null)}></div>
-            <div className="relative bg-[#1a1f1e] border border-white/10 rounded-2xl w-full max-w-sm p-4 shadow-2xl flex flex-col max-h-[80vh]">
-              <div className="flex justify-between items-center mb-4 pb-2 border-b border-white/5">
-                <h3 className="text-lg font-bold text-white">Select Token</h3>
-                <button onClick={() => setTokenModalSide(null)} className="text-slate-400 hover:text-white"><span className="material-symbols-outlined">close</span></button>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-1">
-                {BASE_SEPOLIA_TOKENS.map((token) => (
-                  <button
-                    key={token.symbol}
-                    onClick={() => {
-                      if (tokenModalSide === 'pay') {
-                        if (token.symbol === receiveToken.symbol) setReceiveToken(payToken);
-                        setPayToken(token);
-                      } else {
-                        if (token.symbol === payToken.symbol) setPayToken(receiveToken);
-                        setReceiveToken(token);
-                      }
-                      setTokenModalSide(null);
-                    }}
-                    className="w-full flex items-center justify-between p-3 hover:bg-white/5 rounded-xl transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${token.color}`}>
-                        <span className="material-symbols-outlined text-sm">{token.icon}</span>
-                      </div>
-                      <div className="text-left">
-                        <div className="text-white font-bold">{token.symbol}</div>
-                        <div className="text-slate-500 text-xs">{token.name}</div>
-                      </div>
-                    </div>
-                    {(token.symbol === payToken.symbol && tokenModalSide === 'pay') || (token.symbol === receiveToken.symbol && tokenModalSide === 'receive') ? (
-                      <span className="material-symbols-outlined text-primary">check</span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
+        {/* SolverAuctionCard — shown after submit */}
+        {submitted && evmAddress && (
+          <div className="animate-fade-in-up">
+            <SolverAuctionCard
+              userAddress={evmAddress}
+              submittedAt={submitted.submittedAt}
+            />
+            <div className="flex justify-between items-center mt-2 px-1">
+              <a
+                href={`https://sepolia.basescan.org/tx/${submitted.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                View on BaseScan
+              </a>
+              <button
+                onClick={handleReset}
+                className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
+              >
+                New swap
+              </button>
             </div>
           </div>
         )}
+
+        <p className="text-center text-xs text-slate-600 pb-2">
+          Intent Bridge · Dutch auction · Wormhole · Base Sepolia ↔ Solana Devnet
+        </p>
       </div>
+
+      {/* WalletMultiButton style override — hide default ugly styling */}
+      <style>{`
+        .wallet-adapter-button-override .wallet-adapter-button {
+          background: transparent !important;
+          border: none !important;
+          padding: 0 !important;
+          height: auto !important;
+          font-size: 12px !important;
+          font-weight: 600 !important;
+          color: rgb(13 242 223) !important;
+          line-height: 1 !important;
+        }
+        .wallet-adapter-button-override .wallet-adapter-button:hover {
+          background: transparent !important;
+          opacity: 0.8;
+        }
+        .wallet-adapter-button-override .wallet-adapter-button-start-icon {
+          display: none !important;
+        }
+      `}</style>
     </div>
   );
 };

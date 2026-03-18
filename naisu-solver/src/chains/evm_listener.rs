@@ -103,7 +103,7 @@ async fn process_evm_order(
     let (wh_chain_id, emitter_address, wh_sequence) =
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
-            let mode_label = if order.with_stake { "bridge+liquid_stake" } else { "bridge" };
+            let mode_label = if order.with_stake { "bridge+marinade_stake" } else { "bridge" };
 
             info!("{SEP_SUB}");
             info!(" [{short}] STEP 1/3  |  Solana devnet — mode: {mode_label}");
@@ -114,10 +114,10 @@ async fn process_evm_order(
                 match executor::solana_executor::solve_and_liquid_stake(
                     &config, order.order_id, &recipient_b58, price,
                 ).await {
-                    Ok((sig, seq, lst_minted)) => {
+                    Ok((sig, seq, msol_minted)) => {
                         let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                        info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + liquid staked");
-                        info!(" [{short}]  nSOL minted : {lst_minted}");
+                        info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + Marinade staked");
+                        info!(" [{short}]  mSOL minted : {msol_minted}");
                         info!(" [{short}]  seq : {seq}");
                         info!(" [{short}]  tx  : {sig}");
                         info!(" [{short}]  url : {sol_url}");

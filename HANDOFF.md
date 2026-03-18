@@ -262,6 +262,95 @@ All `.env` files + `env.ts` default updated to new address.
 
 ---
 
+## Session 7 Summary (2026-03-18)
+
+Latest commit: (pending)
+
+### 13. Manual Swap UI — Intent-based Cross-chain Swap
+
+**Replaces** the old Uniswap V4 `SwapPage.tsx` with a proper cross-chain intent bridge UI.
+
+#### New files
+
+**`naisu-frontend/hooks/useIntentQuote.ts`**
+- `useIntentQuote(amount)` — fetches `/api/v1/intent/quote?fromChain=evm-base&toChain=solana`
+- Debounced 500ms on amount change
+- Auto-refresh every 30s
+- Returns: `{ quote, isLoading, error, lastFetch, refresh }`
+- `IntentQuote` type exported — includes `rate`, `estimatedReceive`, `activeSolvers`, `priceSource`, `fromUsd`, `toUsd`, `confidence`
+
+**`naisu-frontend/hooks/useCreateOrder.ts`**
+- `useCreateOrder()` — POST `/api/v1/intent/build-tx` → sign with wagmi walletClient
+- Handles build + sign in two steps (isBuilding / isSigning states)
+- Returns: `{ submit, isBuilding, isSigning, isBusy, txHash, error, clearError }`
+
+#### Modified: `naisu-frontend/pages/SwapPage.tsx` (full rewrite)
+
+**Features:**
+- **Amount input** — ETH amount, formatted, decimal validation
+- **Real-time quote** from Pyth via backend — rate, estimated SOL, USD values
+- **Quote age indicator** — shows "Xs ago", turns amber + pulse after 20s stale
+- **Active solvers count** — green "3 · competing" or red "0 · none active"
+- **No-solver guard** — red warning + disabled button (same protection as agent)
+- **Marinade stake toggle** — flip to receive mSOL instead of SOL
+- **Dual wallet status** — EVM (wagmi) + Solana (useSolanaAddress + WalletMultiButton)
+- **Swap button** — smart states: Connect EVM / Connect Solana / Enter Amount / No Solvers / Building / Confirm in wallet / Swap
+- **SolverAuctionCard** — injected inline after successful submit (same as agent chat)
+- **BaseScan link + "New swap" reset** button after submit
+
+**Chain/token**: Fixed at Base Sepolia ETH → Solana SOL/mSOL (only supported flow)
+
+---
+
+## Session 6 Summary (2026-03-18)
+
+Latest commit: (pending)
+
+### 12. Phase B — Real Liquid Staking via Marinade Finance Devnet
+
+**Problem:** `solve_and_liquid_stake` called `liquid_stake.js` (mock program). No real staking.
+
+**Solution:** Replace with Marinade Finance SDK on devnet.
+
+#### New file: `naisu-contracts/solana/scripts/marinade_stake.ts` (compiled → `dist/marinade_stake.js`)
+- Args: `<recipient_b58> <amount_lamports> <rpc_url> <solver_private_key>` (4 args, down from 6)
+- Uses `@marinade.finance/marinade-ts-sdk` v5.0.18
+- Fetch Marinade state → get real mSOL mint address
+- `marinade.deposit(amountBN)` → mSOL minted to solver's mSOL ATA
+- Transfer mSOL from solver → recipient's mSOL ATA (create ATA if needed)
+- Output: `MSOL_MINTED:<amount>` to stdout
+
+#### Modified: `naisu-solver/src/executor/solana_executor.rs`
+- `solve_and_liquid_stake`: calls `marinade_stake.js` instead of `liquid_stake.js`
+- Removed 2 args (no more `liquid_staking_program_id`, `liquid_staking_pool_authority`)
+- Parses `MSOL_MINTED:` instead of `LST_MINTED:`
+- Updated logs: "mSOL" instead of "nSOL (LST)"
+
+#### Modified: `naisu-solver/src/config.rs`
+- Removed `liquid_staking_program_id` and `liquid_staking_pool_authority` fields
+- Removed `LIQUID_STAKING_PROGRAM_ID` and `LIQUID_STAKING_POOL_AUTHORITY` env var reads
+
+#### Modified: `naisu-solver/src/chains/evm_listener.rs`
+- Mode label: `"bridge+marinade_stake"` (was `"bridge+liquid_stake"`)
+- Log: `mSOL minted` (was `nSOL minted`)
+
+#### Modified: `naisu-frontend/pages/IntentPage.tsx`
+- `'nSOL'` → `'mSOL'` (2 occurrences — intent status + SSE event handler)
+
+#### Modified: `naisu-agent/src/tools/toolkit.ts` + `naisu-agent/projects/nesu.md`
+- Updated `withStake` description and agent instructions to mention Marinade Finance + mSOL
+
+#### Dependencies
+- `@marinade.finance/marinade-ts-sdk@5.0.18` added to `naisu-contracts/solana/package.json`
+- `typescript@5` added as devDep (needed to compile Marinade SDK v5 types)
+
+#### Files NOT changed (as planned)
+- `IntentBridge.sol` — EVM contract unchanged
+- Solana listeners — unchanged
+- Coordinator — unchanged
+
+---
+
 ## Session 5 Summary (2026-03-18)
 
 Latest commit: (pending)

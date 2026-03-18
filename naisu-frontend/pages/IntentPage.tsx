@@ -75,9 +75,9 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
             const s = raw.toString().padStart(decimals + 1, '0');
             const intPart = s.slice(0, -decimals) || '0';
             const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
-            // If this order had withStake and Solana destination, show nSOL instead of SOL
+            // If this order had withStake and Solana destination, show mSOL instead of SOL
             const token = destinationChain === 1
-                ? (withStake ? 'nSOL' : 'SOL')
+                ? (withStake ? 'mSOL' : 'SOL')
                 : destinationChain === 21 ? 'SUI' : 'ETH';
             return `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
         } catch { return null; }
@@ -185,9 +185,9 @@ const IntentPage: React.FC = () => {
                     const s = raw.toString().padStart(decimals + 1, '0');
                     const intPart = s.slice(0, -decimals) || '0';
                     const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
-                    // Use nSOL label if this order had withStake and destination is Solana
+                    // Use mSOL label if this order had withStake and destination is Solana
                     const token = destChain === 1
-                        ? (withStakeFromEvent ? 'nSOL' : 'SOL')
+                        ? (withStakeFromEvent ? 'mSOL' : 'SOL')
                         : destChain === 21 ? 'SUI' : 'ETH';
                     receiveStr = `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
                 } catch { /* ignore */ }

@@ -26,7 +26,7 @@ You can:
 - **Build unsigned transactions**: construct `create_intent` (Sui) or `create_order` (EVM) transactions for the user's wallet to sign
 - **Check balances**: query SOL balance on Solana devnet, ETH balance on Base Sepolia
 - **Explain the protocol**: Dutch auctions, Wormhole VAAs, solver mechanics
-- **Bridge + Liquid Stake**: bridge ETH → SOL and automatically stake the received SOL into the Naisu liquid staking protocol — recipient gets nSOL (LST tokens) instead of raw SOL
+- **Bridge + Liquid Stake**: bridge ETH → SOL and automatically deposit into Marinade Finance liquid staking — recipient gets mSOL instead of raw SOL
 
 You cannot:
 - Sign transactions (the user's wallet always signs)
@@ -88,7 +88,7 @@ The Dutch auction means: the longer no solver fills, the cheaper it gets for the
 → Call `evm_balance` (chain: evm-base, user's EVM address) to verify funds → Call `intent_quote` (fromChain: evm-base, toChain: solana, amount: 0.1) to check `activeSolvers` and show estimated SOL received → If `activeSolvers === 0`, stop and warn user → Otherwise call `intent_build_tx` with action: create_order
 
 **User:** "Bridge 0.05 ETH to Solana and stake it"
-→ Call `evm_balance` to check balance → Call `intent_quote` → Call `intent_build_tx` with action: create_order → After building, inform the user: "The solver will automatically stake your received SOL into the Naisu liquid staking pool — you'll receive nSOL (LST tokens) instead of raw SOL. The staking happens atomically after your SOL arrives on Solana."
+→ Call `evm_balance` to check balance → Call `intent_quote` → Call `intent_build_tx` with action: create_order → After building, inform the user: "The solver will automatically deposit your received SOL into Marinade Finance — you'll receive mSOL instead of raw SOL. The staking happens atomically after your SOL arrives on Solana."
 
 **User:** "Bridge 0.05 ETH to Solana in 10 minutes"
 → Call `evm_balance` to check balance → Call `intent_quote` → Call `intent_build_tx` with durationSeconds: 600

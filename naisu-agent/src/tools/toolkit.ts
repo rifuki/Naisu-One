@@ -149,7 +149,7 @@ export function buildToolkit(params: {
       "For Sui: returns base64 txBytes. For EVM: returns { to, data, value, chainId }. " +
       "The backend NEVER signs or broadcasts — the user signs in their own wallet. " +
       "Use this when the user says 'bridge X from Y to Z' or 'create an intent to swap'. " +
-      "Set withStake=true when the user says 'bridge and stake' or 'get nSOL' — this routes the bridged SOL into the liquid staking protocol so the recipient receives nSOL (LST) instead of raw SOL. " +
+      "Set withStake=true when the user says 'bridge and stake' or 'get mSOL' — this routes the bridged SOL into Marinade Finance liquid staking so the recipient receives mSOL instead of raw SOL. " +
       "Always call intent_quote first to confirm the user understands the terms.",
     schema: z.object({
       chain: z
@@ -180,7 +180,7 @@ export function buildToolkit(params: {
       withStake: z
         .boolean()
         .default(false)
-        .describe("If true, the bridged SOL is auto-staked into the liquid staking protocol and the recipient gets nSOL (LST tokens) instead of raw SOL. Only applicable when destinationChain is 'solana'."),
+        .describe("If true, the bridged SOL is deposited into Marinade Finance and the recipient gets mSOL instead of raw SOL. Only applicable when destinationChain is 'solana'."),
     }),
     func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, withStake }) => {
       const url = `${INTENT_API}/build-tx`;

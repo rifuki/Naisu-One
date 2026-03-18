@@ -39,10 +39,6 @@ pub struct Config {
     pub solana_wormhole_program_id: String,
     pub solana_emitter_address: String,
 
-    // Solana Liquid Staking
-    pub liquid_staking_program_id: String,
-    pub liquid_staking_pool_authority: String,
-
     // Wormhole API
     pub wormhole_api_url: String,
 
@@ -96,10 +92,6 @@ impl Config {
 
             solana_wormhole_program_id: require_env("SOLANA_WORMHOLE_PROGRAM_ID")?,
             solana_emitter_address: require_env("SOLANA_EMITTER_ADDRESS")?,
-
-            liquid_staking_program_id: env::var("LIQUID_STAKING_PROGRAM_ID").unwrap_or_default(),
-            liquid_staking_pool_authority: env::var("LIQUID_STAKING_POOL_AUTHORITY")
-                .unwrap_or_default(),
 
             wormhole_api_url: env::var("WORMHOLE_RPC_URL")
                 .unwrap_or_else(|_| "https://api.testnet.wormholescan.io".to_string()),
