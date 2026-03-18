@@ -155,6 +155,7 @@ export default function IntentPage() {
       <ChatSidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
+        disabled={isLoading}
         onNewChat={handleNewChat}
         onSwitchSession={switchSession}
         onDeleteSession={deleteSession}
