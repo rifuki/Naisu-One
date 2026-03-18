@@ -11,6 +11,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAccount } from 'wagmi'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { useSolanaAddress } from './useSolanaAddress'
+import { useOrderWatch } from './useOrderWatch'
 import {
   BASE_SEPOLIA_CONTRACT, FUJI_CONTRACT,
   BASE_SEPOLIA_RPC, AVALANCHE_FUJI_RPC,
@@ -283,6 +284,19 @@ export function useIntentOrders() {
     fetchEvm()
     fetchSolana()
   }, [fetchEvm, fetchSolana])
+
+  // SSE push: instant status update when backend detects order_update via WS
+  useOrderWatch({
+    user:    evmAddress,
+    enabled: !!evmAddress && isConnected,
+    onOrderUpdate: useCallback((event) => {
+      setEvmOrders(prev => prev.map(o =>
+        o.id.toLowerCase() === event.orderId.toLowerCase()
+          ? { ...o, status: event.status === 'FULFILLED' ? 'Fulfilled' : event.status === 'CANCELLED' ? 'Cancelled' : o.status }
+          : o
+      ))
+    }, []),
+  })
 
   // Initial fetch + polling
   useEffect(() => {

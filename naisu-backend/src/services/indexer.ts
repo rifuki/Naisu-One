@@ -71,7 +71,6 @@ const ORDER_FULFILLED_ABI = {
   inputs: [
     { name: 'orderId', type: 'bytes32', indexed: true  },
     { name: 'solver',  type: 'address', indexed: true  },
-    { name: 'amount',  type: 'uint256', indexed: false },
   ],
 } as const
 
@@ -491,6 +490,25 @@ export async function startIndexer(): Promise<void> {
       initialSolanaBackfill(solConn, solProgram),
     ])
     logger.info({ orders: store.size }, 'Intent indexer: backfill complete, WS streaming active')
+
+    // Safety net: re-check OPEN orders every 30s in case WS events are missed/delayed
+    const recheckTimer = setInterval(async () => {
+      const openOrders = Array.from(store.values()).filter(o => o.chain === 'evm-base' && o.status === 'OPEN')
+      if (openOrders.length === 0) return
+      await Promise.allSettled(openOrders.map(async (o) => {
+        try {
+          const raw = await httpClient.readContract({
+            address: contract, abi: ORDERS_FUNCTION_ABI, functionName: 'orders', args: [o.orderId as `0x${string}`],
+          }) as readonly unknown[]
+          const statusNum = raw[8] as number
+          if (statusNum !== INTENT_BRIDGE.STATUS.OPEN) {
+            logger.info({ orderId: o.orderId, status: statusLabel(statusNum) }, '[EVM] OPEN order re-check: status changed')
+            upsert({ ...o, status: statusLabel(statusNum), currentPrice: null })
+          }
+        } catch { /* skip */ }
+      }))
+    }, 30_000)
+    cleanupFns.push(() => clearInterval(recheckTimer))
   } else {
     logger.info('Intent indexer: HTTP polling mode (set BASE_SEPOLIA_WS_URL for real-time)')
     const run = async () => {
