@@ -1,6 +1,6 @@
 # Naisu One — Handoff Document
 
-_Last updated: 2026-03-18 (Session 3)_
+_Last updated: 2026-03-18 (Session 4)_
 
 ---
 
@@ -34,12 +34,12 @@ All commits pushed to `main`. Latest session 1: `00b1655`
 #### Config changes (`src/config.rs`)
 - Hapus field: `evm_rpc_url`, `evm_contract_address`, `evm_chain_id`
 - Rename field: `evm2_ws_url` → `evm_ws_url` (reads `BASE_SEPOLIA_WS_URL`)
-- Sisa EVM fields: `evm_private_key`, `evm_wormhole_address`, `evm_emitter_address`, `evm2_rpc_url`, `evm2_contract_address`, `evm2_chain_id`
+- Sisa EVM fields: `evm_private_key`, `evm_wormhole_address`, `evm_emitter_address`, `base_rpc_url`, `base_contract_address`, `base_chain_id`
 
 #### evm_executor.rs
-- `make_client()` sekarang pakai `evm2_rpc_url` + `evm2_chain_id` (Base Sepolia)
+- `make_client()` sekarang pakai `base_rpc_url` + `base_chain_id` (Base Sepolia)
 - Hapus hardcode gas 25 gwei (Fuji-specific)
-- `fulfill_and_prove` → `evm2_contract_address` (bukan Fuji lagi)
+- `fulfill_and_prove` → `base_contract_address` (bukan Fuji lagi)
 
 #### lib.rs
 - Hapus `evm_fuji_to_sui` task spawn
@@ -360,10 +360,10 @@ BASE_SEPOLIA_WS_URL set → subscribe_logs WS (OrderCreated events real-time)
 ### naisu-solver `.env`
 ```bash
 # Base Sepolia
-EVM2_RPC_URL=https://sepolia.base.org
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 BASE_SEPOLIA_WS_URL=wss://base-sepolia.g.alchemy.com/v2/KEY
-EVM2_CONTRACT_ADDRESS=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
-EVM2_CHAIN_ID=84532
+BASE_SEPOLIA_CONTRACT_ADDRESS=0xd0d1856674ba1feabee7dd3d4b22cc80488ac2f1
+BASE_SEPOLIA_CHAIN_ID=84532
 
 # EVM shared
 EVM_PRIVATE_KEY=0x...
@@ -376,12 +376,12 @@ SOLANA_WS_URL=wss://api.devnet.solana.com
 SOLANA_PRIVATE_KEY=<32-byte-seed-hex>
 SOLANA_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
-# Solver network (enable for 3-solver demo)
+# Solver network — REQUIRED to register with backend + participate in RFQ auctions
 SOLVER_NAME=alpha                          # alpha / beta / gamma
 SOLVER_BACKEND_URL=http://localhost:3000
 SOLVER_RFQ_PORT=3001                       # 3001 / 3002 / 3003 per instance
-SOLVER_QUOTE_DISCOUNT_BPS=100             # 100 / 300 / 200
-SOLVER_ETA_SECONDS=8                       # 8 / 15 / 11
+SOLVER_QUOTE_DISCOUNT_BPS=200             # discount off startPrice (200 = 2%)
+SOLVER_ETA_SECONDS=11                      # claimed fill time in seconds
 SOLVER_TUI=false                           # recommended when running 3 instances
 ```
 
@@ -409,11 +409,77 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 ## Known Issues / Todo
 
 - `cetus.service.ts` — pre-existing TS error `'name' specified more than once` (not our code, skip)
-- `Chain::Avax` and `AppEvent::Shutdown` in `tui/app.rs` — dead code warnings, intentional (kept for future)
 - Sui listener (`sui_listener.rs`) — full dead code, `#![allow(dead_code)]` applied
 - WS EVM `watchContractEvent` edge case: if `OrderFulfilled` arrives before `OrderCreated` is indexed → triggers `initialEvmBackfill` as fallback
 - Solver stats are in-memory — reset on backend restart (Phase 2: persist to DB)
 - `setExclusiveSolver()` requires owner key tx after each RFQ — acceptable for demo, Phase 3 moves this on-chain
+
+---
+
+## Session 4 Summary (2026-03-18)
+
+Latest commit: `bfb6551`
+
+### 8. Cleanup: Remove All Avax/Fuji References + Rename EVM2_ → BASE_SEPOLIA_
+
+**Scope:** naisu-solver, naisu-backend, naisu-frontend, naisu-contracts
+
+#### Env var renames (naisu-solver)
+| Old | New |
+|-----|-----|
+| `EVM2_RPC_URL` | `BASE_SEPOLIA_RPC_URL` |
+| `EVM2_CONTRACT_ADDRESS` | `BASE_SEPOLIA_CONTRACT_ADDRESS` |
+| `EVM2_CHAIN_ID` | `BASE_SEPOLIA_CHAIN_ID` |
+
+#### Config struct field renames (`src/config.rs`)
+| Old | New |
+|-----|-----|
+| `evm2_rpc_url` | `base_rpc_url` |
+| `evm2_contract_address` | `base_contract_address` |
+| `evm2_chain_id` | `base_chain_id` |
+
+#### Removed entirely
+- `Chain::Avax` enum variant + `AppEvent::Shutdown` (unused) from `tui/app.rs`
+- Fuji gas price override (25 gwei) from `evm_executor.rs`
+- Hardcoded Fuji wormhole chain ID 6 from `sui_listener.rs`
+- `FUJI_CONTRACT`, `AVALANCHE_FUJI_CHAIN_ID`, `WORMHOLE_CHAIN_FUJI`, `AVALANCHE_FUJI_RPC` from frontend constants
+- `evm-fuji` from `SupportedChain` type in backend
+- `[profile.fuji]` from `foundry.toml`
+- `AVALANCHE_FUJI_CHAIN_ID` constant + assert from Sui Move contract
+- All snowtrace.io explorer URLs from frontend
+
+**Commits:** `362a92e`, `bfb6551`
+
+---
+
+### 9. Solver Pre-flight Check + activeSolvers in Quote
+
+**Problem:** User could create an on-chain order (locking ETH) with 0 solvers running → funds stuck until deadline.
+
+**Fix — `solver.service.ts`:**
+- `getActiveSolverCount()` — returns count of `online && !suspended` solvers
+
+**Fix — `routes/intent.ts`:**
+- `GET /quote` response now includes `activeSolvers: number`
+- `POST /build-tx` with `action === 'create_order'` returns **503** if `activeSolvers === 0`
+
+**Fix — `nesu.md` (agent system prompt):**
+- Rule 2: if `activeSolvers === 0` from quote → **do NOT build tx**, warn user instead
+- Double protection: agent blocks first, backend blocks as fallback
+
+**Solver backfill (already existed):** `run_ws_mode` catchup scans 2000 blocks back (~67 min on Base Sepolia) on every start/reconnect — solver started late still catches existing OPEN orders.
+
+**Commit:** `1b9ded3`
+
+---
+
+## Commit Log Session 4
+
+| Commit | Description |
+|--------|-------------|
+| `362a92e` | refactor: remove all Avax/Fuji references, rename EVM2_ to BASE_SEPOLIA_ |
+| `1b9ded3` | feat: block tx build + warn agent when no solver is active |
+| `bfb6551` | fix(solver): update .env.example emitter address to new contract |
 
 ---
 
