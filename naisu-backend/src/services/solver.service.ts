@@ -463,6 +463,10 @@ export function clearPendingExclusive(orderId: string): void {
 // Heartbeat timeout checker (offline detection, called every 30s)
 // ============================================================================
 
+export function getActiveSolverCount(): number {
+  return Array.from(registry.values()).filter(s => s.online && !s.suspended).length
+}
+
 export function markStaleOffline(): void {
   const cutoff = Date.now() - 60_000
   for (const solver of registry.values()) {

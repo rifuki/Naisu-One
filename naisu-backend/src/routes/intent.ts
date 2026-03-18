@@ -13,6 +13,7 @@ import { z } from 'zod'
 import * as intentService from '@services/intent.service'
 import type { SupportedChain } from '@services/intent.service'
 import { getOrdersByCreator, getIndexerStatus, indexerEvents } from '@services/indexer'
+import { getActiveSolverCount } from '@services/solver.service'
 import type { OrderUpdateEvent } from '@services/indexer'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
@@ -205,7 +206,7 @@ intentRouter.get('/quote', zValidator('query', quoteQuery), async (c) => {
     amount,
   })
 
-  return c.json({ success: true, data: quote })
+  return c.json({ success: true, data: { ...quote, activeSolvers: getActiveSolverCount() } })
 })
 
 // ============================================================================
@@ -298,6 +299,14 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
     { chain: body.chain, action: body.action, amount: body.amount },
     'Build intent tx requested'
   )
+
+  // Block order creation if no solver is available — user's funds would be stuck until deadline
+  if (body.action === 'create_order' && getActiveSolverCount() === 0) {
+    return c.json({
+      success: false,
+      error: 'No solver is currently active. Your funds would be locked until the auction deadline with no one to fill the order. Please try again when a solver is online.',
+    }, 503)
+  }
 
   const result = await intentService.buildIntentTx({
     chain:            body.chain as SupportedChain,
