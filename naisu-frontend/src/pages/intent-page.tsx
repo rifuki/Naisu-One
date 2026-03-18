@@ -35,7 +35,13 @@ export default function IntentPage() {
     if (!text || isLoading) return;
 
     setInputValue('');
+    currentMsgIdxRef.current = messages.length + 1;
 
+    try {
+      await sendMessage(text);
+    } catch {
+      // Error handled by useAgent
+    }
   }, [inputValue, isLoading, messages.length, sendMessage]);
 
   // Auto-send initial intent from Landing Page
@@ -79,8 +85,8 @@ export default function IntentPage() {
   );
 
   const handleNewChat = useCallback(() => {
-    window.location.reload();
-  }, []);
+    navigate('/');
+  }, [navigate]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
