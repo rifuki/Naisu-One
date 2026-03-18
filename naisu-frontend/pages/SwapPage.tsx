@@ -35,7 +35,7 @@ const SwapPage: React.FC = () => {
   const solanaAddress = useSolanaAddress();
 
   const [amount, setAmount] = useState('');
-  const [withStake, setWithStake] = useState(false);
+  const [outputToken, setOutputToken] = useState<'sol' | 'msol'>('sol');
   const [submitted, setSubmitted] = useState<{ txHash: string; submittedAt: number } | null>(null);
 
   // ETH balance (wagmi, auto-refreshes on block)
@@ -85,7 +85,7 @@ const SwapPage: React.FC = () => {
     if (!evmAddress || !solanaAddress || !amount) return;
     clearError();
     try {
-      const hash = await submit({ evmAddress, solanaAddress, amount, withStake });
+      const hash = await submit({ evmAddress, solanaAddress, amount, outputToken });
       setSubmitted({ txHash: hash, submittedAt: Date.now() });
     } catch {
       // error set in hook
@@ -124,7 +124,7 @@ const SwapPage: React.FC = () => {
         <div className="flex justify-between items-center px-1">
           <div>
             <h1 className="text-xl font-bold text-white">Cross-chain Swap</h1>
-            <p className="text-xs text-slate-500 mt-0.5">ETH on Base Sepolia → SOL on Solana · via Intent Bridge</p>
+            <p className="text-xs text-slate-500 mt-0.5">{`ETH on Base Sepolia → ${outputToken.toUpperCase()} on Solana · via Intent Bridge`}</p>
           </div>
           <div className="flex items-center gap-2">
             {evmConnected && (
@@ -243,13 +243,15 @@ const SwapPage: React.FC = () => {
                   <span className="text-slate-600">0</span>
                 )}
               </div>
-              {/* Token pill */}
+              {/* Token pill — reflects selected output token */}
               <div className="flex items-center gap-2.5 bg-surface border border-white/10 rounded-xl py-2 pl-2.5 pr-3 shrink-0">
-                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
-                  <span className="text-sm font-bold text-purple-300">{withStake ? 'm' : '◎'}</span>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${outputToken === 'msol' ? 'bg-blue-500/20' : 'bg-purple-500/20'}`}>
+                  <span className={`text-sm font-bold ${outputToken === 'msol' ? 'text-blue-300' : 'text-purple-300'}`}>
+                    {outputToken === 'msol' ? 'm' : '◎'}
+                  </span>
                 </div>
                 <div className="flex flex-col leading-tight">
-                  <span className="font-bold text-white text-sm">{withStake ? 'mSOL' : 'SOL'}</span>
+                  <span className="font-bold text-white text-sm">{outputToken.toUpperCase()}</span>
                   <span className="text-[10px] text-slate-500">Solana Devnet</span>
                 </div>
               </div>
@@ -263,7 +265,7 @@ const SwapPage: React.FC = () => {
               </span>
               {solBalance !== null ? (
                 <span className="text-xs text-slate-500">
-                  Balance: {solBalance} {withStake ? 'mSOL' : 'SOL'}
+                  Balance: {solBalance} {outputToken.toUpperCase()}
                 </span>
               ) : (
                 <span className="text-xs text-slate-600">Balance: —</span>
@@ -286,7 +288,7 @@ const SwapPage: React.FC = () => {
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">Rate</span>
                     <span className="text-slate-300 font-medium">
-                      1 ETH ≈ {fmtRate(quote.rate)} {withStake ? 'mSOL' : 'SOL'}
+                      1 ETH ≈ {fmtRate(quote.rate)} {outputToken.toUpperCase()}
                     </span>
                   </div>
                   {/* Solvers + source row */}
@@ -332,20 +334,30 @@ const SwapPage: React.FC = () => {
             </div>
           )}
 
-          {/* Marinade stake toggle */}
-          {hasValidAmount && (
-            <label className="mt-3 flex items-center gap-3 px-1 cursor-pointer group">
-              <div
-                onClick={() => setWithStake((v) => !v)}
-                className={`relative w-9 h-5 rounded-full transition-colors duration-200 shrink-0 ${withStake ? 'bg-primary' : 'bg-white/10'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${withStake ? 'translate-x-4' : ''}`} />
-              </div>
-              <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors select-none">
-                Auto-stake via Marinade → receive <span className="font-semibold text-purple-300">mSOL</span>
-              </span>
-            </label>
-          )}
+          {/* Output token selector */}
+          <div className="mt-3 px-1">
+            <p className="text-xs text-slate-500 mb-2">Receive as</p>
+            <div className="flex gap-2">
+              {([
+                { value: 'sol',  label: 'SOL',  icon: '◎', color: 'text-purple-300' },
+                { value: 'msol', label: 'mSOL', icon: 'm', color: 'text-blue-300' },
+              ] as const).map(({ value, label, icon, color }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setOutputToken(value)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-semibold transition-all
+                    ${outputToken === value
+                      ? 'bg-primary/15 border-primary/40 text-primary'
+                      : 'bg-white/3 border-white/8 text-slate-400 hover:border-white/15 hover:text-slate-300'
+                    }`}
+                >
+                  <span className={`font-bold ${outputToken === value ? 'text-primary' : color}`}>{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Wallet status */}
           <div className="mt-3 space-y-1.5 px-1">

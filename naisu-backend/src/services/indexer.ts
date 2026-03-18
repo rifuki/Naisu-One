@@ -61,7 +61,7 @@ const ORDER_CREATED_ABI = {
     { name: 'startPrice',       type: 'uint256', indexed: false },
     { name: 'floorPrice',       type: 'uint256', indexed: false },
     { name: 'deadline',         type: 'uint256', indexed: false },
-    { name: 'withStake',        type: 'bool',    indexed: false },
+    { name: 'intentType',       type: 'uint8',   indexed: false },
   ],
 } as const
 
@@ -90,7 +90,7 @@ const ORDERS_FUNCTION_ABI = [
       { name: 'deadline',         type: 'uint256'  },
       { name: 'createdAt',        type: 'uint256'  },
       { name: 'status',           type: 'uint8'    },
-      { name: 'withStake',        type: 'bool'     },
+      { name: 'intentType',       type: 'uint8'    },
     ],
   },
   {
@@ -188,9 +188,9 @@ async function processEvmOrder(
       abi:          ORDERS_FUNCTION_ABI,
       functionName: 'orders',
       args:         [orderId],
-    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, boolean]
+    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, number]
 
-    const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum, withStake] = raw
+    const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum, intentType] = raw
     const isOpen = statusNum === INTENT_BRIDGE.STATUS.OPEN
 
     let currentPrice: string | null = null
@@ -217,7 +217,7 @@ async function processEvmOrder(
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
       status:           statusLabel(statusNum),
-      withStake:        withStake ?? false,
+      intentType:       intentType ?? 0,
       explorerUrl:      `https://sepolia.basescan.org/tx/${txHash}`,
     })
   } catch (err) {
@@ -405,7 +405,7 @@ function decodeSolanaAccount(pubkey: PublicKey, data: Buffer): void {
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
       status:           solStatus,
-      withStake:        false,
+      intentType:       0,
       explorerUrl:      `https://explorer.solana.com/address/${pubkey.toBase58()}?cluster=devnet`,
     })
   } catch { /* skip malformed account */ }

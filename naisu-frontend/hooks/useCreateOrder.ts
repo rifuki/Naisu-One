@@ -7,7 +7,7 @@ interface CreateOrderParams {
   evmAddress: string;
   solanaAddress: string;
   amount: string;
-  withStake: boolean;
+  outputToken: 'sol' | 'msol' | 'marginfi';
 }
 
 interface BuiltTx {
@@ -25,7 +25,7 @@ export function useCreateOrder() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async ({ evmAddress, solanaAddress, amount, withStake }: CreateOrderParams): Promise<string> => {
+  const submit = async ({ evmAddress, solanaAddress, amount, outputToken }: CreateOrderParams): Promise<string> => {
     if (!walletClient) throw new Error('No EVM wallet connected');
     setError(null);
     setTxHash(null);
@@ -44,7 +44,7 @@ export function useCreateOrder() {
           recipientAddress: solanaAddress,
           destinationChain: 'solana',
           amount,
-          withStake,
+          outputToken,
         }),
       });
       const json = await res.json();

@@ -5,6 +5,8 @@ import ActiveIntents from './components/ActiveIntents';
 import LandingPage from './pages/LandingPage';
 import DashboardPage from './pages/DashboardPage';
 import SwapPage from './pages/SwapPage';
+import EarnPage from './pages/EarnPage';
+import PortfolioPage from './pages/PortfolioPage';
 import IntentPage from './pages/IntentPage';
 import AgentPage from './pages/AgentPage';
 
@@ -48,6 +50,8 @@ const AppContent: React.FC = () => {
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/swap" element={<SwapPage />} />
+                    <Route path="/earn" element={<EarnPage />} />
+                    <Route path="/portfolio" element={<PortfolioPage />} />
                     <Route path="/intent" element={<IntentPage />} />
                     <Route path="/agent" element={<AgentPage />} />
                 </Routes>

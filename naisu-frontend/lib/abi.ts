@@ -16,7 +16,7 @@ export const INTENT_BRIDGE_ABI = [
       { name: "startPrice", type: "uint256" },
       { name: "floorPrice", type: "uint256" },
       { name: "durationSeconds", type: "uint256" },
-      { name: "withStake", type: "bool" },
+      { name: "intentType", type: "uint8" },
     ],
     outputs: [{ name: "orderId", type: "bytes32" }],
     stateMutability: "payable",
@@ -59,7 +59,7 @@ export const INTENT_BRIDGE_ABI = [
       { name: "deadline", type: "uint256" },
       { name: "createdAt", type: "uint256" },
       { name: "status", type: "uint8" }, // 0=Open, 1=Fulfilled, 2=Cancelled
-      { name: "withStake", type: "bool" },
+      { name: "intentType", type: "uint8" }, // 0=SOL, 1=mSOL (Marinade), 2=USDC (Orca)
     ],
     stateMutability: "view",
   },
@@ -75,7 +75,7 @@ export const INTENT_BRIDGE_ABI = [
       { name: "startPrice", type: "uint256", indexed: false },
       { name: "floorPrice", type: "uint256", indexed: false },
       { name: "deadline", type: "uint256", indexed: false },
-      { name: "withStake", type: "bool", indexed: false },
+      { name: "intentType", type: "uint8", indexed: false },
     ],
     anonymous: false,
   },

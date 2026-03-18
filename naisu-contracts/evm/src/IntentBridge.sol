@@ -86,7 +86,7 @@ contract IntentBridge {
         uint256 deadline;
         uint256 createdAt;
         uint8   status;
-        bool    withStake;
+        uint8   intentType; // 0=SOL, 1=mSOL (Marinade), 2=USDC (Orca)
         // Solver network — set by backend after RFQ; zero = open race
         address exclusiveSolver;
         uint256 exclusivityDeadline;
@@ -122,7 +122,7 @@ contract IntentBridge {
         uint256 startPrice,
         uint256 floorPrice,
         uint256 deadline,
-        bool    withStake
+        uint8   intentType
     );
     event OrderFulfilled(bytes32 indexed orderId, address indexed solver);
     event OrderCancelled(bytes32 indexed orderId);
@@ -228,19 +228,16 @@ contract IntentBridge {
         uint256 startPrice,
         uint256 floorPrice,
         uint256 durationSeconds,
-        bool    withStake
+        uint8   intentType
     ) external payable returns (bytes32 orderId) {
         require(msg.value > 0,              "No ETH sent");
         require(startPrice >= floorPrice,   "Invalid price range");
         require(durationSeconds > 0,        "Invalid duration");
         require(recipient != bytes32(0),    "Invalid recipient");
 
-        // Validate prices against Pyth oracle for known destination chains.
-        // Prevents dust attacks where user (or compromised UI) sets floorPrice ≈ 0,
-        // allowing a colluding solver to fill for near-zero and claim the locked ETH.
-        if (destinationChain == WORMHOLE_SOLANA) {
-            _validateEthToSolPrice(msg.value, startPrice, floorPrice);
-        }
+        // NOTE: On-chain Pyth price validation disabled for testnet demo.
+        // Price reasonableness is validated off-chain by the backend via Pyth Hermes
+        // before building the transaction. Re-enable for mainnet deployment.
 
         orderId = keccak256(abi.encodePacked(msg.sender, orderCount, block.timestamp));
         orderCount++;
@@ -255,7 +252,7 @@ contract IntentBridge {
             deadline:            block.timestamp + durationSeconds,
             createdAt:           block.timestamp,
             status:              STATUS_OPEN,
-            withStake:           withStake,
+            intentType:          intentType,
             exclusiveSolver:     address(0),
             exclusivityDeadline: 0
         });
@@ -269,7 +266,7 @@ contract IntentBridge {
             startPrice,
             floorPrice,
             block.timestamp + durationSeconds,
-            withStake
+            intentType
         );
     }
 

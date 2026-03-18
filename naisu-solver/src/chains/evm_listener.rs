@@ -21,7 +21,7 @@ pub struct EvmOrder {
     pub floor_price: u128,
     pub deadline: u64,
     pub created_at: u64,
-    pub with_stake: bool,
+    pub intent_type: u8,  // 0=SOL, 1=mSOL (Marinade)
 }
 
 fn evm_chain_name(chain_id: u64) -> &'static str {
@@ -56,7 +56,7 @@ const SEP: &str     = "=======================================================";
 const SEP_SUB: &str = "-------------------------------------------------------";
 
 const ORDER_CREATED_EVENT: &str =
-    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256,bool)";
+    "OrderCreated(bytes32,address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8)";
 
 /// Process a single EVM order end-to-end (solve → VAA → settle).
 async fn process_evm_order(
@@ -93,7 +93,7 @@ async fn process_evm_order(
     info!(" creator   : {}", order.creator);
     info!(" recipient : {recipient_display}");
     info!(" deadline  : {deadline_min} min remaining");
-    info!(" withStake : {}", order.with_stake);
+    info!(" intentType: {}", order.intent_type);
     info!("{SEP}");
 
     let mut solana_payment_sig: Option<String> = None;
@@ -103,68 +103,104 @@ async fn process_evm_order(
     let (wh_chain_id, emitter_address, wh_sequence) =
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
-            let mode_label = if order.with_stake { "bridge+marinade_stake" } else { "bridge" };
+            let mode_label = match order.intent_type {
+                1 => "bridge+marinade_stake",
+                3 => "bridge+marginfi_lend",
+                _ => "bridge",
+            };
 
             info!("{SEP_SUB}");
             info!(" [{short}] STEP 1/3  |  Solana devnet — mode: {mode_label}");
             info!(" [{short}]           |  {price} lamports  →  {recipient_b58}");
             info!("{SEP_SUB}");
 
-            if order.with_stake {
-                match executor::solana_executor::solve_and_liquid_stake(
-                    &config, order.order_id, &recipient_b58, price,
-                ).await {
-                    Ok((sig, seq, msol_minted)) => {
-                        let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                        info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + Marinade staked");
-                        info!(" [{short}]  mSOL minted : {msol_minted}");
-                        info!(" [{short}]  seq : {seq}");
-                        info!(" [{short}]  tx  : {sig}");
-                        info!(" [{short}]  url : {sol_url}");
-                        solana_payment_sig = Some(sig);
-                        solana_recipient_b58_cap = Some(recipient_b58);
-                        payment_amount_lamports = price;
-                        (1u16, config.solana_emitter_address.clone(), seq)
-                    }
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        error!(" [{short}] STEP 1/3 ✗  |  solve_and_liquid_stake failed: {e}");
-                        if !err_str.contains("SolanaTransactionFailed") {
-                            seen_orders.lock().await.remove(&order.order_id);
-                            warn!(" [{short}]  → removed from dedup, will retry");
+            match order.intent_type {
+                1 => {
+                    match executor::solana_executor::solve_and_liquid_stake(
+                        &config, order.order_id, &recipient_b58, price,
+                    ).await {
+                        Ok((sig, seq, msol_minted)) => {
+                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + Marinade staked");
+                            info!(" [{short}]  mSOL minted : {msol_minted}");
+                            info!(" [{short}]  seq : {seq}");
+                            info!(" [{short}]  tx  : {sig}");
+                            info!(" [{short}]  url : {sol_url}");
+                            solana_payment_sig = Some(sig);
+                            solana_recipient_b58_cap = Some(recipient_b58);
+                            payment_amount_lamports = price;
+                            (1u16, config.solana_emitter_address.clone(), seq)
                         }
-                        info!("{SEP}");
-                        info!(" [{short}] ✗ ORDER ABORTED  |  Solana liquid stake step failed");
-                        info!("{SEP}");
-                        return;
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            error!(" [{short}] STEP 1/3 ✗  |  solve_and_liquid_stake failed: {e}");
+                            if !err_str.contains("SolanaTransactionFailed") {
+                                seen_orders.lock().await.remove(&order.order_id);
+                                warn!(" [{short}]  → removed from dedup, will retry");
+                            }
+                            info!("{SEP}");
+                            info!(" [{short}] ✗ ORDER ABORTED  |  Solana liquid stake step failed");
+                            info!("{SEP}");
+                            return;
+                        }
                     }
                 }
-            } else {
-                match executor::solana_executor::solve_and_prove(
-                    &config, order.order_id, &recipient_b58, price,
-                ).await {
-                    Ok((sig, seq)) => {
-                        let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                        info!(" [{short}] STEP 1/3 ✓  |  SOL sent");
-                        info!(" [{short}]  seq : {seq}");
-                        info!(" [{short}]  tx  : {sig}");
-                        info!(" [{short}]  url : {sol_url}");
-                        solana_payment_sig = Some(sig);
-                        solana_recipient_b58_cap = Some(recipient_b58);
-                        payment_amount_lamports = price;
-                        (1u16, config.solana_emitter_address.clone(), seq)
-                    }
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        error!(" [{short}] STEP 1/3 ✗  |  solve_and_prove failed: {e}");
-                        if !err_str.contains("SolanaTransactionFailed") {
-                            seen_orders.lock().await.remove(&order.order_id);
-                            warn!(" [{short}]  → removed from dedup, will retry");
+                3 => {
+                    match executor::solana_executor::solve_and_marginfi(
+                        &config, order.order_id, &recipient_b58, price,
+                    ).await {
+                        Ok((sig, seq)) => {
+                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + deposited to marginfi");
+                            info!(" [{short}]  seq : {seq}");
+                            info!(" [{short}]  tx  : {sig}");
+                            info!(" [{short}]  url : {sol_url}");
+                            solana_payment_sig = Some(sig);
+                            solana_recipient_b58_cap = Some(recipient_b58);
+                            payment_amount_lamports = price;
+                            (1u16, config.solana_emitter_address.clone(), seq)
                         }
-                        info!("{SEP}");
-                        info!(" [{short}] ✗ ORDER ABORTED  |  Solana step failed");
-                        info!("{SEP}");
-                        return;
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            error!(" [{short}] STEP 1/3 ✗  |  solve_and_marginfi failed: {e}");
+                            if !err_str.contains("SolanaTransactionFailed") {
+                                seen_orders.lock().await.remove(&order.order_id);
+                                warn!(" [{short}]  → removed from dedup, will retry");
+                            }
+                            info!("{SEP}");
+                            info!(" [{short}] ✗ ORDER ABORTED  |  marginfi deposit step failed");
+                            info!("{SEP}");
+                            return;
+                        }
+                    }
+                }
+                _ => {
+                    match executor::solana_executor::solve_and_prove(
+                        &config, order.order_id, &recipient_b58, price,
+                    ).await {
+                        Ok((sig, seq)) => {
+                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            info!(" [{short}] STEP 1/3 ✓  |  SOL sent");
+                            info!(" [{short}]  seq : {seq}");
+                            info!(" [{short}]  tx  : {sig}");
+                            info!(" [{short}]  url : {sol_url}");
+                            solana_payment_sig = Some(sig);
+                            solana_recipient_b58_cap = Some(recipient_b58);
+                            payment_amount_lamports = price;
+                            (1u16, config.solana_emitter_address.clone(), seq)
+                        }
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            error!(" [{short}] STEP 1/3 ✗  |  solve_and_prove failed: {e}");
+                            if !err_str.contains("SolanaTransactionFailed") {
+                                seen_orders.lock().await.remove(&order.order_id);
+                                warn!(" [{short}]  → removed from dedup, will retry");
+                            }
+                            info!("{SEP}");
+                            info!(" [{short}] ✗ ORDER ABORTED  |  Solana step failed");
+                            info!("{SEP}");
+                            return;
+                        }
                     }
                 }
             }
@@ -534,7 +570,7 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     let start_price = U256::from_big_endian(&data[96..128]).as_u128();
     let floor_price = U256::from_big_endian(&data[128..160]).as_u128();
     let deadline = U256::from_big_endian(&data[160..192]).as_u64();
-    let with_stake = data[223] != 0;
+    let intent_type = data[223]; // 0=SOL, 1=mSOL (Marinade)
 
     let created_at = if let Some(block_number) = log.block_number {
         provider.get_block(block_number).await.ok().flatten()
@@ -546,6 +582,6 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
 
     Some(EvmOrder {
         order_id, creator, recipient, destination_chain,
-        amount, start_price, floor_price, deadline, created_at, with_stake,
+        amount, start_price, floor_price, deadline, created_at, intent_type,
     })
 }

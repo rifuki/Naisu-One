@@ -18,7 +18,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
     const [status, setStatus] = useState<'indexing' | 'open' | 'fulfilled' | 'error'>('indexing');
     const [elapsed, setElapsed] = useState(0);
     // Store fulfilled order details for informative display
-    const [fulfilledOrder, setFulfilledOrder] = useState<{ startPrice: string; destinationChain: number; withStake: boolean } | null>(null);
+    const [fulfilledOrder, setFulfilledOrder] = useState<{ startPrice: string; destinationChain: number; intentType: number } | null>(null);
     const explorerBase = 'https://sepolia.basescan.org/tx/';
     const chain = 'Base Sepolia';
 
@@ -41,14 +41,14 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                 const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${userAddress}&chain=${chainParam}`);
                 if (!res.ok) return;
                 const data = await res.json();
-                const orders: Array<{ status: string; orderId?: string; startPrice?: string; destinationChain?: number; withStake?: boolean }> = data.data ?? data.orders ?? [];
+                const orders: Array<{ status: string; orderId?: string; startPrice?: string; destinationChain?: number; intentType?: number }> = data.data ?? data.orders ?? [];
                 // Only check the most recent order (orders[0]) to avoid picking up old fulfilled orders
                 const latestOrder = orders[0];
                 if (latestOrder && latestOrder.status === 'FULFILLED') {
                     setFulfilledOrder({
                         startPrice: latestOrder.startPrice ?? '0',
                         destinationChain: latestOrder.destinationChain ?? 1,
-                        withStake: latestOrder.withStake ?? false,
+                        intentType: latestOrder.intentType ?? 0,
                     });
                     setStatus('fulfilled');
                     clearInterval(poll);
@@ -67,7 +67,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
     // Format the fulfilled receive amount from startPrice (lamports for SOL, wei for EVM)
     const formatReceiveAmount = () => {
         if (!fulfilledOrder) return null;
-        const { startPrice, destinationChain, withStake } = fulfilledOrder;
+        const { startPrice, destinationChain, intentType } = fulfilledOrder;
         try {
             const raw = BigInt(startPrice);
             // Solana = 9 decimals, Sui = 9 decimals, EVM = 18 decimals
@@ -75,9 +75,9 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
             const s = raw.toString().padStart(decimals + 1, '0');
             const intPart = s.slice(0, -decimals) || '0';
             const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
-            // If this order had withStake and Solana destination, show mSOL instead of SOL
+            // Use token label based on intentType for Solana destination
             const token = destinationChain === 1
-                ? (withStake ? 'mSOL' : 'SOL')
+                ? (intentType === 1 ? 'mSOL' : 'SOL')
                 : destinationChain === 21 ? 'SUI' : 'ETH';
             return `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
         } catch { return null; }
@@ -107,7 +107,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                         <span className="text-[10px] text-slate-600 tabular-nums">{elapsed}s</span>
                     )}
                     {status === 'fulfilled' && receiveLabel && (() => {
-                        const isLiquidStaked = fulfilledOrder?.withStake && fulfilledOrder?.destinationChain === 1;
+                        const isLiquidStaked = fulfilledOrder?.intentType === 1 && fulfilledOrder?.destinationChain === 1;
                         const verb = isLiquidStaked ? 'staked' : 'delivered';
                         return (
                             <span className="text-[10px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded-full border border-primary/20">
@@ -116,7 +116,7 @@ const OrderMonitor: React.FC<OrderMonitorProps> = ({ txHash, chainId, userAddres
                         );
                     })()}
                     {status === 'fulfilled' && !receiveLabel && (() => {
-                        const isLiquidStaked = fulfilledOrder?.withStake && fulfilledOrder?.destinationChain === 1;
+                        const isLiquidStaked = fulfilledOrder?.intentType === 1 && fulfilledOrder?.destinationChain === 1;
                         const verb = isLiquidStaked ? 'staked' : 'delivered';
                         return (
                             <span className="text-[10px] text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full">{verb}</span>
@@ -168,8 +168,8 @@ const IntentPage: React.FC = () => {
     const hasSubmittedTx = submittedTxs.length > 0;
 
     const handleOrderUpdate = useCallback((event: OrderUpdateEvent) => {
-        const { status, orderId, amount, chain, explorerUrl, startPrice, destinationChain } = event as OrderUpdateEvent & { startPrice?: string; destinationChain?: number; withStake?: boolean };
-        const withStakeFromEvent = (event as OrderUpdateEvent & { withStake?: boolean }).withStake ?? false;
+        const { status, orderId, amount, chain, explorerUrl, startPrice, destinationChain } = event as OrderUpdateEvent & { startPrice?: string; destinationChain?: number; intentType?: number };
+        const intentTypeFromEvent = (event as OrderUpdateEvent & { intentType?: number }).intentType ?? 0;
         const shortId = orderId.slice(0, 8);
         const chainLabel = chain === 'evm-base' ? 'Base Sepolia' : chain;
 
@@ -185,16 +185,16 @@ const IntentPage: React.FC = () => {
                     const s = raw.toString().padStart(decimals + 1, '0');
                     const intPart = s.slice(0, -decimals) || '0';
                     const fracPart = s.slice(-decimals).slice(0, 6).replace(/0+$/, '');
-                    // Use mSOL label if this order had withStake and destination is Solana
+                    // Use token label based on intentType for Solana destination
                     const token = destChain === 1
-                        ? (withStakeFromEvent ? 'mSOL' : 'SOL')
+                        ? (intentTypeFromEvent === 1 ? 'mSOL' : 'SOL')
                         : destChain === 21 ? 'SUI' : 'ETH';
                     receiveStr = `~${intPart}${fracPart ? `.${fracPart}` : ''} ${token}`;
                 } catch { /* ignore */ }
             }
             const destChain = destinationChain ?? 1;
-            const isLiquidStaked = withStakeFromEvent && destChain === 1;
-            const verb = isLiquidStaked ? 'staked' : 'delivered';
+            const isProcessed = intentTypeFromEvent === 1 && destChain === 1;
+            const verb = intentTypeFromEvent === 1 ? 'staked' : 'delivered';
             const receiveInfo = receiveStr ? ` · estimated receive: **${receiveStr}** ${verb}` : '';
             message = `Order \`${shortId}\` fulfilled — **${amount} ETH** locked on ${chainLabel}${receiveInfo}. [View tx](${explorerUrl})`;
         } else if (status === 'EXPIRED') {

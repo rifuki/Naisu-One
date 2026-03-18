@@ -262,6 +262,52 @@ All `.env` files + `env.ts` default updated to new address.
 
 ---
 
+## Session 9 Summary (2026-03-18)
+
+Latest commit: (pending)
+
+### 19. marinade_stake.js — Fixed path typo + ATA bug
+
+- **Path fix:** `solana_executor.rs` had `naisu1-contracts` typo (4 places) → fixed to `naisu-contracts`
+- **ATA fix:** `buildCreateAtaIx` manual instruction was broken — replaced with `createAssociatedTokenAccountInstruction` + `createTransferInstruction` from `@solana/spl-token`
+- Tested end-to-end on devnet: 0.001 SOL → 998,650 mSOL raw ✅
+
+### 20. Portfolio / Positions — Earn page tab
+
+**EarnPage** now has 2 tabs:
+- **⬆ Stake** — existing intent bridge flow (Marinade / marginfi)
+- **📊 Positions** — shows mSOL + SOL balances live from Solana RPC; Unstake button for mSOL
+
+**Unstake mSOL flow:**
+1. New script: `marinade_liquid_unstake_tx.ts` — builds unsigned Marinade liquid-unstake tx, outputs base64
+2. New backend: `portfolio.service.ts` + `GET /api/v1/portfolio/balances` + `POST /api/v1/portfolio/unstake-msol`
+3. Frontend: backend builds tx → user signs with Solana wallet adapter → `sendRawTransaction`
+4. Phantom shows mSOL as "Unknown" on devnet (normal — mainnet shows correctly)
+
+### 21. Orca (intentType 2) — REMOVED
+
+`@orca-so/whirlpools-sdk@0.13.14` crashes on load (IDL `AdaptiveFeeTier` bug). Devnet pool doesn't exist anyway.
+
+**Removed from all layers:**
+- Backend: `usdc` removed from `outputToken` enum, `usdc:2` removed from `intentTypeMap`, Orca APY fetcher removed from `yield.service.ts`
+- Frontend: USDC pill removed from SwapPage, Orca card removed from EarnPage, `useCreateOrder` type updated
+- Solver: `solve_and_orca_swap` function deleted from `solana_executor.rs`, case `2` removed from `evm_listener.rs`
+- `@orca-so/whirlpools-sdk` downgraded to `0.11.7` (loads cleanly, kept in repo but unused)
+
+**Active intentTypes:**
+- 0 = SOL (plain bridge)
+- 1 = mSOL (Marinade liquid stake) ✅ working
+- 3 = marginfi SOL lending (script compiled, runtime untested)
+
+### 22. Contract Redeploys (Session 8)
+
+| Reason | Address |
+|--------|---------|
+| intentType uint8 + stale-safe Pyth try/catch | `0x0911fbFF3f5289259F697b03f63493316be90334` |
+| Pyth on-chain validation DISABLED (testnet) | `0x30204dC6EaE004AdA38A85A57C47421C54AFE757` ← ACTIVE |
+
+---
+
 ## Session 7 Summary (2026-03-18)
 
 Latest commit: (pending)
@@ -550,7 +596,7 @@ SOLANA_INTENT_PROGRAM_ID=Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN
 
 | Chain | Contract | Address |
 |-------|----------|---------|
-| Base Sepolia | IntentBridge (+ Pyth oracle, stale-safe) | `0x0911fbFF3f5289259F697b03f63493316be90334` |
+| Base Sepolia | IntentBridge (+ Pyth oracle, stale-safe) | `0x30204dC6EaE004AdA38A85A57C47421C54AFE757` |
 | Solana Devnet | IntentBridge | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` |
 | Sui Testnet | IntentBridge | `0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb` |
 

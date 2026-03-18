@@ -191,8 +191,9 @@ const Navbar: React.FC = () => {
       : 'text-slate-400 hover:text-white hover:bg-white/5';
 
   const navLinks = [
-    { name: 'Home', path: '/' },
-    { name: 'Swap', path: '/swap' },
+    { name: 'Home',  path: '/' },
+    { name: 'Swap',  path: '/swap' },
+    { name: 'Earn',  path: '/earn' },
     { name: 'Agent', path: '/intent' },
   ];
 

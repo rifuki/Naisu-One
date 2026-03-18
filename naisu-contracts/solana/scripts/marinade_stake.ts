@@ -27,21 +27,15 @@ import {
   Keypair,
   PublicKey,
   Transaction,
-  TransactionInstruction,
-  SystemProgram,
-  SYSVAR_RENT_PUBKEY,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { Marinade, MarinadeConfig } from '@marinade.finance/marinade-ts-sdk';
-import { utils as anchorUtils } from '@coral-xyz/anchor';
+import {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+} from '@solana/spl-token';
 import BN from 'bn.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Constants
-// ──────────────────────────────────────────────────────────────────────────────
-
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bbn');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Arguments
@@ -76,33 +70,6 @@ function loadKeypair(key: string): Keypair {
   if (bytes.length === 64) return Keypair.fromSecretKey(bytes);
   if (bytes.length === 32) return Keypair.fromSeed(bytes);
   throw new Error(`Invalid private key length: ${bytes.length} bytes`);
-}
-
-/** Derive Associated Token Account address */
-function getAta(owner: PublicKey, mint: PublicKey): PublicKey {
-  return anchorUtils.token.associatedAddress({ mint, owner });
-}
-
-/** Build create-ATA instruction (idempotent) */
-function buildCreateAtaIx(
-  payer: PublicKey,
-  ata: PublicKey,
-  owner: PublicKey,
-  mint: PublicKey,
-): TransactionInstruction {
-  return new TransactionInstruction({
-    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
-    keys: [
-      { pubkey: payer,                    isSigner: true,  isWritable: true  },
-      { pubkey: ata,                       isSigner: false, isWritable: true  },
-      { pubkey: owner,                     isSigner: false, isWritable: false },
-      { pubkey: mint,                      isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId,  isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID,          isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY,        isSigner: false, isWritable: false },
-    ],
-    data: Buffer.alloc(0),
-  });
 }
 
 /** Read a token account's balance (u64 at offset 64 in token account layout) */
@@ -144,7 +111,7 @@ async function main() {
   console.error(`mSOL Mint: ${msolMint.toBase58()}`);
 
   // ── mSOL ATA for solver (Marinade will mint here) ────────────────────────────
-  const solverMsolAta = getAta(solver.publicKey, msolMint);
+  const solverMsolAta = await getAssociatedTokenAddress(msolMint, solver.publicKey);
   console.error(`Solver mSOL ATA: ${solverMsolAta.toBase58()}`);
 
   // mSOL balance before deposit (to calculate exactly how many were minted)
@@ -180,7 +147,7 @@ async function main() {
   }
 
   // ── Step 2: Transfer mSOL from solver to recipient ──────────────────────────
-  const recipientMsolAta = getAta(recipient, msolMint);
+  const recipientMsolAta = await getAssociatedTokenAddress(msolMint, recipient);
   console.error(`Recipient mSOL ATA: ${recipientMsolAta.toBase58()}`);
 
   const transferTx = new Transaction();
@@ -189,24 +156,15 @@ async function main() {
   const recipientAtaInfo = await connection.getAccountInfo(recipientMsolAta, 'confirmed');
   if (!recipientAtaInfo) {
     console.error('Creating recipient mSOL ATA...');
-    transferTx.add(buildCreateAtaIx(solver.publicKey, recipientMsolAta, recipient, msolMint));
+    transferTx.add(
+      createAssociatedTokenAccountInstruction(solver.publicKey, recipientMsolAta, recipient, msolMint),
+    );
   }
 
   // SPL Token transfer: solver's mSOL ATA → recipient's mSOL ATA
-  const transferBuf = Buffer.alloc(9);
-  transferBuf[0] = 3; // Transfer instruction index
-  transferBuf.writeBigUInt64LE(msolMinted, 1);
-
-  const transferIx = new TransactionInstruction({
-    programId: TOKEN_PROGRAM_ID,
-    keys: [
-      { pubkey: associatedMSolTokenAccountAddress, isSigner: false, isWritable: true  }, // source
-      { pubkey: recipientMsolAta,                  isSigner: false, isWritable: true  }, // destination
-      { pubkey: solver.publicKey,                  isSigner: true,  isWritable: false }, // authority
-    ],
-    data: transferBuf,
-  });
-  transferTx.add(transferIx);
+  transferTx.add(
+    createTransferInstruction(associatedMSolTokenAccountAddress, recipientMsolAta, solver.publicKey, msolMinted),
+  );
 
   console.error(`Transferring ${msolMinted} mSOL to recipient ${recipientB58}...`);
   const transferSig = await sendAndConfirmTransaction(connection, transferTx, [solver], {

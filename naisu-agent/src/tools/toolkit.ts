@@ -149,7 +149,7 @@ export function buildToolkit(params: {
       "For Sui: returns base64 txBytes. For EVM: returns { to, data, value, chainId }. " +
       "The backend NEVER signs or broadcasts — the user signs in their own wallet. " +
       "Use this when the user says 'bridge X from Y to Z' or 'create an intent to swap'. " +
-      "Set withStake=true when the user says 'bridge and stake' or 'get mSOL' — this routes the bridged SOL into Marinade Finance liquid staking so the recipient receives mSOL instead of raw SOL. " +
+      "Set outputToken='msol' when the user says 'bridge and stake' or 'get mSOL' (Marinade liquid staking). Set outputToken='usdc' when the user says 'get USDC' or 'swap to USDC' (Orca Whirlpool). Default is 'sol' for raw SOL. " +
       "Always call intent_quote first to confirm the user understands the terms.",
     schema: z.object({
       chain: z
@@ -177,14 +177,14 @@ export function buildToolkit(params: {
         .max(86400)
         .default(300)
         .describe("Dutch auction duration in seconds (default 300 = 5 minutes)"),
-      withStake: z
-        .boolean()
-        .default(false)
-        .describe("If true, the bridged SOL is deposited into Marinade Finance and the recipient gets mSOL instead of raw SOL. Only applicable when destinationChain is 'solana'."),
+      outputToken: z
+        .enum(["sol", "msol", "usdc"])
+        .default("sol")
+        .describe("Output token the recipient will receive on Solana: 'sol' (raw SOL, default), 'msol' (Marinade liquid staked SOL), or 'usdc' (Orca Whirlpool SOL→USDC swap). Only applicable when destinationChain is 'solana'."),
     }),
-    func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, withStake }) => {
+    func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
       const url = `${INTENT_API}/build-tx`;
-      const body = { chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, withStake };
+      const body = { chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken };
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

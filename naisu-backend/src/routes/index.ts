@@ -23,6 +23,8 @@ import { solanaRouter } from './solana'
 import { intentRouter } from './intent'
 import { solverRouter } from './solver'
 import { docsRouter } from './docs'
+import { yieldRouter } from './yield'
+import { portfolioRouter } from './portfolio'
 
 // ============================================================================
 // Main App
@@ -162,6 +164,10 @@ api.route('/intent', intentRouter)
 
 // Solver network routes (registry + RFQ + selection)
 api.route('/solver', solverRouter)
+
+// Yield APY rates (Marinade, marginfi, Orca)
+api.route('/yield', yieldRouter)
+api.route('/portfolio', portfolioRouter)
 
 // API Docs (mounted at root level, not under /api/v1)
 app.route('/docs', docsRouter)

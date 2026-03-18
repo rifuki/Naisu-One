@@ -180,7 +180,7 @@ const buildTxBody = z.object({
   startPrice:      z.string().optional(),
   floorPrice:      z.string().optional(),
   durationSeconds: z.number().int().positive().max(86400).optional(),
-  withStake:       z.boolean().default(false),
+  outputToken:     z.enum(['sol', 'msol']).default('sol'),
 })
 
 // ============================================================================
@@ -318,7 +318,7 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
     startPrice:       body.startPrice,
     floorPrice:       body.floorPrice,
     durationSeconds:  body.durationSeconds,
-    withStake:        body.withStake,
+    outputToken:      body.outputToken,
   })
 
   return c.json({ success: true, data: result })

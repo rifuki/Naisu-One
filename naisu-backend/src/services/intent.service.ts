@@ -71,7 +71,7 @@ export interface IntentOrder {
   deadline: number          // unix ms
   createdAt: number         // unix ms
   status: 'OPEN' | 'FULFILLED' | 'CANCELLED'
-  withStake: boolean
+  intentType: number  // 0=SOL, 1=mSOL (Marinade)
   explorerUrl: string
 }
 
@@ -154,7 +154,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'startPrice', type: 'uint256' },
       { name: 'floorPrice', type: 'uint256' },
       { name: 'durationSeconds', type: 'uint256' },
-      { name: 'withStake', type: 'bool' },
+      { name: 'intentType', type: 'uint8' },
     ],
     outputs: [{ name: 'orderId', type: 'bytes32' }],
   },
@@ -180,7 +180,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'deadline', type: 'uint256' },
       { name: 'createdAt', type: 'uint256' },
       { name: 'status', type: 'uint8' },
-      { name: 'withStake', type: 'bool' },
+      { name: 'intentType', type: 'uint8' },
     ],
   },
   {
@@ -195,7 +195,7 @@ const INTENT_BRIDGE_ABI = [
       { name: 'startPrice', type: 'uint256', indexed: false },
       { name: 'floorPrice', type: 'uint256', indexed: false },
       { name: 'deadline', type: 'uint256', indexed: false },
-      { name: 'withStake', type: 'bool', indexed: false },
+      { name: 'intentType', type: 'uint8', indexed: false },
     ],
   },
 ] as const
@@ -310,7 +310,7 @@ async function listSuiOrders(creator: string): Promise<IntentOrder[]> {
         deadline:         Number(fields.deadline),
         createdAt:        Number(fields.created_at),
         status:           statusLabel(status),
-        withStake:        false,
+        intentType:       0,
         explorerUrl:      `https://suiexplorer.com/object/${intentId}?network=testnet`,
       })
     } catch {
@@ -385,9 +385,9 @@ async function listEvmOrders(
         abi: INTENT_BRIDGE_ABI,
         functionName: 'orders',
         args: [orderId],
-      }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, boolean]
+      }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, number]
 
-      const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, status, withStake] = order
+      const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, status, intentType] = order
       const nowSec = BigInt(Math.floor(Date.now() / 1000))
       const isOpen = status === INTENT_BRIDGE.STATUS.OPEN
 
@@ -418,7 +418,7 @@ async function listEvmOrders(
         deadline:         Number(deadline) * 1000,
         createdAt:        Number(createdAt) * 1000,
         status:           statusLabel(status),
-        withStake:        withStake ?? false,
+        intentType:       intentType ?? 0,
         explorerUrl:      evmExplorerTx(evmChain, log.transactionHash ?? ''),
       })
     } catch {
@@ -503,7 +503,7 @@ function parseSolanaIntent(
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
       status:           statusLabel,
-      withStake:        false,
+      intentType:       0,
       explorerUrl:      `https://explorer.solana.com/address/${pubkey.toBase58()}?cluster=devnet`,
     }
   } catch {
@@ -765,7 +765,7 @@ export async function buildIntentTx(params: {
   startPrice?: string              // optional override
   floorPrice?: string              // optional override
   durationSeconds?: number
-  withStake?: boolean
+  outputToken?: string  // 'sol' | 'msol' — determines intentType
 }): Promise<BuildTxResult> {
   let {
     chain,
@@ -777,7 +777,7 @@ export async function buildIntentTx(params: {
     startPrice,
     floorPrice,
     durationSeconds = INTENT_BRIDGE.AUCTION.DEFAULT_DURATION_MS / 1000,
-    withStake = false,
+    outputToken = 'sol',
   } = params
 
   // If startPrice or floorPrice are missing, calculate them properly via getIntentQuote!
@@ -818,7 +818,7 @@ export async function buildIntentTx(params: {
       durationSeconds,
       startPrice,
       floorPrice,
-      withStake,
+      outputToken,
     })
   }
 
@@ -922,9 +922,13 @@ async function buildEvmCreateOrder(params: {
   durationSeconds: number
   startPrice?: string
   floorPrice?: string
-  withStake?: boolean
+  outputToken?: string  // 'sol' | 'msol'
 }): Promise<BuildTxResult> {
-  const { chain, recipientAddress, destinationChain, amount, durationSeconds, startPrice, floorPrice, withStake = false } = params
+  const { chain, recipientAddress, destinationChain, amount, durationSeconds, startPrice, floorPrice, outputToken = 'sol' } = params
+
+  // Map output token string to intentType uint8
+  const intentTypeMap: Record<string, number> = { sol: 0, msol: 1, marginfi: 3 }
+  const intentType = intentTypeMap[outputToken] ?? 0
 
   const contract    = config.intent.evm.baseSepolia.contract
   const chainId     = config.intent.evm.baseSepolia.chainId
@@ -962,9 +966,15 @@ async function buildEvmCreateOrder(params: {
       startPriceWei,
       floorPriceWei,
       BigInt(durationSeconds),
-      withStake,
+      intentType,
     ],
   })
+
+  const intentLabel = intentType === 1
+    ? ' + marinade stake'
+    : intentType === 3
+    ? ' + marginfi lending'
+    : ''
 
   return {
     chain: 'evm',
@@ -973,7 +983,7 @@ async function buildEvmCreateOrder(params: {
       data,
       value:       amountWei.toString(),
       chainId,
-      description: `Create EVM order: lock ${amount} ETH → bridge to ${destinationChain} (${durationSeconds}s Dutch auction)${withStake ? ' + liquid stake' : ''}`,
+      description: `Create EVM order: lock ${amount} ETH → bridge to ${destinationChain} (${durationSeconds}s Dutch auction)${intentLabel}`,
     },
   }
 }
