@@ -23,7 +23,7 @@ export default function IntentPage() {
   const { sendTransactionAsync } = useSendTransaction();
   const solanaAddress = useSolanaAddress();
 
-  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx } = useAgent(
+  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx, reset } = useAgent(
     address || 'anonymous',
     solanaAddress || ''
   );
@@ -85,8 +85,12 @@ export default function IntentPage() {
   );
 
   const handleNewChat = useCallback(() => {
-    navigate('/');
-  }, [navigate]);
+    reset();
+    setInputValue('');
+    setSubmittedTxs([]);
+    setPendingTx(undefined);
+    currentMsgIdxRef.current = 0;
+  }, [reset, setPendingTx]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
