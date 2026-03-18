@@ -28,11 +28,13 @@ pub struct Config {
 
     // EVM chain 2 (Base Sepolia)
     pub evm2_rpc_url: String,
+    pub evm2_ws_url: Option<String>,  // EVM2_WS_URL — required for WS mode (e.g. Alchemy wss://)
     pub evm2_contract_address: String,
     pub evm2_chain_id: u64,
 
     // Solana
     pub solana_rpc_url: String,
+    pub solana_ws_url: Option<String>, // SOLANA_WS_URL — optional, defaults to derived from RPC URL
     pub solana_private_key: String,
     pub solana_program_id: String,
 
@@ -82,6 +84,7 @@ impl Config {
 
             evm2_rpc_url: env::var("EVM2_RPC_URL")
                 .unwrap_or_else(|_| "https://sepolia.base.org".to_string()),
+            evm2_ws_url: env::var("EVM2_WS_URL").ok(),
             evm2_contract_address: require_env("EVM2_CONTRACT_ADDRESS")?,
             evm2_chain_id: env::var("EVM2_CHAIN_ID")
                 .unwrap_or_else(|_| "84532".to_string())
@@ -89,6 +92,7 @@ impl Config {
                 .unwrap_or(84532),
 
             solana_rpc_url: require_env("SOLANA_RPC_URL")?,
+            solana_ws_url: env::var("SOLANA_WS_URL").ok(),
             solana_private_key: require_env("SOLANA_PRIVATE_KEY")?,
             solana_program_id: require_env("SOLANA_PROGRAM_ID")?,
 

@@ -129,36 +129,46 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Subscribe to Base Sepolia new blocks via WS → fetch ETH balance on each block.
+/// Update ETH balance for TUI.
+/// WS mode (per-block) if EVM2_WS_URL is set, otherwise HTTP poll every 15s.
 async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
-    use ethers::providers::{Middleware, Provider, StreamExt, Ws};
+    use ethers::providers::{Http, Middleware, Provider, StreamExt, Ws};
 
-    let ws_url = http_to_ws(&config.evm2_rpc_url);
     let evm_wallet: ethers::signers::LocalWallet = match config.evm_private_key.parse() {
         Ok(w) => w,
         Err(_) => return,
     };
     let address = evm_wallet.address();
 
-    loop {
-        match Provider::<Ws>::connect(&ws_url).await {
-            Ok(provider) => match provider.subscribe_blocks().await {
-                Ok(mut stream) => {
-                    while stream.next().await.is_some() {
-                        if let Ok(balance) = provider.get_balance(address, None).await {
-                            let eth: f64 =
-                                ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
-                            let _ = tx
-                                .send(AppEvent::Balance(Chain::Base, format!("{eth:.4} ETH")))
-                                .await;
+    if let Some(ws_url) = &config.evm2_ws_url {
+        let ws_url = ws_url.clone();
+        loop {
+            match Provider::<Ws>::connect(&ws_url).await {
+                Ok(provider) => match provider.subscribe_blocks().await {
+                    Ok(mut stream) => {
+                        while stream.next().await.is_some() {
+                            if let Ok(balance) = provider.get_balance(address, None).await {
+                                let eth: f64 = ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
+                                let _ = tx.send(AppEvent::Balance(Chain::Base, format!("{eth:.4} ETH"))).await;
+                            }
                         }
                     }
-                }
-                Err(e) => tracing::warn!("EVM WS subscribe_blocks: {e}"),
-            },
-            Err(e) => tracing::warn!("EVM WS connect failed ({ws_url}): {e}"),
+                    Err(e) => tracing::warn!("EVM WS subscribe_blocks: {e}"),
+                },
+                Err(e) => tracing::warn!("EVM balance WS connect failed: {e}"),
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    } else {
+        // No WS URL — HTTP poll every 15s
+        let Ok(provider) = Provider::<Http>::try_from(config.evm2_rpc_url.as_str()) else { return };
+        loop {
+            if let Ok(balance) = provider.get_balance(address, None).await {
+                let eth: f64 = ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
+                let _ = tx.send(AppEvent::Balance(Chain::Base, format!("{eth:.4} ETH"))).await;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        }
     }
 }
 

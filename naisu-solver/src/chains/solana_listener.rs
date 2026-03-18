@@ -190,9 +190,11 @@ async fn process_open_intents(config: &Config, attempted: &mut HashSet<[u8; 32]>
 /// the program, immediately scan for new open intents (debounced to 500ms).
 /// Reconnects automatically; replays via getProgramAccounts on each reconnect.
 pub async fn run(config: &Config) -> Result<()> {
-    let ws_url = config.solana_rpc_url
-        .replace("https://", "wss://")
-        .replace("http://", "ws://");
+    let ws_url = config.solana_ws_url.clone().unwrap_or_else(|| {
+        config.solana_rpc_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+    });
     let program_id = config.solana_program_id.clone();
 
     info!(program = %program_id, ws = %ws_url, "Solana WS listener starting...");

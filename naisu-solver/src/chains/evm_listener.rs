@@ -365,8 +365,9 @@ async fn handle_order_log(
     });
 }
 
-/// Listen for OrderCreated events via WebSocket. Reconnects automatically.
-/// On reconnect, replays missed blocks via HTTP before re-subscribing.
+/// Listen for OrderCreated events.
+/// - If EVM2_WS_URL is set: uses WS subscription (instant) with HTTP catchup on reconnect.
+/// - Otherwise: falls back to HTTP polling every 5s.
 pub async fn run_with_config(
     config: Arc<Config>,
     chain_id: u64,
@@ -374,7 +375,6 @@ pub async fn run_with_config(
     contract: &str,
 ) -> Result<()> {
     let chain_name = evm_chain_name(chain_id);
-    let ws_url = rpc_url.replace("https://", "wss://").replace("http://", "ws://");
     let contract_addr: Address = contract.parse()?;
     let seen_orders: Arc<Mutex<HashSet<[u8; 32]>>> = Arc::new(Mutex::new(HashSet::new()));
 
@@ -385,10 +385,35 @@ pub async fn run_with_config(
         .address(contract_addr)
         .event(ORDER_CREATED_EVENT);
 
-    info!("[{chain_name}] Listener ready | contract={contract_addr} | from block={last_block}");
+    match &config.evm2_ws_url {
+        Some(ws_url) => {
+            info!("[{chain_name}] WS mode | contract={contract_addr} | from block={last_block}");
+            run_ws_mode(&config, chain_id, rpc_url, &ws_url.clone(), contract_addr, http, last_block, order_filter, seen_orders).await;
+        }
+        None => {
+            info!("[{chain_name}] HTTP polling mode | set EVM2_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
+            run_http_mode(&config, chain_id, rpc_url, contract_addr, http, &mut last_block, order_filter, seen_orders).await;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_ws_mode(
+    config: &Arc<Config>,
+    chain_id: u64,
+    rpc_url: &str,
+    ws_url: &str,
+    contract_addr: Address,
+    http: Provider<Http>,
+    mut last_block: ethers::types::U64,
+    order_filter: Filter,
+    seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+) {
+    let chain_name = evm_chain_name(chain_id);
 
     loop {
-        // ── Catchup: replay events missed while disconnected ────────────────
+        // ── Catchup missed blocks via HTTP ─────────────────────────────────
         if let Ok(current) = http.get_block_number().await {
             let safe = current.saturating_sub(2.into());
             if safe > last_block {
@@ -399,7 +424,7 @@ pub async fn run_with_config(
                             info!("[{chain_name}] Catchup: {} event(s) in blocks {}→{}", logs.len(), last_block + 1, safe);
                         }
                         for log in logs {
-                            handle_order_log(log, &http, &config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                            handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
                         }
                     }
                     Err(e) => warn!("[{chain_name}] Catchup get_logs failed: {e}"),
@@ -409,26 +434,63 @@ pub async fn run_with_config(
         }
 
         // ── WS subscription ────────────────────────────────────────────────
-        match Provider::<Ws>::connect(&ws_url).await {
-            Ok(ws) => {
-                match ws.subscribe_logs(&order_filter).await {
-                    Ok(mut stream) => {
-                        info!("[{chain_name}] WS connected ✓  streaming OrderCreated events...");
-                        while let Some(log) = stream.next().await {
-                            if let Some(bn) = log.block_number {
-                                last_block = bn;
-                            }
-                            handle_order_log(log, &http, &config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
-                        }
-                        warn!("[{chain_name}] WS stream ended — reconnecting...");
+        match Provider::<Ws>::connect(ws_url).await {
+            Ok(ws) => match ws.subscribe_logs(&order_filter).await {
+                Ok(mut stream) => {
+                    info!("[{chain_name}] WS connected ✓  streaming OrderCreated events...");
+                    while let Some(log) = stream.next().await {
+                        if let Some(bn) = log.block_number { last_block = bn; }
+                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
                     }
-                    Err(e) => warn!("[{chain_name}] subscribe_logs failed: {e} — retrying..."),
+                    warn!("[{chain_name}] WS stream ended — reconnecting...");
                 }
-            }
-            Err(e) => warn!("[{chain_name}] WS connect failed ({ws_url}): {e} — retrying..."),
+                Err(e) => warn!("[{chain_name}] subscribe_logs failed: {e}"),
+            },
+            Err(e) => warn!("[{chain_name}] WS connect failed: {e}"),
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    }
+}
+
+async fn run_http_mode(
+    config: &Arc<Config>,
+    chain_id: u64,
+    rpc_url: &str,
+    contract_addr: Address,
+    http: Provider<Http>,
+    last_block: &mut ethers::types::U64,
+    order_filter: Filter,
+    seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+) {
+    let chain_name = evm_chain_name(chain_id);
+    const LAG: u64 = 2;
+
+    loop {
+        let current = match http.get_block_number().await {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("[{chain_name}] get_block_number failed: {e}");
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+
+        let safe = current.saturating_sub(LAG.into());
+        if safe > *last_block {
+            let filter = order_filter.clone().from_block(*last_block + 1).to_block(safe);
+            match http.get_logs(&filter).await {
+                Ok(logs) => {
+                    for log in logs {
+                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                    }
+                }
+                Err(e) => warn!("[{chain_name}] get_logs failed: {e}"),
+            }
+            *last_block = safe;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
 }
 
