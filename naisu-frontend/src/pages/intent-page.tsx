@@ -26,7 +26,7 @@ export default function IntentPage() {
   const solanaAddress = useSolanaAddress();
 
   // ── Session Management ────────────────────────────────────
-  const { sessions, activeSessionId, activeSession, createSession, switchSession, updateActiveSession } =
+  const { sessions, activeSessionId, activeSession, createSession, switchSession, updateActiveSession, deleteSession } =
     useChatSessions(address ?? 'guest');
 
   const currentMsgIdxRef = useRef(0);
@@ -126,6 +126,7 @@ export default function IntentPage() {
         activeSessionId={activeSessionId}
         onNewChat={handleNewChat}
         onSwitchSession={switchSession}
+        onDeleteSession={deleteSession}
         onOpenSettings={() => setShowSettings(true)}
       />
 
