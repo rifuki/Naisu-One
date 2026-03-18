@@ -13,24 +13,23 @@ export default function IntentPage() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
-  const [pendingTx, setPendingTx] = useState<PendingTx | undefined>(undefined);
-  const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number }>>([]);
+  const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>>([]);
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const solanaAddress = useSolanaAddress();
 
-  const { messages, isLoading, error, sendMessage } = useAgent({
-    userId: address || 'anonymous',
-    solanaAddress: solanaAddress || '',
-  });
+  const { messages, isLoading, error, sendMessage, pendingTx, setPendingTx } = useAgent(
+    address || 'anonymous',
+    solanaAddress || ''
+  );
 
   const currentMsgIdxRef = useRef(0);
 
-  const handleSend = useCallback(async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
+    const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim();
+    if (!text || isLoading) return;
 
-    const text = inputValue.trim();
     setInputValue('');
 
     if (!hasInteracted) {
@@ -40,18 +39,7 @@ export default function IntentPage() {
     currentMsgIdxRef.current = messages.length + 1;
 
     try {
-      const result = await sendMessage(text);
-
-      if (result?.tx) {
-        const tx: TxData = result.tx;
-        setPendingTx({
-          to: tx.to,
-          data: tx.data,
-          value: tx.value,
-          chainId: tx.chainId,
-          decoded: tx.decoded,
-        });
-      }
+      await sendMessage(text);
     } catch {
       // Error handled by useAgent
     }
@@ -77,7 +65,7 @@ export default function IntentPage() {
         if (hash) {
           setSubmittedTxs((prev) => [
             ...prev,
-            { hash, chainId: tx.chainId, msgIdx: currentMsgIdxRef.current },
+            { hash, chainId: tx.chainId, msgIdx: currentMsgIdxRef.current, submittedAt: Date.now() },
           ]);
         }
       } catch (err) {
@@ -100,8 +88,7 @@ export default function IntentPage() {
 
   const handleZeroStateSubmit = useCallback(
     (input: string) => {
-      setInputValue(input);
-      handleSend();
+      handleSend(input);
     },
     [handleSend]
   );
@@ -113,7 +100,7 @@ export default function IntentPage() {
 
   // Active chat state
   return (
-    <div className="h-screen flex flex-col bg-[#070a09]">
+    <div className="flex-1 flex flex-col bg-[#070a09] overflow-hidden relative">
       <IntentChat
         messages={messages}
         inputValue={inputValue}

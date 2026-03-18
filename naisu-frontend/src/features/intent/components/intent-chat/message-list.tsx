@@ -3,7 +3,7 @@ import { ChatMessage, MessageBubble } from './message-bubble';
 
 interface MessageListProps {
   messages: ChatMessage[];
-  submittedTxs: Array<{ hash: string; chainId: number; msgIdx: number }>;
+  submittedTxs: Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>;
   userAddress?: string | null;
   isLoading?: boolean;
   error?: string | null;
@@ -36,7 +36,7 @@ export function MessageList({
     >
       <div className="w-full max-w-3xl space-y-6">
         {messages.map((msg, idx) => {
-          let monitorTx: { hash: string; chainId: number; userAddress: string } | null = null;
+          let monitorTx: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null = null;
 
           if (msg.role === 'assistant' && submittedTxs.length > 0 && userAddress) {
             const match = submittedTxs.find((s) => s.msgIdx === idx);
@@ -45,6 +45,7 @@ export function MessageList({
                 hash: match.hash,
                 chainId: match.chainId,
                 userAddress,
+                submittedAt: match.submittedAt,
               };
             }
           }

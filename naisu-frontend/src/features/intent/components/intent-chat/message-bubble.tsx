@@ -1,5 +1,5 @@
 import ReactMarkdown from 'react-markdown';
-import { OrderMonitor } from '../order-monitor-widget';
+import SolverAuctionCard from '@/components/SolverAuctionCard';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -9,7 +9,7 @@ export interface ChatMessage {
 interface MessageBubbleProps {
   message: ChatMessage;
   renderContent: (content: string) => React.ReactNode;
-  monitorTx?: { hash: string; chainId: number; userAddress: string } | null;
+  monitorTx?: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null;
 }
 
 interface TxInfo {
@@ -91,11 +91,23 @@ export function MessageBubble({ message, renderContent, monitorTx }: MessageBubb
         <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
           {renderContent(message.content)}
           {monitorTx && (
-            <OrderMonitor
-              txHash={monitorTx.hash}
-              chainId={monitorTx.chainId}
-              userAddress={monitorTx.userAddress}
-            />
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <SolverAuctionCard
+                userAddress={monitorTx.userAddress}
+                submittedAt={monitorTx.submittedAt}
+              />
+              <div className="flex mt-2 justify-end">
+                <a
+                  href={`https://sepolia.basescan.org/tx/${monitorTx.hash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-slate-500 hover:text-primary flex items-center gap-1 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                  View on BaseScan
+                </a>
+              </div>
+            </div>
           )}
         </div>
       </div>

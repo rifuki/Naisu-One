@@ -42,8 +42,8 @@ import type { IntentOrder, SupportedChain } from './intent.service'
 // ============================================================================
 
 const POLL_INTERVAL_MS = 10_000   // fallback HTTP poll interval
-const BLOCK_WINDOW     = 9_999n   // max getLogs range per chunk (Base Sepolia limit)
-const MAX_WINDOWS      = 6        // 6 × 10k = ~60k blocks ≈ 50 days
+const BLOCK_WINDOW     = 1_999n   // max getLogs range per chunk (Base Sepolia RPC limits >2000)
+const MAX_WINDOWS      = 30       // 30 × 2k = ~60k blocks ≈ 50 days
 
 // ============================================================================
 // ABIs (minimal)
@@ -91,6 +91,8 @@ const ORDERS_FUNCTION_ABI = [
       { name: 'createdAt',        type: 'uint256'  },
       { name: 'status',           type: 'uint8'    },
       { name: 'intentType',       type: 'uint8'    },
+      { name: 'exclusiveSolver',  type: 'address'  },
+      { name: 'exclusivityDeadline', type: 'uint256' },
     ],
   },
   {
@@ -188,7 +190,7 @@ async function processEvmOrder(
       abi:          ORDERS_FUNCTION_ABI,
       functionName: 'orders',
       args:         [orderId],
-    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, number]
+    }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, number, string, bigint]
 
     const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum, intentType] = raw
     const isOpen = statusNum === INTENT_BRIDGE.STATUS.OPEN
@@ -255,10 +257,10 @@ async function initialEvmBackfill(client: AnyClient, contract: `0x${string}`): P
     await Promise.all([
       client.getLogs({ address: contract, event: ORDER_CREATED_ABI,   fromBlock: from, toBlock: to })
         .then((r: unknown[]) => createdLogs.push(...r as RawLog[]))
-        .catch(() => {}),
+        .catch((e: Error) => logger.warn({ err: e.message, from: from.toString(), to: to.toString() }, '[EVM] getLogs OrderCreated failed')),
       client.getLogs({ address: contract, event: ORDER_FULFILLED_ABI, fromBlock: from, toBlock: to })
         .then((r: unknown[]) => fulfilledLogs.push(...r as RawLog[]))
-        .catch(() => {}),
+        .catch((e: Error) => logger.warn({ err: e.message, from: from.toString(), to: to.toString() }, '[EVM] getLogs OrderFulfilled failed')),
     ])
   }
 

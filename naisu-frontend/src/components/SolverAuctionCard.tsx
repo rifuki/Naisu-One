@@ -43,7 +43,7 @@ interface SolverInfo {
 
 async function fetchOrders(user: string): Promise<Array<{ orderId: string; createdAt: number; status: string }>> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${user}&chain=evm-base`, {
+    const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?user=${user}&chain=evm-base&t=${Date.now()}`, {
       signal: AbortSignal.timeout(3000),
     })
     if (!res.ok) return []
@@ -58,7 +58,7 @@ async function fetchOrders(user: string): Promise<Array<{ orderId: string; creat
 
 async function fetchSelection(orderId: string): Promise<RFQResult | null> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/solver/selection/${orderId}`, {
+    const res = await fetch(`${BACKEND_URL}/api/v1/solver/selection/${orderId}?t=${Date.now()}`, {
       signal: AbortSignal.timeout(3000),
     })
     if (!res.ok) return null

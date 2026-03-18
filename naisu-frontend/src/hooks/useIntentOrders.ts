@@ -75,7 +75,7 @@ function fromBackend(o: Record<string, unknown>): IntentRow {
 
 async function fetchFromBackend(user: string, chain?: string): Promise<IntentRow[] | null> {
   try {
-    const params = new URLSearchParams({ user })
+    const params = new URLSearchParams({ user, t: Date.now().toString() })
     if (chain) params.set('chain', chain)
     const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?${params}`, {
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
@@ -172,7 +172,7 @@ async function fetchEvmFromRpc(evmAddress: string): Promise<IntentRow[]> {
 // ─── Anchor IDL coder (replaces hardcoded discriminator + manual buf parsing) ─
 const _intentAccountDef = IntentBridgeIDL.accounts.find(a => a.name === 'Intent')!
 const INTENT_DISCRIMINATOR_BYTES = new Uint8Array(_intentAccountDef.discriminator)
-const _intentCoder = new BorshAccountsCoder(IntentBridgeIDL as Parameters<typeof BorshAccountsCoder>[0])
+const _intentCoder = new BorshAccountsCoder(IntentBridgeIDL as any)
 
 // ─── Solana RPC fallback ──────────────────────────────────────────────────────
 

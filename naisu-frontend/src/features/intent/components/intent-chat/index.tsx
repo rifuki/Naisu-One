@@ -10,7 +10,7 @@ interface IntentChatProps {
   isLoading: boolean;
   error: string | null;
   userAddress?: string | null;
-  submittedTxs: Array<{ hash: string; chainId: number; msgIdx: number }>;
+  submittedTxs: Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>;
   onInputChange: (value: string) => void;
   onSend: () => void;
   onRetry: () => void;
@@ -51,7 +51,7 @@ export function IntentChat({
   onOpenSettings,
 }: IntentChatProps) {
   return (
-    <div className="h-full flex flex-col bg-[#070a09] relative">
+    <div className="flex-1 flex flex-col bg-[#070a09] relative overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-8 py-4 border-b border-white/5 relative z-20">
         <div className="flex items-center gap-3">
@@ -92,7 +92,7 @@ export function IntentChat({
       />
 
       {/* Input */}
-      <div className="w-full px-4 sm:px-8 pb-8 pt-4 relative z-20 bg-gradient-to-t from-background via-background to-transparent">
+      <div className="w-full px-4 sm:px-8 pb-8 pt-4 relative z-20 bg-background/80 backdrop-blur shrink-0 border-t border-white/5">
         <div className="max-w-3xl mx-auto">
           <MessageInput
             value={inputValue}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useSwapQuote } from '@/features/swap/hooks/use-swap-quote';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
@@ -41,6 +41,9 @@ export default function SwapPage() {
     reset: resetError,
   } = useSwapOrder();
 
+  const { sendTransactionAsync, isPending: isSigning } = useSendTransaction();
+  const isBusy = isSubmitting || isSigning;
+
   // Tick every second for quote age
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
@@ -68,11 +71,16 @@ export default function SwapPage() {
         outputToken,
       });
 
-      // Note: We don't get txHash from mutation, need to get it from wallet
-      // This is a simplification - in real app, handle this differently
-      setSubmitted({ txHash: result.tx.to, submittedAt: Date.now() });
-    } catch {
-      // Error handled by hook
+      const hash = await sendTransactionAsync({
+        to: result.tx.to as `0x${string}`,
+        data: result.tx.data as `0x${string}`,
+        value: BigInt(result.tx.value),
+        chainId: result.tx.chainId,
+      });
+
+      setSubmitted({ txHash: hash, submittedAt: Date.now() });
+    } catch (err) {
+      console.error("Transaction failed:", err);
     }
   };
 
@@ -87,7 +95,7 @@ export default function SwapPage() {
     if (!solanaAddress) return 'Connect Solana Wallet';
     if (!hasValidAmount) return 'Enter Amount';
     if (noSolvers) return 'No Active Solvers';
-    if (isSubmitting) return 'Processing...';
+    if (isBusy) return 'Processing...';
     return 'Swap via Intent →';
   };
 
@@ -152,7 +160,7 @@ export default function SwapPage() {
           isConnectingEvm={isConnecting}
           onSubmit={handleSwap}
           canSubmit={canSwap}
-          isSubmitting={isSubmitting}
+          isSubmitting={isBusy}
           submitLabel={getSubmitLabel()}
           hasNoSolvers={noSolvers}
           buildError={buildError?.message ?? null}

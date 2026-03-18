@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useAccount, useConnect, useBalance } from 'wagmi';
+import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { fmtUsd } from '@/lib/utils/format';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
+import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 import type { YieldRate } from '../../api/get-yield-rates';
 
 interface StakeTabProps {
@@ -36,10 +37,37 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
   // Yield rates
   const { data: rates, isLoading: isRatesLoading } = useYieldRates();
 
-  // Filter and sort rates
-  const sortedRates = rates
-    ?.filter((r) => r.devnetSupported)
-    .sort((a, b) => b.apy - a.apy) || [];
+  // Sort rates
+  const sortedRates = rates?.slice().sort((a, b) => b.apy - a.apy) || [];
+
+  // Submit Logic
+  const { mutateAsync: submitOrder, isPending: isSubmitting, error: buildError } = useSwapOrder();
+  const { sendTransactionAsync, isPending: isSigning } = useSendTransaction();
+  const isBusy = isSubmitting || isSigning;
+  const canSubmit = evmConnected && !!solanaAddress && Number(amount) > 0;
+
+  const handleSubmit = async () => {
+    if (!evmAddress || !solanaAddress || !amount) return;
+    try {
+      const result = await submitOrder({
+        evmAddress,
+        solanaAddress,
+        amount,
+        outputToken: selectedProtocol === 'marinade' ? 'msol' : 'marginfi',
+      });
+
+      const hash = await sendTransactionAsync({
+        to: result.tx.to as `0x${string}`,
+        data: result.tx.data as `0x${string}`,
+        value: BigInt(result.tx.value),
+        chainId: result.tx.chainId,
+      });
+      // App handles Active Intents overlay, we just reset here or optionally show toast
+      setAmount('');
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
 
   const selectedRate = sortedRates.find((r) => r.id === selectedProtocol);
 
@@ -125,6 +153,35 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
             ))
           )}
         </div>
+      </div>
+
+      {/* Submit Button */}
+      <div className="pt-2">
+        {buildError && (
+          <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+            <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+            <span>{buildError.message}</span>
+          </div>
+        )}
+        <button
+          onClick={!evmConnected ? () => connect({ connector: connectors[0] }) : handleSubmit}
+          disabled={evmConnected && (!canSubmit || isBusy)}
+          className={`w-full font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2
+            ${
+              canSubmit || !evmConnected
+                ? 'bg-gradient-to-r from-teal-400 to-cyan-400 hover:from-teal-300 hover:to-cyan-300 text-black shadow-[0_0_20px_rgba(13,242,223,0.25)]'
+                : 'bg-white/5 text-slate-500 cursor-not-allowed'
+            }`}
+        >
+          {isBusy && <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />}
+          {!evmConnected 
+            ? 'Connect EVM Wallet' 
+            : !solanaAddress 
+              ? 'Connect Solana Wallet' 
+              : Number(amount) <= 0 
+                ? 'Enter Amount' 
+                : 'Deposit & Earn →'}
+        </button>
       </div>
     </div>
   );
