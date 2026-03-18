@@ -80,63 +80,208 @@ function WalletDropdown({
   );
 }
 
-// ── Wallet Button with dropdown ───────────────────────────────────────────────
-function WalletButton({
-  logo,
-  address,
-  badge,
-  badgeColor,
-  borderColor,
-  bgColor,
-  textColor,
-  dropdownItems,
-  onConnectClick,
-  connectLabel,
+// ── Multi-Wallet Button ────────────────────────────────────────────────────────
+function MultiWalletDropdown({
+  evmAddress,
+  solAddress,
+  fullEvmAddress,
+  fullSolAddress,
+  onConnectEvm,
+  onConnectSol,
+  onDisconnectEvm,
+  onDisconnectSol,
 }: {
-  logo: React.ReactNode;
-  address: string | null;
-  badge?: string;
-  badgeColor: string;
-  borderColor: string;
-  bgColor: string;
-  textColor: string;
-  dropdownItems: { label: string; icon: string; onClick: () => void; danger?: boolean }[];
-  onConnectClick: () => void;
-  connectLabel: string;
+  evmAddress: string | null;
+  solAddress: string | null;
+  fullEvmAddress: string | null;
+  fullSolAddress: string | null;
+  onConnectEvm: () => void;
+  onConnectSol: () => void;
+  onDisconnectEvm: () => void;
+  onDisconnectSol: () => void;
 }) {
   const [showDropdown, setShowDropdown] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  if (!address) {
-    return (
-      <button
-        onClick={onConnectClick}
-        className="flex items-center gap-2 rounded-xl px-3.5 py-2 h-9 border bg-white/5 hover:bg-white/10 border-white/10 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95"
-      >
-        {logo}
-        <span>{connectLabel}</span>
-      </button>
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShowDropdown(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const connectedCount = [evmAddress, solAddress].filter(Boolean).length;
+
+  let buttonContent = (
+    <div className="flex items-center gap-2">
+      <span className="material-symbols-outlined text-[16px]">account_balance_wallet</span>
+      <span>Connect</span>
+    </div>
+  );
+
+  if (connectedCount === 1) {
+    if (evmAddress) {
+      buttonContent = (
+        <div className="flex items-center gap-2 text-primary font-mono">
+          <EthLogo />
+          {evmAddress}
+        </div>
+      );
+    } else if (solAddress) {
+      buttonContent = (
+        <div className="flex items-center gap-2 text-purple-300 font-mono">
+          <SolanaLogo />
+          {solAddress}
+        </div>
+      );
+    }
+  } else if (connectedCount === 2) {
+    buttonContent = (
+      <div className="flex items-center gap-2 text-primary overflow-hidden">
+        <EthLogo />
+        <span className="font-mono">{evmAddress}</span>
+        <div className="w-px h-3 bg-white/20 mx-1" />
+        <SolanaLogo />
+      </div>
     );
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
-        onClick={() => setShowDropdown(v => !v)}
-        className={`flex items-center gap-2 rounded-xl px-3.5 py-2 h-9 border ${borderColor} ${bgColor} ${textColor} text-xs font-semibold transition-all hover:scale-105 active:scale-95`}
+        onClick={() => setShowDropdown((v) => !v)}
+        className={`flex items-center gap-2 rounded-xl px-4 py-2 h-9 border text-xs font-semibold transition-all hover:scale-105 active:scale-95 ${
+          connectedCount > 0
+            ? 'bg-white/5 border-white/10 hover:bg-white/10'
+            : 'bg-primary border-primary/50 text-black hover:bg-primary/90'
+        }`}
       >
-        {logo}
-        <span className="font-mono">{address}</span>
-        {badge && (
-          <span className={`text-[10px] font-normal ${badgeColor} leading-none`}>{badge}</span>
-        )}
-        <span className="material-symbols-outlined text-xs opacity-50">expand_more</span>
+        {buttonContent}
       </button>
 
       {showDropdown && (
-        <WalletDropdown
-          items={dropdownItems}
-          onClose={() => setShowDropdown(false)}
-        />
+        <div className="absolute top-full mt-2 right-0 z-[100] w-72 bg-[#070a09]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-2 overflow-hidden animate-fade-in-up origin-top-right">
+          {/* EVM Section */}
+          <div className="mb-2">
+            <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+              EVM Wallet
+            </div>
+            {fullEvmAddress ? (
+              <div className="p-2 rounded-xl bg-primary/5 border border-primary/10 mb-1">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-start gap-2 text-primary select-all font-mono text-[10px] break-all leading-tight pr-2">
+                    <EthLogo className="mt-0.5 shrink-0" />
+                    <span>{fullEvmAddress}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(fullEvmAddress);
+                    }}
+                    title="Copy full address"
+                    className="text-primary hover:text-white transition-colors shrink-0 p-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      window.open(`https://sepolia.basescan.org/address/${fullEvmAddress}`, '_blank');
+                      setShowDropdown(false);
+                    }}
+                    className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[11px] text-slate-300 font-medium transition-colors"
+                  >
+                    Explorer
+                  </button>
+                  <button
+                    onClick={() => {
+                      onDisconnectEvm();
+                      setShowDropdown(false);
+                    }}
+                    className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[11px] font-medium transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  onConnectEvm();
+                  setShowDropdown(false);
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <EthLogo /> Connect EVM
+                </div>
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              </button>
+            )}
+          </div>
+
+          <div className="w-full h-px bg-white/5 my-2" />
+
+          {/* Solana Section */}
+          <div>
+            <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+              Solana Wallet
+            </div>
+            {fullSolAddress ? (
+              <div className="p-2 rounded-xl bg-purple-500/5 border border-purple-500/10">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-start gap-2 text-purple-300 select-all font-mono text-[10px] break-all leading-tight pr-2">
+                    <SolanaLogo />
+                    <span className="mt-[1px]">{fullSolAddress}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(fullSolAddress);
+                    }}
+                    title="Copy full address"
+                    className="text-purple-400 hover:text-white transition-colors shrink-0 p-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      window.open(`https://solscan.io/account/${fullSolAddress}?cluster=devnet`, '_blank');
+                      setShowDropdown(false);
+                    }}
+                    className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[11px] text-slate-300 font-medium transition-colors"
+                  >
+                    Explorer
+                  </button>
+                  <button
+                    onClick={() => {
+                      onDisconnectSol();
+                      setShowDropdown(false);
+                    }}
+                    className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[11px] font-medium transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  onConnectSol();
+                  setShowDropdown(false);
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <SolanaLogo /> Connect Solana
+                </div>
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -204,57 +349,12 @@ const Navbar: React.FC = () => {
 
   const cLabel = chainLabel(chain?.name);
 
-  // EVM dropdown items
-  const evmDropdownItems = [
-    {
-      label: 'Copy address',
-      icon: 'content_copy',
-      onClick: () => address && navigator.clipboard.writeText(address),
-    },
-    {
-      label: 'View on explorer',
-      icon: 'open_in_new',
-      onClick: () => {
-        const base = chain?.id === 84532
-          ? 'https://sepolia.basescan.org'
-          : 'https://etherscan.io';
-        window.open(`${base}/address/${address}`, '_blank');
-      },
-    },
-    {
-      label: 'Disconnect',
-      icon: 'logout',
-      onClick: disconnect,
-      danger: true,
-    },
-  ];
-
-  // Solana dropdown items
-  const solDropdownItems = [
-    {
-      label: 'Copy address',
-      icon: 'content_copy',
-      onClick: () => detectedSolAddress && navigator.clipboard.writeText(detectedSolAddress),
-    },
-    {
-      label: 'View on explorer',
-      icon: 'open_in_new',
-      onClick: () => {
-        window.open(`https://explorer.solana.com/address/${detectedSolAddress}?cluster=devnet`, '_blank');
-      },
-    },
-    {
-      label: 'Disconnect',
-      icon: 'logout',
-      onClick: handleSolanaDisconnect,
-      danger: true,
-    },
-  ];
+  // No longer returning individual dropdown maps here since MultiWalletDropdown handles its own logic.
 
   return (
     <>
-      <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-[95%] md:max-w-5xl px-2">
-        <header className="relative flex items-center justify-between h-16 bg-[#0c1211]/80 backdrop-blur-xl border border-white/10 rounded-2xl px-5 shadow-2xl transition-all duration-300">
+      <div className="fixed top-0 left-0 right-0 z-50 w-full">
+        <header className="flex items-center justify-between h-16 bg-[#070a09]/95 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 transition-all duration-300">
 
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group shrink-0">
@@ -280,30 +380,16 @@ const Navbar: React.FC = () => {
           {/* Right Actions */}
           <div className="flex items-center gap-2 shrink-0">
 
-            {/* Solana Wallet */}
-            <WalletButton
-              logo={<SolanaLogo />}
-              address={shortSol}
-              badgeColor="text-purple-400/60"
-              borderColor="border-purple-500/40"
-              bgColor="bg-purple-500/10"
-              textColor="text-purple-300"
-              dropdownItems={solDropdownItems}
-              onConnectClick={() => setVisible(true)}
-              connectLabel="Connect"
-            />
-
-            {/* EVM Wallet */}
-            <WalletButton
-              logo={<EthLogo />}
-              address={shortEvm}
-              badgeColor="text-primary/50"
-              borderColor="border-primary/50"
-              bgColor="bg-primary/10"
-              textColor="text-primary"
-              dropdownItems={evmDropdownItems}
-              onConnectClick={() => connect({ connector: injected() })}
-              connectLabel="Connect"
+            {/* Unified Wallet Management */}
+            <MultiWalletDropdown
+              evmAddress={shortEvm}
+              solAddress={shortSol}
+              fullEvmAddress={address || null}
+              fullSolAddress={detectedSolAddress || null}
+              onConnectEvm={() => connect({ connector: injected() })}
+              onConnectSol={() => setVisible(true)}
+              onDisconnectEvm={disconnect}
+              onDisconnectSol={handleSolanaDisconnect}
             />
 
             {/* Mobile Menu toggle */}
@@ -318,7 +404,7 @@ const Navbar: React.FC = () => {
 
         {/* Mobile Menu */}
         {isMobileMenuOpen && (
-          <div className="absolute top-[68px] left-0 right-0 mx-2 p-2 bg-[#0c1211]/95 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl animate-fade-in-up origin-top">
+          <div className="absolute top-[64px] left-0 right-0 bg-[#0c1211]/95 backdrop-blur-xl border-b border-white/10 shadow-2xl animate-fade-in-up origin-top p-4">
             <nav className="flex flex-col gap-1">
               {navLinks.map((link) => (
                 <Link

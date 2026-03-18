@@ -5,6 +5,7 @@ import { useAgent, type AgentMessage as ChatMessage, type TxData } from '@/hooks
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { IntentZeroState } from '@/features/intent/components/intent-zero-state';
 import { IntentChat } from '@/features/intent/components/intent-chat';
+import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
 
@@ -100,33 +101,37 @@ export default function IntentPage() {
 
   // Active chat state
   return (
-    <div className="flex-1 flex flex-col bg-[#070a09] overflow-hidden relative">
-      <IntentChat
-        messages={messages}
-        inputValue={inputValue}
-        isLoading={isLoading}
-        error={error}
-        userAddress={address}
-        submittedTxs={submittedTxs}
-        onInputChange={setInputValue}
-        onSend={handleSend}
-        onRetry={handleRetry}
-        onNewChat={handleNewChat}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+    <div className="flex-1 flex flex-row bg-[#070a09] overflow-hidden relative">
+      <ChatSidebar onNewChat={handleNewChat} onOpenSettings={() => setShowSettings(true)} />
+      
+      <div className="flex-1 flex flex-col relative overflow-hidden">
+        <IntentChat
+          messages={messages}
+          inputValue={inputValue}
+          isLoading={isLoading}
+          error={error}
+          userAddress={address}
+          submittedTxs={submittedTxs}
+          onInputChange={setInputValue}
+          onSend={handleSend}
+          onRetry={handleRetry}
+          onNewChat={handleNewChat}
+          onOpenSettings={() => setShowSettings(true)}
+        />
 
-      {pendingTx && !isLoading && (
-        <div className="absolute bottom-32 left-0 right-0 z-30">
-          <TransactionReviewCard
-            pendingTx={pendingTx}
-            txStatus={txStatus}
-            onConfirm={() => handleSendTx(pendingTx)}
-            onDismiss={() => setPendingTx(undefined)}
-          />
-        </div>
-      )}
+        {pendingTx && !isLoading && (
+          <div className="absolute bottom-32 left-0 right-0 z-30">
+            <TransactionReviewCard
+              pendingTx={pendingTx}
+              txStatus={txStatus}
+              onConfirm={() => handleSendTx(pendingTx)}
+              onDismiss={() => setPendingTx(undefined)}
+            />
+          </div>
+        )}
 
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      </div>
     </div>
   );
 }
