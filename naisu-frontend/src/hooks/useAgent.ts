@@ -165,28 +165,40 @@ export function useAgent(
   const [pendingTx, setPendingTx] = useState<TxData | undefined>();
   const sessionIdRef = useRef<string | undefined>(opts?.backendSessionId);
 
+  // Always-up-to-date refs so async callbacks never read stale closures
+  const latestMessagesRef = useRef<AgentMessage[]>(opts?.messages ?? internalMessages);
+  const onMessagesChangeRef = useRef(opts?.onMessagesChange);
+
+  // Sync refs every render
+  latestMessagesRef.current = opts ? opts.messages : internalMessages;
+  onMessagesChangeRef.current = opts?.onMessagesChange;
+
   // Keep sessionIdRef in sync when caller switches sessions
   if (opts?.backendSessionId !== undefined && opts.backendSessionId !== sessionIdRef.current) {
     sessionIdRef.current = opts.backendSessionId;
   }
 
-  // The messages to display come from opts if provided, otherwise internal state
   const messages = opts ? opts.messages : internalMessages;
 
-  const setMessages = (updater: (prev: AgentMessage[]) => AgentMessage[]) => {
-    if (opts) {
-      const next = updater(opts.messages);
-      opts.onMessagesChange(next, sessionIdRef.current);
+  /** Append messages without stale closure risk */
+  const appendMessages = useCallback((updater: (prev: AgentMessage[]) => AgentMessage[]) => {
+    if (onMessagesChangeRef.current) {
+      const next = updater(latestMessagesRef.current);
+      latestMessagesRef.current = next;
+      onMessagesChangeRef.current(next, sessionIdRef.current);
     } else {
-      setInternalMessages(updater);
+      setInternalMessages(prev => {
+        const next = updater(prev);
+        latestMessagesRef.current = next;
+        return next;
+      });
     }
-  };
+  }, []);
 
   /** Inject an assistant message directly without an agent round-trip. */
   const addMessage = useCallback((content: string, role: 'assistant' | 'user' = 'assistant') => {
-    setMessages(prev => [...prev, { role, content }]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts?.messages]);
+    appendMessages(prev => [...prev, { role, content }]);
+  }, [appendMessages]);
 
   const sendMessage = useCallback(async (userMessage: string) => {
     if (!userMessage.trim() || isLoading) return;
@@ -196,7 +208,7 @@ export function useAgent(
     setIsLoading(true);
 
     const newUserMsg: AgentMessage = { role: 'user', content: userMessage };
-    setMessages(prev => [...prev, newUserMsg]);
+    appendMessages(prev => [...prev, newUserMsg]);
 
     // Auto-inject wallet addresses
     let messageToSend = userMessage.trim();
@@ -227,34 +239,33 @@ export function useAgent(
         sessionIdRef.current = data.sessionId;
         const tx = extractTxData(data.message);
         if (tx) setPendingTx(tx);
-        setMessages(prev => [...prev, { role: 'assistant' as const, content: data.message }]);
+        appendMessages(prev => [...prev, { role: 'assistant' as const, content: data.message }]);
       } else {
         throw new Error(data.error ?? 'Unknown error');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setError(msg);
-      setMessages(prev => [...prev, {
+      appendMessages(prev => [...prev, {
         role: 'assistant' as const,
         content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
       }]);
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, walletAddress, solanaAddress, opts?.messages]);
+  }, [isLoading, walletAddress, solanaAddress, appendMessages]);
 
   const reset = useCallback(() => {
-    if (opts) {
-      opts.onMessagesChange([], undefined);
+    latestMessagesRef.current = [];
+    if (onMessagesChangeRef.current) {
+      onMessagesChangeRef.current([], undefined);
     } else {
       setInternalMessages([]);
     }
     setError(null);
     setPendingTx(undefined);
     sessionIdRef.current = undefined;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts?.onMessagesChange]);
+  }, []);
 
   return {
     messages,
