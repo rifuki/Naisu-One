@@ -96,7 +96,14 @@ export default function IntentPage() {
 
   // Zero state
   if (!hasInteracted) {
-    return <IntentZeroState onSubmit={handleZeroStateSubmit} />;
+    return (
+      <div className="flex-1 flex flex-row bg-[#070a09] w-full h-full absolute inset-0 overflow-hidden relative">
+        <ChatSidebar onNewChat={handleNewChat} onOpenSettings={() => setShowSettings(true)} />
+        <div className="flex-1 flex flex-col relative overflow-hidden">
+          <IntentZeroState onSubmit={handleZeroStateSubmit} />
+        </div>
+      </div>
+    );
   }
 
   // Active chat state

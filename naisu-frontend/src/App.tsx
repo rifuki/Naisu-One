@@ -17,8 +17,8 @@ const AppContent: React.FC = () => {
   return (
     <div className={`flex flex-col font-sans mesh-gradient selection:bg-primary selection:text-black ${isIntentPage ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
       <Navbar />
-      <div className={`flex-1 flex flex-col ${isIntentPage ? 'pt-[64px] min-h-0 overflow-hidden' : 'pt-24 md:pt-28 pb-8'}`}>
-        <div key={location.pathname} className={`animate-fade-in-up flex-1 flex flex-col ${isIntentPage ? 'min-h-0' : ''}`}>
+      <div className={`flex-1 flex flex-col w-full h-full ${isIntentPage ? 'pt-[64px] min-h-0 overflow-hidden' : 'pt-24 md:pt-28 pb-8'}`}>
+        <div key={location.pathname} className={`animate-fade-in-up flex-1 flex flex-col w-full h-full ${isIntentPage ? 'min-h-0' : ''}`}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
