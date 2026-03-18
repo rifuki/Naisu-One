@@ -36,6 +36,8 @@ export function MessageList({
     >
       <div className="w-full max-w-3xl space-y-6">
         {messages.map((msg, idx) => {
+          if (msg.role === 'user' && msg.content.startsWith('[System]')) return null;
+
           let monitorTx: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null = null;
 
           if (msg.role === 'assistant' && submittedTxs.length > 0 && userAddress) {

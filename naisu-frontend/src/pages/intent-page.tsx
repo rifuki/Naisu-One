@@ -119,7 +119,8 @@ export default function IntentPage() {
               setPendingTx(undefined);
               setIsTxSent(false);
               window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
-            }, 600);
+              sendMessage(`[System] Transaction confirmed on-chain. Hash: ${hash}\nPlease provide a polite, concise confirmation message to the user that the bridge intent has been successfully created and the Dutch auction is actively seeking solvers. Keep it brief and enthusiastic.`);
+            }, 800);
           }
         } else {
           setPendingTx(undefined);
@@ -175,7 +176,7 @@ export default function IntentPage() {
         />
 
         {pendingTx && !isLoading && (
-          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isTxSent ? 'animate-throw-to-widget pointer-events-none' : ''} ${isTxFailed ? 'animate-shake' : ''}`}>
+          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isTxSent ? 'animate-magic-lamp pointer-events-none' : ''} ${isTxFailed ? 'animate-shake' : ''}`}>
             <TransactionReviewCard
               pendingTx={pendingTx}
               txStatus={txStatus}
