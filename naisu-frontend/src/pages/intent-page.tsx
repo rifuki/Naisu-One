@@ -69,9 +69,10 @@ export default function IntentPage() {
       // Force a pristine session for new intents from the home page
       createSession();
       // Delay slightly so the new session has time to become active
+      // and useSolanaAddress has time to detect injected wallets
       setTimeout(() => {
         handleSend(initialIntentRef.current);
-      }, 50);
+      }, 500);
       navigate('/intent', { replace: true, state: {} });
     }
   }, [handleSend, navigate, createSession]);

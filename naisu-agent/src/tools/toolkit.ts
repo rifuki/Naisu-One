@@ -219,7 +219,7 @@ export function buildToolkit(params: {
       "Get the native ETH balance of an EVM wallet address on Base Sepolia (evm-base) or Fuji (evm-fuji). " +
       "Returns balanceEth (human-readable) and balanceWei. " +
       "ALWAYS call this BEFORE calling intent_build_tx for any EVM source chain — " +
-      "check the user has enough ETH to cover the bridge amount PLUS estimated gas (~0.001 ETH). " +
+      "check the user has enough ETH to cover the bridge amount PLUS estimated gas (~0.0001 ETH). " +
       "If insufficient, inform the user and do NOT build the transaction.",
     schema: z.object({
       chain: z
