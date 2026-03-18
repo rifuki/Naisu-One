@@ -3,12 +3,6 @@ use chrono::Local;
 use ratatui::widgets::TableState;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum View {
-    Logs,
-    Transactions,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chain {
     Sui,
     Avax,
@@ -26,15 +20,10 @@ pub enum TxStatus {
 #[derive(Debug, Clone)]
 pub struct Transaction {
     pub timestamp: String,
-    pub chain: Chain,
     pub action: String,
     pub intent_id: String,
-    pub sender: String,
-    pub recipient: String,
     pub amount: String,
     pub status: TxStatus,
-    pub tx_hash: String,
-    pub explorer_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -42,12 +31,12 @@ pub enum AppEvent {
     Balance(Chain, String),
     Address(Chain, String),
     Tx(Transaction),
+    TxUpdate(String, TxStatus), // intent_id_prefix (8 chars), new status
     Log(String),
     Shutdown,
 }
 
 pub struct App {
-    pub active_view: View,
     pub should_quit: bool,
     pub table_state: TableState,
 
@@ -77,7 +66,6 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            active_view: View::Logs,
             should_quit: false,
             table_state: TableState::default(),
             start_time: std::time::Instant::now(),
@@ -98,22 +86,13 @@ impl App {
         self.start_time.elapsed().as_secs()
     }
 
-    pub fn toggle_view(&mut self) {
-        self.active_view = match self.active_view {
-            View::Logs => View::Transactions,
-            View::Transactions => View::Logs,
-        };
-    }
-
     pub fn scroll_up(&mut self) {
         self.auto_scroll = false;
         self.log_scroll = self.log_scroll.saturating_add(1);
     }
 
     pub fn scroll_down(&mut self) {
-        if self.log_scroll > 0 {
-            self.log_scroll -= 1;
-        }
+        self.log_scroll = self.log_scroll.saturating_sub(1);
         if self.log_scroll == 0 {
             self.auto_scroll = true;
         }
@@ -142,15 +121,17 @@ impl App {
         self.transactions.push_front(tx);
     }
 
+    pub fn update_transaction_status(&mut self, id: String, status: TxStatus) {
+        if let Some(tx) = self.transactions.iter_mut().find(|t| t.intent_id == id) {
+            tx.status = status;
+        }
+    }
+
     pub fn add_log(&mut self, message: String) {
         if self.logs.len() >= 1000 {
-            self.logs.pop_back();
+            self.logs.pop_front(); // drop oldest
         }
-        self.logs.push_front((Local::now(), message));
-        // If user has scrolled up, advance offset to keep the same log in view
-        if !self.auto_scroll && self.log_scroll > 0 {
-            self.log_scroll += 1;
-        }
+        self.logs.push_back((Local::now(), message)); // newest at bottom
     }
 
     pub fn on_tick(&mut self) {}

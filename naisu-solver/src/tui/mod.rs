@@ -16,9 +16,12 @@ use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 
 pub mod app;
-pub use app::{App, AppEvent, Chain, Transaction, TxStatus, View};
+pub mod tracing_layer;
+pub use app::{App, AppEvent, Chain, Transaction, TxStatus};
+pub use tracing_layer::TuiLayer;
 
-pub async fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
+/// Run the TUI. This function blocks — call it from a dedicated thread.
+pub fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -34,23 +37,18 @@ pub async fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
+            .unwrap_or_default();
 
         if crossterm::event::poll(timeout)? {
-            match event::read()? {
-                Event::Key(key) => {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Char('Q') => break,
-                            KeyCode::Up => app.scroll_up(),
-                            KeyCode::Down => app.scroll_down(),
-                            KeyCode::Char('t') | KeyCode::Char('T') => app.toggle_view(),
-                            _ => {}
-                        }
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                        KeyCode::Up => app.scroll_up(),
+                        KeyCode::Down => app.scroll_down(),
+                        _ => {}
                     }
                 }
-                Event::Resize(_, _) => {}
-                _ => {}
             }
         }
 
@@ -59,8 +57,11 @@ pub async fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
                 AppEvent::Balance(chain, amount) => app.update_balance(chain, amount),
                 AppEvent::Address(chain, addr) => app.update_address(chain, addr),
                 AppEvent::Tx(tx) => app.add_transaction(tx),
+                AppEvent::TxUpdate(id, status) => app.update_transaction_status(id, status),
                 AppEvent::Log(msg) => app.add_log(msg),
-                AppEvent::Shutdown => break,
+                AppEvent::Shutdown => {
+                    app.should_quit = true;
+                }
             }
         }
 
@@ -88,49 +89,92 @@ pub async fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(5), Constraint::Min(0)].as_ref())
+        .constraints([
+            Constraint::Length(5),  // balance bar
+            Constraint::Length(10), // orders table
+            Constraint::Min(0),     // logs
+        ])
         .split(f.area());
 
     render_balance_bar(f, app, chunks[0]);
-
-    match app.active_view {
-        View::Logs => render_logs(f, app, chunks[1]),
-        View::Transactions => render_transactions(f, app, chunks[1]),
-    }
+    render_transactions(f, app, chunks[1]);
+    render_logs(f, app, chunks[2]);
 }
 
 fn render_balance_bar(f: &mut Frame, app: &App, area: Rect) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(33),
             Constraint::Percentage(34),
+            Constraint::Percentage(33),
             Constraint::Percentage(33),
         ])
         .split(area);
 
-    let sui_text = format!("{}\n{}", app.sui_balance, app.sui_address);
     let evm_text = format!("{}\n{}", app.eth_balance, app.evm_address);
     let sol_text = format!("{}\n{}", app.sol_balance, app.solana_address);
+    let sui_text = format!("{}\n{}", app.sui_balance, app.sui_address);
 
     f.render_widget(
-        Paragraph::new(sui_text)
-            .block(Block::default().borders(Borders::ALL).title(" SUI "))
-            .style(Style::default().fg(Color::Cyan)),
+        Paragraph::new(evm_text)
+            .block(Block::default().borders(Borders::ALL).title(" EVM (Base Sepolia) "))
+            .style(Style::default().fg(Color::Blue)),
         columns[0],
     );
     f.render_widget(
-        Paragraph::new(evm_text)
-            .block(Block::default().borders(Borders::ALL).title(" EVM "))
-            .style(Style::default().fg(Color::Blue)),
+        Paragraph::new(sol_text)
+            .block(Block::default().borders(Borders::ALL).title(" SOL (Devnet) "))
+            .style(Style::default().fg(Color::Magenta)),
         columns[1],
     );
     f.render_widget(
-        Paragraph::new(sol_text)
-            .block(Block::default().borders(Borders::ALL).title(" SOL "))
-            .style(Style::default().fg(Color::Magenta)),
+        Paragraph::new(sui_text)
+            .block(Block::default().borders(Borders::ALL).title(" SUI (Testnet) "))
+            .style(Style::default().fg(Color::Cyan)),
         columns[2],
     );
+}
+
+fn render_transactions(f: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<_> = app
+        .transactions
+        .iter()
+        .map(|tx| {
+            let (status_sym, status_color) = match tx.status {
+                TxStatus::Success => ("✓", Color::Green),
+                TxStatus::Failed => ("✗", Color::Red),
+                TxStatus::Pending => ("▶", Color::Yellow),
+            };
+            Row::new(vec![
+                Cell::from(tx.timestamp.clone()),
+                Cell::from(tx.action.clone()),
+                Cell::from(tx.intent_id.clone()),
+                Cell::from(tx.amount.clone()),
+                Cell::from(status_sym).style(Style::default().fg(status_color)),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(10),
+        Constraint::Length(14),
+        Constraint::Length(10),
+        Constraint::Length(12),
+        Constraint::Length(8),
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["Time", "Route", "Intent", "Amount", "Status"])
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Orders | q:quit "),
+        );
+
+    f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
 fn log_color(msg: &str) -> Color {
@@ -150,15 +194,26 @@ fn log_color(msg: &str) -> Color {
 fn render_logs(f: &mut Frame, app: &App, area: Rect) {
     let scroll_label = if app.auto_scroll { "auto-scroll" } else { "manual" };
     let title = format!(
-        " Logs ({} | {} | uptime:{}s) | T:txs  ↑↓:scroll  q:quit ",
+        " Logs ({} | {} | uptime:{}s) | ↑↓:scroll  q:quit ",
         app.logs.len(),
         scroll_label,
         app.uptime_secs()
     );
 
+    // Visible lines inside the border
+    let visible = area.height.saturating_sub(2) as usize;
+    let total = app.logs.len();
+
+    // log_scroll = lines scrolled UP from bottom (0 = show newest at bottom)
+    let start = total
+        .saturating_sub(visible)
+        .saturating_sub(app.log_scroll);
+
     let lines: Vec<Line> = app
         .logs
         .iter()
+        .skip(start)
+        .take(visible)
         .map(|(ts, msg)| {
             let time_str = ts.format("%H:%M:%S").to_string();
             let color = log_color(msg);
@@ -173,59 +228,7 @@ fn render_logs(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .scroll((app.log_scroll as u16, 0));
+        .block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(paragraph, area);
-}
-
-fn render_transactions(f: &mut Frame, app: &mut App, area: Rect) {
-    let rows: Vec<_> = app
-        .transactions
-        .iter()
-        .map(|tx| {
-            let status_color = match tx.status {
-                TxStatus::Success => Color::Green,
-                TxStatus::Failed => Color::Red,
-                TxStatus::Pending => Color::Yellow,
-            };
-            Row::new(vec![
-                Cell::from(tx.timestamp.clone()),
-                Cell::from(format!("{:?}", tx.chain)),
-                Cell::from(tx.action.clone()),
-                Cell::from(tx.intent_id.clone()),
-                Cell::from(tx.sender.clone()),
-                Cell::from(tx.recipient.clone()),
-                Cell::from(tx.amount.clone()),
-                Cell::from(format!("{:?}", tx.status))
-                    .style(Style::default().fg(status_color)),
-            ])
-        })
-        .collect();
-
-    let widths = &[
-        Constraint::Length(10),
-        Constraint::Length(8),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Length(14),
-        Constraint::Length(14),
-        Constraint::Length(12),
-        Constraint::Length(8),
-    ];
-
-    let table = Table::new(rows, widths)
-        .header(
-            Row::new(vec![
-                "Time", "Chain", "Action", "Intent", "From", "To", "Amount", "Status",
-            ])
-            .style(Style::default().add_modifier(Modifier::BOLD)),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Transactions | T:logs  q:quit "),
-        );
-
-    f.render_stateful_widget(table, area, &mut app.table_state);
 }
