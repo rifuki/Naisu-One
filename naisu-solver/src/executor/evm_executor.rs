@@ -47,16 +47,11 @@ fn is_permanent_error(msg: &str) -> bool {
 }
 
 fn make_client(config: &Config) -> Result<Client> {
-    let chain_id: u64 = std::env::var("EVM_CHAIN_ID")
-        .unwrap_or_else(|_| "84532".to_string())
-        .parse()
-        .unwrap_or(84532u64);
-
     let wallet: LocalWallet = config
         .evm_private_key
         .parse::<LocalWallet>()?
-        .with_chain_id(chain_id);
-    let provider = Provider::<Http>::try_from(config.evm_rpc_url.as_str())?;
+        .with_chain_id(config.evm2_chain_id);
+    let provider = Provider::<Http>::try_from(config.evm2_rpc_url.as_str())?;
     Ok(SignerMiddleware::new(provider, wallet))
 }
 
@@ -80,7 +75,7 @@ pub async fn fulfill_and_prove(
     amount_wei: u64,
 ) -> Result<(String, u64)> {
     let client = make_client(config)?;
-    let contract_addr: Address = config.evm_contract_address.parse()?;
+    let contract_addr: Address = config.evm2_contract_address.parse()?;
 
     // Fetch Wormhole message fee from the Wormhole Core Bridge (not IntentBridge)
     let wormhole_addr: Address = config.evm_wormhole_address.parse()?;
@@ -126,16 +121,10 @@ pub async fn fulfill_and_prove(
     addr_padded[12..].copy_from_slice(recipient.as_bytes());
     calldata.extend_from_slice(&addr_padded);
 
-    let mut tx = TransactionRequest::new()
+    let tx = TransactionRequest::new()
         .to(contract_addr)
         .value(U256::from(total_value))
         .data(Bytes::from(calldata));
-    
-    // Avalanche Fuji requires minimum 25 gwei
-    let chain_id = std::env::var("EVM_CHAIN_ID").unwrap_or_else(|_| "84532".to_string());
-    if chain_id == "43113" {
-        tx = tx.gas_price(U256::from(25_000_000_000u64));
-    }
 
     info!(
         intent_id = %intent.intent_id,

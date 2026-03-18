@@ -67,10 +67,8 @@ async fn main() -> Result<()> {
     let evm_address = format!("{:?}", evm_wallet.address());
 
     info!(
-        evm_contract = %config.evm_contract_address,
-        evm_chain_id = config.evm_chain_id,
-        evm2_contract = %config.evm2_contract_address,
-        evm2_chain_id = config.evm2_chain_id,
+        base_contract = %config.evm2_contract_address,
+        base_chain_id = config.evm2_chain_id,
         solana_program = %config.solana_program_id,
         evm_solver_address = %evm_address,
         "Starting Intent Solver..."
@@ -140,12 +138,13 @@ async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
     };
     let address = evm_wallet.address();
 
-    if let Some(ws_url) = &config.evm2_ws_url {
+    if let Some(ws_url) = &config.evm_ws_url {
         let ws_url = ws_url.clone();
         loop {
             match Provider::<Ws>::connect(&ws_url).await {
                 Ok(provider) => match provider.subscribe_blocks().await {
                     Ok(mut stream) => {
+                        let _ = tx.send(AppEvent::Mode(Chain::Base, "WS".to_string(), ws_url.clone())).await;
                         while stream.next().await.is_some() {
                             if let Ok(balance) = provider.get_balance(address, None).await {
                                 let eth: f64 = ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
@@ -162,6 +161,7 @@ async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
     } else {
         // No WS URL — HTTP poll every 15s
         let Ok(provider) = Provider::<Http>::try_from(config.evm2_rpc_url.as_str()) else { return };
+        let _ = tx.send(AppEvent::Mode(Chain::Base, "HTTP".to_string(), config.evm2_rpc_url.clone())).await;
         loop {
             if let Ok(balance) = provider.get_balance(address, None).await {
                 let eth: f64 = ethers::utils::format_ether(balance).parse().unwrap_or(0.0);
@@ -173,6 +173,7 @@ async fn watch_evm_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
 }
 
 /// Subscribe to Solana account changes via accountSubscribe WS → real-time balance push.
+/// WS first; on failure fetches HTTP once then retries WS.
 async fn watch_sol_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -181,14 +182,21 @@ async fn watch_sol_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
         Ok(a) => a,
         Err(_) => return,
     };
-    let _ = tx
-        .send(AppEvent::Address(Chain::Solana, sol_address.clone()))
-        .await;
+    let _ = tx.send(AppEvent::Address(Chain::Solana, sol_address.clone())).await;
 
-    let ws_url = http_to_ws(&config.solana_rpc_url);
+    let ws_url = config.solana_ws_url.clone()
+        .unwrap_or_else(|| http_to_ws(&config.solana_rpc_url));
+    let rpc_url = config.solana_rpc_url.clone();
+
     loop {
         match connect_async(&ws_url).await {
             Ok((mut ws, _)) => {
+                let _ = tx.send(AppEvent::Mode(Chain::Solana, "WS".to_string(), ws_url.clone())).await;
+                // accountSubscribe doesn't push initial value — fetch via HTTP first
+                if let Ok(lamports) = fetch_sol_balance_http(&rpc_url, &sol_address).await {
+                    let sol = lamports as f64 / 1e9;
+                    let _ = tx.send(AppEvent::Balance(Chain::Solana, format!("{sol:.4} SOL"))).await;
+                }
                 let sub = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -199,20 +207,43 @@ async fn watch_sol_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
                 }
-                while let Some(Ok(Message::Text(text))) = ws.next().await {
-                    let v: serde_json::Value =
-                        serde_json::from_str(&text).unwrap_or_default();
-                    if let Some(lamports) =
-                        v["params"]["result"]["value"]["lamports"].as_u64()
-                    {
+                let mut ping_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+                ping_interval.tick().await;
+                loop {
+                    let text = tokio::select! {
+                        msg = ws.next() => match msg {
+                            Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t))) => t,
+                            Some(Ok(tokio_tungstenite::tungstenite::Message::Ping(p))) => {
+                                let _ = ws.send(tokio_tungstenite::tungstenite::Message::Pong(p)).await;
+                                continue;
+                            }
+                            Some(Ok(_)) => continue,
+                            _ => break,
+                        },
+                        _ = ping_interval.tick() => {
+                            if ws.send(tokio_tungstenite::tungstenite::Message::Ping(vec![].into())).await.is_err() { break; }
+                            continue;
+                        }
+                    };
+                    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                    if let Some(lamports) = v["params"]["result"]["value"]["lamports"].as_u64() {
                         let sol = lamports as f64 / 1e9;
-                        let _ = tx
-                            .send(AppEvent::Balance(Chain::Solana, format!("{sol:.4} SOL")))
-                            .await;
+                        let _ = tx.send(AppEvent::Balance(Chain::Solana, format!("{sol:.4} SOL"))).await;
                     }
                 }
+                tracing::warn!("SOL WS stream ended — reconnecting...");
             }
-            Err(e) => tracing::warn!("SOL WS connect failed ({ws_url}): {e}"),
+            Err(e) => {
+                tracing::warn!("SOL WS connect failed ({ws_url}): {e}");
+                // Fallback: HTTP fetch, then retry WS
+                let _ = tx.send(AppEvent::Mode(Chain::Solana, "HTTP".to_string(), rpc_url.clone())).await;
+                if let Ok(lamports) = fetch_sol_balance_http(&rpc_url, &sol_address).await {
+                    let sol = lamports as f64 / 1e9;
+                    let _ = tx.send(AppEvent::Balance(Chain::Solana, format!("{sol:.4} SOL"))).await;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+                continue;
+            }
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
@@ -220,6 +251,7 @@ async fn watch_sol_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<Ap
 
 /// Poll SUI balance every 30s (WS not practical for balance on SUI).
 async fn poll_sui_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<AppEvent>) {
+    let _ = tx.send(AppEvent::Mode(Chain::Sui, "HTTP".to_string(), config.sui_rpc_url.clone())).await;
     loop {
         if let Ok((bal, addr)) =
             fetch_sui_balance(&config.sui_rpc_url, &config.sui_private_key).await
@@ -233,6 +265,23 @@ async fn poll_sui_balance(config: Arc<Config>, tx: tokio::sync::mpsc::Sender<App
 
 fn http_to_ws(url: &str) -> String {
     url.replace("https://", "wss://").replace("http://", "ws://")
+}
+
+async fn fetch_sol_balance_http(rpc: &str, address: &str) -> eyre::Result<u64> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getBalance",
+        "params": [address, {"commitment": "confirmed"}]
+    });
+    let resp: serde_json::Value = reqwest::Client::new()
+        .post(rpc)
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    resp["result"]["value"].as_u64().ok_or_else(|| eyre::eyre!("no balance in response"))
 }
 
 /// Derive base58 Solana pubkey from private key (hex or base58 keypair).

@@ -30,6 +30,7 @@ pub struct Transaction {
 pub enum AppEvent {
     Balance(Chain, String),
     Address(Chain, String),
+    Mode(Chain, String, String), // mode label ("WS"/"HTTP") + active URL
     Tx(Transaction),
     TxUpdate(String, TxStatus), // intent_id_prefix (8 chars), new status
     Log(String),
@@ -51,6 +52,14 @@ pub struct App {
     pub sui_address: String,
     pub evm_address: String,
     pub solana_address: String,
+
+    // Connection modes + active URLs
+    pub evm_mode: String,
+    pub sol_mode: String,
+    pub sui_mode: String,
+    pub evm_conn_url: String,
+    pub sol_conn_url: String,
+    pub sui_conn_url: String,
 
     // Transaction history (max 100)
     pub transactions: VecDeque<Transaction>,
@@ -75,6 +84,12 @@ impl App {
             sui_address: "-".to_string(),
             evm_address: "-".to_string(),
             solana_address: "-".to_string(),
+            evm_mode: "…".to_string(),
+            sol_mode: "…".to_string(),
+            sui_mode: "HTTP".to_string(),
+            evm_conn_url: "-".to_string(),
+            sol_conn_url: "-".to_string(),
+            sui_conn_url: "-".to_string(),
             transactions: VecDeque::with_capacity(100),
             logs: VecDeque::with_capacity(1000),
             log_scroll: 0,
@@ -111,6 +126,14 @@ impl App {
             Chain::Sui => self.sui_address = address,
             Chain::Avax | Chain::Base => self.evm_address = address,
             Chain::Solana => self.solana_address = address,
+        }
+    }
+
+    pub fn set_mode(&mut self, chain: Chain, mode: String, url: String) {
+        match chain {
+            Chain::Avax | Chain::Base => { self.evm_mode = mode; self.evm_conn_url = url; }
+            Chain::Solana => { self.sol_mode = mode; self.sol_conn_url = url; }
+            Chain::Sui => { self.sui_mode = mode; self.sui_conn_url = url; }
         }
     }
 

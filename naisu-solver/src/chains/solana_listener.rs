@@ -228,12 +228,21 @@ pub async fn run(config: &Config) -> Result<()> {
                 info!("Solana WS connected ✓  streaming program logs...");
 
                 let mut last_scan = Instant::now() - Duration::from_secs(10);
+                let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+                ping_interval.tick().await; // consume immediate first tick
 
-                while let Some(Ok(msg)) = ws.next().await {
-                    let text = match msg {
-                        Message::Text(t) => t,
-                        Message::Ping(p) => { let _ = ws.send(Message::Pong(p)).await; continue; }
-                        _ => continue,
+                loop {
+                    let text = tokio::select! {
+                        msg = ws.next() => match msg {
+                            Some(Ok(Message::Text(t))) => t,
+                            Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; continue; }
+                            Some(Ok(_)) => continue,
+                            _ => break,
+                        },
+                        _ = ping_interval.tick() => {
+                            if ws.send(Message::Ping(vec![].into())).await.is_err() { break; }
+                            continue;
+                        }
                     };
 
                     let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();

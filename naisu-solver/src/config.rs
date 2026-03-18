@@ -18,17 +18,14 @@ pub struct Config {
     pub sui_bridge_state_id: String,
     pub sui_emitter_address: String,
 
-    // EVM chain 1 (primary — Avalanche Fuji)
-    pub evm_rpc_url: String,
+    // EVM (shared key + Wormhole — Base Sepolia)
     pub evm_private_key: String,
-    pub evm_contract_address: String,
-    pub evm_chain_id: u64,
     pub evm_wormhole_address: String,
     pub evm_emitter_address: String,
 
     // EVM chain 2 (Base Sepolia)
     pub evm2_rpc_url: String,
-    pub evm2_ws_url: Option<String>,  // EVM2_WS_URL — required for WS mode (e.g. Alchemy wss://)
+    pub evm_ws_url: Option<String>,  // EVM_WS_URL — optional, for WS mode (e.g. Alchemy wss://)
     pub evm2_contract_address: String,
     pub evm2_chain_id: u64,
 
@@ -72,19 +69,13 @@ impl Config {
             sui_bridge_state_id: require_env("SUI_BRIDGE_STATE_ID")?,
             sui_emitter_address: require_env("SUI_EMITTER_ADDRESS")?,
 
-            evm_rpc_url: require_env("EVM_RPC_URL")?,
             evm_private_key: require_env("EVM_PRIVATE_KEY")?,
-            evm_contract_address: require_env("EVM_CONTRACT_ADDRESS")?,
-            evm_chain_id: env::var("EVM_CHAIN_ID")
-                .unwrap_or_else(|_| "0".to_string())
-                .parse()
-                .unwrap_or(0),
             evm_emitter_address: require_env("EVM_EMITTER_ADDRESS")?,
             evm_wormhole_address: require_env("EVM_WORMHOLE_ADDRESS")?,
 
             evm2_rpc_url: env::var("EVM2_RPC_URL")
                 .unwrap_or_else(|_| "https://sepolia.base.org".to_string()),
-            evm2_ws_url: env::var("EVM2_WS_URL").ok(),
+            evm_ws_url: env::var("EVM_WS_URL").ok(),
             evm2_contract_address: require_env("EVM2_CONTRACT_ADDRESS")?,
             evm2_chain_id: env::var("EVM2_CHAIN_ID")
                 .unwrap_or_else(|_| "84532".to_string())

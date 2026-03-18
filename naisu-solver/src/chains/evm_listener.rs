@@ -385,13 +385,13 @@ pub async fn run_with_config(
         .address(contract_addr)
         .event(ORDER_CREATED_EVENT);
 
-    match &config.evm2_ws_url {
+    match &config.evm_ws_url {
         Some(ws_url) => {
             info!("[{chain_name}] WS mode | contract={contract_addr} | from block={last_block}");
             run_ws_mode(&config, chain_id, rpc_url, &ws_url.clone(), contract_addr, http, last_block, order_filter, seen_orders).await;
         }
         None => {
-            info!("[{chain_name}] HTTP polling mode | set EVM2_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
+            info!("[{chain_name}] HTTP polling mode | set EVM_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
             run_http_mode(&config, chain_id, rpc_url, contract_addr, http, &mut last_block, order_filter, seen_orders).await;
         }
     }

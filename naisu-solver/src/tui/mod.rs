@@ -56,6 +56,7 @@ pub fn run_tui(mut event_rx: Receiver<AppEvent>) -> eyre::Result<()> {
             match evt {
                 AppEvent::Balance(chain, amount) => app.update_balance(chain, amount),
                 AppEvent::Address(chain, addr) => app.update_address(chain, addr),
+                AppEvent::Mode(chain, mode, url) => app.set_mode(chain, mode, url),
                 AppEvent::Tx(tx) => app.add_transaction(tx),
                 AppEvent::TxUpdate(id, status) => app.update_transaction_status(id, status),
                 AppEvent::Log(msg) => app.add_log(msg),
@@ -107,25 +108,29 @@ fn render_balance_bar(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let evm_text = format!("{}\n{}", app.eth_balance, app.evm_address);
-    let sol_text = format!("{}\n{}", app.sol_balance, app.solana_address);
-    let sui_text = format!("{}\n{}", app.sui_balance, app.sui_address);
+    let evm_text = format!("{}\n{}\n{}", app.eth_balance, app.evm_address, app.evm_conn_url);
+    let sol_text = format!("{}\n{}\n{}", app.sol_balance, app.solana_address, app.sol_conn_url);
+    let sui_text = format!("{}\n{}\n{}", app.sui_balance, app.sui_address, app.sui_conn_url);
+
+    let evm_title = format!(" EVM (Base) · {} ", app.evm_mode);
+    let sol_title = format!(" SOL (Devnet) · {} ", app.sol_mode);
+    let sui_title = format!(" SUI (Testnet) · {} ", app.sui_mode);
 
     f.render_widget(
         Paragraph::new(evm_text)
-            .block(Block::default().borders(Borders::ALL).title(" EVM (Base Sepolia) "))
+            .block(Block::default().borders(Borders::ALL).title(evm_title))
             .style(Style::default().fg(Color::Blue)),
         columns[0],
     );
     f.render_widget(
         Paragraph::new(sol_text)
-            .block(Block::default().borders(Borders::ALL).title(" SOL (Devnet) "))
+            .block(Block::default().borders(Borders::ALL).title(sol_title))
             .style(Style::default().fg(Color::Magenta)),
         columns[1],
     );
     f.render_widget(
         Paragraph::new(sui_text)
-            .block(Block::default().borders(Borders::ALL).title(" SUI (Testnet) "))
+            .block(Block::default().borders(Borders::ALL).title(sui_title))
             .style(Style::default().fg(Color::Cyan)),
         columns[2],
     );

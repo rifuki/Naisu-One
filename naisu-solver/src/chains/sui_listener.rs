@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::{auction, config::Config, executor, strategy, wormhole};
 use eyre::Result;
 use std::collections::HashSet;
