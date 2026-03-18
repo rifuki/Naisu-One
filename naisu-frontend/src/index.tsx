@@ -5,8 +5,8 @@ import { WagmiProvider } from 'wagmi';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import App from './App';
-import { wagmiConfig } from './config/wagmi';
+import App from '@/App';
+import { wagmiConfig } from '@/config/wagmi';
 
 // Solana wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';

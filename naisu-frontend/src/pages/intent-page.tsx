@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { parseEther } from 'viem';
-import { useAgent, type AgentMessage as ChatMessage, type TxData } from '../../hooks/useAgent';
-import { useSolanaAddress } from '../../hooks/useSolanaAddress';
+import { useAgent, type AgentMessage as ChatMessage, type TxData } from '@/hooks/useAgent';
+import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { IntentZeroState } from '@/features/intent/components/intent-zero-state';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
