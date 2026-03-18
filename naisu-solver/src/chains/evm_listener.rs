@@ -62,7 +62,6 @@ const SEP_SUB: &str = "-------------------------------------------------------";
 /// This runs in a separate Tokio task for concurrent order processing.
 async fn process_evm_order(
     config: Arc<Config>,
-    provider: Provider<Http>,
     order: EvmOrder,
     price: u64,
     chain_id: u64,
@@ -70,7 +69,7 @@ async fn process_evm_order(
     rpc_url: String,
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
 ) {
-    let order_id_hex = hex::encode(&order.order_id);
+    let order_id_hex = hex::encode(order.order_id);
     let short = &order_id_hex[..8];
     let chain_name = evm_chain_name(chain_id);
     let dest_name = dest_chain_name(order.destination_chain);
@@ -108,25 +107,14 @@ async fn process_evm_order(
         if order.destination_chain == 1 {
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
 
-            // Per-order stake routing: purely from order flag, no global override
-            let use_liquid_stake = order.with_stake;
-            let use_auto_stake   = config.enable_auto_stake;
-
-            let mode_label = if use_liquid_stake {
-                "bridge+liquid_stake"
-            } else if use_auto_stake {
-                "bridge+auto_stake"
-            } else {
-                "bridge (direct SOL)"
-            };
+            let mode_label = if order.with_stake { "bridge+liquid_stake" } else { "bridge" };
 
             info!("{SEP_SUB}");
             info!(" [{short}] STEP 1/3  |  Solana devnet — mode: {mode_label}");
             info!(" [{short}]           |  {price} lamports  →  {recipient_b58}");
             info!("{SEP_SUB}");
 
-            // Priority: per-order with_stake OR global liquid_stake > global auto_stake > plain solve_and_prove
-            if use_liquid_stake {
+            if order.with_stake {
                 match executor::solana_executor::solve_and_liquid_stake(
                     &config,
                     order.order_id,
@@ -161,29 +149,17 @@ async fn process_evm_order(
                     }
                 }
             } else {
-                let solana_result = if use_auto_stake {
-                    executor::solana_executor::solve_and_stake(
-                        &config,
-                        order.order_id,
-                        order.recipient,
-                        price,
-                    )
-                    .await
-                } else {
-                    executor::solana_executor::solve_and_prove(
-                        &config,
-                        order.order_id,
-                        &recipient_b58,
-                        price,
-                    )
-                    .await
-                };
-
-                match solana_result {
+                match executor::solana_executor::solve_and_prove(
+                    &config,
+                    order.order_id,
+                    &recipient_b58,
+                    price,
+                )
+                .await
+                {
                     Ok((sig, seq)) => {
-                        let action = if use_auto_stake { "staked" } else { "sent" };
                         let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                        info!(" [{short}] STEP 1/3 ✓  |  SOL {action}");
+                        info!(" [{short}] STEP 1/3 ✓  |  SOL sent");
                         info!(" [{short}]  seq : {seq}");
                         info!(" [{short}]  tx  : {sig}");
                         info!(" [{short}]  url : {sol_url}");
@@ -194,8 +170,7 @@ async fn process_evm_order(
                     }
                     Err(e) => {
                         let err_str = e.to_string();
-                        let action = if use_auto_stake { "solve_and_stake" } else { "solve_and_prove" };
-                        error!(" [{short}] STEP 1/3 ✗  |  Solana {action} failed: {e}");
+                        error!(" [{short}] STEP 1/3 ✗  |  solve_and_prove failed: {e}");
                         if !err_str.contains("SolanaTransactionFailed") {
                             seen_orders.lock().await.remove(&order.order_id);
                             warn!(" [{short}]  → removed from dedup, will retry on next poll");
@@ -391,7 +366,7 @@ pub async fn run_with_config(
                     continue;
                 };
 
-                let order_id_hex = hex::encode(&order.order_id);
+                let order_id_hex = hex::encode(order.order_id);
                 let short = &order_id_hex[..8];
 
                 debug!(
@@ -478,7 +453,6 @@ pub async fn run_with_config(
                 seen_orders.lock().await.insert(order.order_id);
 
                 let config_clone = Arc::clone(&config);
-                let provider_clone = provider.clone();
                 let order_clone = order.clone();
                 let seen_orders_clone = Arc::clone(&seen_orders);
                 let rpc_url_clone = rpc_url.to_string();
@@ -486,7 +460,6 @@ pub async fn run_with_config(
                 tokio::spawn(async move {
                     process_evm_order(
                         config_clone,
-                        provider_clone,
                         order_clone,
                         price,
                         chain_id,
@@ -581,10 +554,3 @@ async fn parse_order_created(log: &Log, provider: &Provider<Http>) -> Option<Evm
     })
 }
 
-/// Backward compatibility: Run with config from env vars
-pub async fn run(config: Arc<Config>) -> Result<()> {
-    let chain_id = config.evm_chain_id;
-    let rpc_url = config.evm_rpc_url.clone();
-    let contract = config.evm_contract_address.clone();
-    run_with_config(config, chain_id, &rpc_url, &contract).await
-}

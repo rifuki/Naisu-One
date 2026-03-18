@@ -11,7 +11,6 @@ pub struct VaaResponse {
 #[derive(Debug, Deserialize)]
 pub struct VaaData {
     pub vaa: String,
-    pub sequence: u64,
 }
 
 pub async fn fetch_vaa(

@@ -8,13 +8,6 @@ default-run = "intent-solver"
 name = "intent-solver"
 path = "src/main.rs"
 
-[[bin]]
-name = "solver-dashboard"
-path = "src/bin/solver-dashboard.rs"
-
-[[bin]]
-name = "test_address"
-path = "src/bin/test_address.rs"
 
 [dependencies]
 base64 = "0.22.1"

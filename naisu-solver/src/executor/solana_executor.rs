@@ -271,10 +271,10 @@ async fn send_and_confirm_transaction(rpc_url: &str, tx_b64: &str) -> Result<Str
                 "SolanaTransactionFailed: {err}\nLogs:\n{logs}\nExplorer: https://explorer.solana.com/tx/{signature}?cluster=devnet"
             ));
         }
-        if let Some(conf) = status["confirmationStatus"].as_str() {
-            if conf == "confirmed" || conf == "finalized" {
-                return Ok(signature);
-            }
+        if let Some(conf) = status["confirmationStatus"].as_str()
+            && (conf == "confirmed" || conf == "finalized")
+        {
+            return Ok(signature);
         }
     }
 
@@ -586,7 +586,7 @@ async fn solve_and_prove_inner(
             .unwrap_or_default()
             .as_nanos();
         let mut h = sha2::Sha256::new();
-        h.update(&order_id);
+        h.update(order_id);
         h.update(solver_pubkey);
         h.update(amount_lamports.to_le_bytes());
         h.update(b"wormhole_message_nonce");
@@ -596,11 +596,6 @@ async fn solve_and_prove_inner(
     };
     let wormhole_message_key = ed25519_dalek::SigningKey::from_bytes(&msg_secret);
     let wormhole_message_pubkey: [u8; 32] = wormhole_message_key.verifying_key().to_bytes();
-
-    // ── Read current wormhole sequence number (before tx) ───────────────────
-    let sequence_before = get_account_sequence(&config.solana_rpc_url, &wormhole_sequence_pda)
-        .await
-        .unwrap_or(0);
 
     // ── Solver's EVM address (32-byte left-padded) ──────────────────────────
     // The Wormhole payload encodes the solver's EVM address so the EVM contract
@@ -746,249 +741,6 @@ async fn solve_and_prove_inner(
         amount_lamports,
         wormhole_sequence,
         "solve_and_prove confirmed"
-    );
-
-    Ok((sig, wormhole_sequence))
-}
-
-/// solve_and_stake: For EVM→Solana direction with auto-staking.
-/// Calls Solana program's solve_stake_and_prove which CPIs into mock-staking,
-/// depositing SOL on behalf of `recipient`, then emits a Wormhole proof.
-/// Returns (tx_signature, wormhole_sequence).
-///
-/// Retries up to 3× on SolanaTransactionTimeout. Returns immediately on program rejection.
-pub async fn solve_and_stake(
-    config: &Config,
-    order_id: [u8; 32],
-    recipient: [u8; 32],
-    amount_lamports: u64,
-) -> Result<(String, u64)> {
-    const MAX_ATTEMPTS: u32 = 3;
-    let mut last_err = eyre::eyre!("no attempts made");
-
-    for attempt in 1..=MAX_ATTEMPTS {
-        match solve_and_stake_inner(config, order_id, recipient, amount_lamports).await {
-            Ok(result) => return Ok(result),
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("SolanaTransactionTimeout") {
-                    warn!(
-                        order_id = %hex::encode(order_id),
-                        attempt,
-                        max_attempts = MAX_ATTEMPTS,
-                        "Solana stake tx timed out — rebuilding with fresh blockhash..."
-                    );
-                    if attempt < MAX_ATTEMPTS {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                        last_err = e;
-                        continue;
-                    }
-                }
-                return Err(e);
-            }
-        }
-    }
-    Err(last_err)
-}
-
-/// Inner single-attempt implementation for solve_and_stake.
-///
-/// SolveStakeAndProve accounts (Anchor order):
-///   solver            (mut, signer)
-///   recipient         (mut)                      — staker beneficiary (CHECK)
-///   staking_program                              — mock-staking program ID (CHECK)
-///   stake_pool        (mut)                      — PDA ["stake_pool"] @ staking_program
-///   stake_account     (mut)                      — PDA ["stake_account", recipient] @ staking_program
-///   config                                       — PDA ["config"] @ intent_bridge_program
-///   wormhole_program                             — Wormhole Core Bridge (CHECK)
-///   wormhole_bridge   (mut)                      — PDA ["Bridge"] @ wormhole_program
-///   wormhole_message  (mut, signer)              — fresh keypair each call
-///   wormhole_emitter                             — PDA ["emitter"] @ intent_bridge_program
-///   wormhole_sequence (mut)                      — PDA ["Sequence", emitter] @ wormhole_program
-///   wormhole_fee_collector (mut)                 — PDA ["fee_collector"] @ wormhole_program
-///   clock (sysvar)
-///   rent  (sysvar)
-///   system_program
-async fn solve_and_stake_inner(
-    config: &Config,
-    order_id: [u8; 32],
-    recipient: [u8; 32],
-    amount_lamports: u64,
-) -> Result<(String, u64)> {
-    // ── Load solver keypair ──────────────────────────────────────────────────
-    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
-
-    // ── Decode program IDs ───────────────────────────────────────────────────
-    let program_id: [u8; 32] = bs58::decode(&config.solana_program_id)
-        .into_vec()?
-        .try_into()
-        .map_err(|_| eyre::eyre!("Invalid program ID length"))?;
-
-    let wormhole_program_id: [u8; 32] = bs58::decode(&config.solana_wormhole_program_id)
-        .into_vec()?
-        .try_into()
-        .map_err(|_| eyre::eyre!("Invalid wormhole program ID length"))?;
-
-    if config.solana_mock_staking_program_id.is_empty() {
-        return Err(eyre::eyre!(
-            "MOCK_STAKING_PROGRAM_ID not configured — deploy mock-staking first and set the env var"
-        ));
-    }
-    let mock_staking_program_id: [u8; 32] = bs58::decode(&config.solana_mock_staking_program_id)
-        .into_vec()?
-        .try_into()
-        .map_err(|_| eyre::eyre!("Invalid mock staking program ID length"))?;
-
-    // ── Derive PDAs ──────────────────────────────────────────────────────────
-    let (config_pda, _) = find_pda(&[b"config"], &program_id);
-    let (wormhole_bridge_pda, _) = find_pda(&[b"Bridge"], &wormhole_program_id);
-    let (wormhole_emitter_pda, _) = find_pda(&[b"emitter"], &program_id);
-    let (wormhole_sequence_pda, _) =
-        find_pda(&[b"Sequence", &wormhole_emitter_pda], &wormhole_program_id);
-    let (wormhole_fee_collector_pda, _) = find_pda(&[b"fee_collector"], &wormhole_program_id);
-
-    // Mock-staking PDAs
-    let (stake_pool_pda, _) = find_pda(&[b"stake_pool"], &mock_staking_program_id);
-    let (stake_account_pda, _) =
-        find_pda(&[b"stake_account", &recipient], &mock_staking_program_id);
-
-    // ── Generate fresh wormhole_message keypair ──────────────────────────────
-    let msg_secret = {
-        use sha2::Digest;
-        let now_ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let mut h = sha2::Sha256::new();
-        h.update(&order_id);
-        h.update(solver_pubkey);
-        h.update(amount_lamports.to_le_bytes());
-        h.update(b"wormhole_message_stake_nonce");
-        h.update(now_ns.to_le_bytes());
-        let r: [u8; 32] = h.finalize().into();
-        r
-    };
-    let wormhole_message_key = ed25519_dalek::SigningKey::from_bytes(&msg_secret);
-    let wormhole_message_pubkey: [u8; 32] = wormhole_message_key.verifying_key().to_bytes();
-
-    // ── Solver's EVM address (32-byte left-padded) ──────────────────────────
-    // Must match the EVM address derived from evm_private_key so settleOrder
-    // pays to the correct solver wallet, not to bytes of the Solana pubkey.
-    let solver_evm_wallet: ethers::signers::LocalWallet = config
-        .evm_private_key
-        .parse::<ethers::signers::LocalWallet>()
-        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
-    let mut solver_address = [0u8; 32];
-    solver_address[12..].copy_from_slice(solver_evm_wallet.address().as_bytes());
-
-    // ── Build instruction data ───────────────────────────────────────────────
-    // solve_stake_and_prove(order_id: [u8;32], solver_address: [u8;32], amount_lamports: u64)
-    // Borsh: disc(8) + [u8;32](32) + [u8;32](32) + u64(8) = 80 bytes
-    let discriminator = instruction_discriminator("solve_stake_and_prove");
-    let mut ix_data = discriminator.to_vec();
-    ix_data.extend_from_slice(&order_id);
-    ix_data.extend_from_slice(&solver_address);
-    ix_data.extend_from_slice(&amount_lamports.to_le_bytes());
-
-    // ── Sysvars ──────────────────────────────────────────────────────────────
-    let clock_sysvar: [u8; 32] = bs58::decode("SysvarC1ock11111111111111111111111111111111")
-        .into_vec()?
-        .try_into()
-        .map_err(|_| eyre::eyre!("Invalid clock sysvar"))?;
-    let rent_sysvar: [u8; 32] = bs58::decode("SysvarRent111111111111111111111111111111111")
-        .into_vec()?
-        .try_into()
-        .map_err(|_| eyre::eyre!("Invalid rent sysvar"))?;
-
-    // ── Build account list (Solana message order) ────────────────────────────
-    // Writable signers:    [0] solver, [1] wormhole_message
-    // Writable non-sig:   [2] recipient, [3] stake_pool, [4] stake_account,
-    //                     [5] wormhole_bridge, [6] wormhole_sequence,
-    //                     [7] wormhole_fee_collector
-    // Readonly non-sig:   [8] staking_program, [9] config, [10] wormhole_program,
-    //                     [11] wormhole_emitter, [12] clock, [13] rent,
-    //                     [14] system_program, [15] program_id
-    let accounts = vec![
-        AccountRef { pubkey: solver_pubkey,              is_signer: true,  is_writable: true  },
-        AccountRef { pubkey: wormhole_message_pubkey,    is_signer: true,  is_writable: true  },
-        AccountRef { pubkey: recipient,                  is_signer: false, is_writable: true  },
-        AccountRef { pubkey: stake_pool_pda,             is_signer: false, is_writable: true  },
-        AccountRef { pubkey: stake_account_pda,          is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_bridge_pda,        is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_sequence_pda,      is_signer: false, is_writable: true  },
-        AccountRef { pubkey: wormhole_fee_collector_pda, is_signer: false, is_writable: true  },
-        AccountRef { pubkey: mock_staking_program_id,    is_signer: false, is_writable: false },
-        AccountRef { pubkey: config_pda,                 is_signer: false, is_writable: false },
-        AccountRef { pubkey: wormhole_program_id,        is_signer: false, is_writable: false },
-        AccountRef { pubkey: wormhole_emitter_pda,       is_signer: false, is_writable: false },
-        AccountRef { pubkey: clock_sysvar,               is_signer: false, is_writable: false },
-        AccountRef { pubkey: rent_sysvar,                is_signer: false, is_writable: false },
-        AccountRef { pubkey: SYSTEM_PROGRAM,             is_signer: false, is_writable: false },
-        AccountRef { pubkey: program_id,                 is_signer: false, is_writable: false },
-    ];
-
-    // Anchor struct order for SolveStakeAndProve → message indices:
-    // solver(0)=0, recipient(1)=2, staking_program(2)=8, stake_pool(3)=3,
-    // stake_account(4)=4, config(5)=9, wormhole_program(6)=10, wormhole_bridge(7)=5,
-    // wormhole_message(8)=1, wormhole_emitter(9)=11, wormhole_sequence(10)=6,
-    // wormhole_fee_collector(11)=7, clock(12)=12, rent(13)=13, system_program(14)=14
-    let ix_accounts: Vec<u8> = vec![0, 2, 8, 3, 4, 9, 10, 5, 1, 11, 6, 7, 12, 13, 14];
-
-    // program_id is at message index 15
-    let program_id_index = 15u8;
-
-    // ── Fetch blockhash and submit ───────────────────────────────────────────
-    let blockhash = get_latest_blockhash(&config.solana_rpc_url).await?;
-
-    let tx_bytes = build_and_sign_transaction(
-        &accounts,
-        &ix_data,
-        &ix_accounts,
-        program_id_index,
-        blockhash,
-        &signing_key,
-        &[&wormhole_message_key],
-    );
-
-    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
-
-    info!(
-        order_id = %hex::encode(order_id),
-        amount_lamports,
-        recipient = %bs58::encode(recipient).into_string(),
-        "Submitting solve_stake_and_prove transaction..."
-    );
-
-    let sig = send_and_confirm_transaction(&config.solana_rpc_url, &tx_b64).await?;
-
-    // Parse Wormhole sequence from logs
-    let tx_logs = fetch_transaction_logs(&config.solana_rpc_url, &sig).await;
-    let wormhole_sequence = match parse_sequence_from_logs(&tx_logs) {
-        Some(seq) => {
-            info!(sequence = seq, "Wormhole sequence parsed from logs (stake)");
-            seq
-        }
-        None => {
-            warn!(
-                signature = %sig,
-                "Could not parse Wormhole sequence from stake logs — falling back to account read.\n\
-                 Logs:\n{tx_logs}"
-            );
-            get_account_sequence(&config.solana_rpc_url, &wormhole_sequence_pda)
-                .await
-                .unwrap_or(0)
-                .saturating_sub(1)
-        }
-    };
-
-    debug!(
-        signature = %sig,
-        recipient = %bs58::encode(recipient).into_string(),
-        amount_lamports,
-        wormhole_sequence,
-        "solve_stake_and_prove confirmed"
     );
 
     Ok((sig, wormhole_sequence))

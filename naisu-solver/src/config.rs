@@ -10,10 +10,8 @@ pub struct Config {
     // Sui
     pub sui_rpc_url: String,
     pub sui_rpc_fallbacks: Vec<String>,
-    pub sui_ws_url: String,
     pub sui_private_key: String,
     pub sui_package_id: String,
-    pub sui_all_package_ids: Vec<String>,
 
     // Sui Wormhole
     pub sui_wormhole_state_id: String,
@@ -22,7 +20,6 @@ pub struct Config {
 
     // EVM chain 1 (primary — Avalanche Fuji)
     pub evm_rpc_url: String,
-    pub evm_ws_url: String,
     pub evm_private_key: String,
     pub evm_contract_address: String,
     pub evm_chain_id: u64,
@@ -36,7 +33,6 @@ pub struct Config {
 
     // Solana
     pub solana_rpc_url: String,
-    pub solana_ws_url: String,
     pub solana_private_key: String,
     pub solana_program_id: String,
 
@@ -44,22 +40,9 @@ pub struct Config {
     pub solana_wormhole_program_id: String,
     pub solana_emitter_address: String,
 
-    // Solana Mock Staking
-    pub solana_mock_staking_program_id: String,
-    /// If true, EVM→Solana orders use solve_and_stake (CPI to mock-staking)
-    /// instead of solve_and_prove (direct SOL transfer).
-    /// Set via ENABLE_AUTO_STAKE=true in .env
-    pub enable_auto_stake: bool,
-
-    // Solana Liquid Staking (mock-liquid-staking program: BK8wLw9FSw1n3SvQP8XDYoxWtcvaodSbgemtjVk96jkX)
+    // Solana Liquid Staking
     pub liquid_staking_program_id: String,
-    /// Pool authority pubkey (base58) — used to derive the pool PDA (seeds=[\"pool\", authority])
     pub liquid_staking_pool_authority: String,
-    /// If true, after solve_and_prove delivers SOL to recipient, the solver
-    /// wraps SOL→wSOL and stakes into mock-liquid-staking on behalf of the recipient.
-    /// Recipient gets nSOL (LST) tokens instead of raw SOL.
-    /// Set via ENABLE_LIQUID_STAKE=true in .env
-    pub enable_liquid_stake: bool,
 
     // Wormhole API
     pub wormhole_api_url: String,
@@ -72,8 +55,6 @@ impl Config {
     pub fn load() -> Result<Self> {
         dotenvy::dotenv().ok();
 
-        let sui_package_id = require_env("SUI_PACKAGE_ID")?;
-
         Ok(Self {
             sui_rpc_url: require_env("SUI_RPC_URL")?,
             sui_rpc_fallbacks: env::var("SUI_RPC_FALLBACKS")
@@ -82,17 +63,14 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            sui_ws_url: require_env("SUI_WS_URL")?,
             sui_private_key: require_env("SUI_PRIVATE_KEY")?,
-            sui_package_id: sui_package_id.clone(),
-            sui_all_package_ids: vec![sui_package_id],
+            sui_package_id: require_env("SUI_PACKAGE_ID")?,
 
             sui_wormhole_state_id: require_env("SUI_WORMHOLE_STATE_ID")?,
             sui_bridge_state_id: require_env("SUI_BRIDGE_STATE_ID")?,
             sui_emitter_address: require_env("SUI_EMITTER_ADDRESS")?,
 
             evm_rpc_url: require_env("EVM_RPC_URL")?,
-            evm_ws_url: require_env("EVM_WS_URL")?,
             evm_private_key: require_env("EVM_PRIVATE_KEY")?,
             evm_contract_address: require_env("EVM_CONTRACT_ADDRESS")?,
             evm_chain_id: env::var("EVM_CHAIN_ID")
@@ -110,29 +88,16 @@ impl Config {
                 .parse()
                 .unwrap_or(84532),
 
-            // Solana
             solana_rpc_url: require_env("SOLANA_RPC_URL")?,
-            solana_ws_url: require_env("SOLANA_WS_URL")?,
             solana_private_key: require_env("SOLANA_PRIVATE_KEY")?,
             solana_program_id: require_env("SOLANA_PROGRAM_ID")?,
 
             solana_wormhole_program_id: require_env("SOLANA_WORMHOLE_PROGRAM_ID")?,
             solana_emitter_address: require_env("SOLANA_EMITTER_ADDRESS")?,
 
-            solana_mock_staking_program_id: env::var("MOCK_STAKING_PROGRAM_ID").unwrap_or_default(),
-
-            enable_auto_stake: env::var("ENABLE_AUTO_STAKE")
-                .unwrap_or_default()
-                .to_lowercase()
-                == "true",
-
             liquid_staking_program_id: env::var("LIQUID_STAKING_PROGRAM_ID").unwrap_or_default(),
             liquid_staking_pool_authority: env::var("LIQUID_STAKING_POOL_AUTHORITY")
                 .unwrap_or_default(),
-            enable_liquid_stake: env::var("ENABLE_LIQUID_STAKE")
-                .unwrap_or_default()
-                .to_lowercase()
-                == "true",
 
             wormhole_api_url: env::var("WORMHOLE_RPC_URL")
                 .unwrap_or_else(|_| "https://api.testnet.wormholescan.io".to_string()),

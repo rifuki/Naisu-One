@@ -213,7 +213,7 @@ pub async fn settle_order(
 
     // ABI-encode bytes: offset (32) + length (32) + data (padded to 32-byte boundary)
     let data_len = vaa.len();
-    let padded_len = ((data_len + 31) / 32) * 32;
+    let padded_len = data_len.div_ceil(32) * 32;
     let mut calldata = selector.to_vec();
     // offset to bytes data = 32
     let mut offset_bytes = [0u8; 32];
@@ -339,7 +339,7 @@ pub async fn settle_order_urgent(
 
     // ABI-encode bytes
     let data_len = vaa.len();
-    let padded_len = ((data_len + 31) / 32) * 32;
+    let padded_len = data_len.div_ceil(32) * 32;
     let mut calldata = selector.to_vec();
     let mut offset_bytes = [0u8; 32];
     offset_bytes[31] = 32;
@@ -437,64 +437,6 @@ pub async fn settle_order_urgent(
             }
         }
     }
-}
-
-/// Legacy v1 (no Wormhole) — kept for backward compatibility during migration.
-pub async fn fulfill(config: &Config, intent: &SuiIntent, amount_to_send: u64) -> Result<String> {
-    let client = make_client(config)?;
-    
-    // Validate recipient is a valid EVM address (20 bytes)
-    if intent.recipient.len() != 20 {
-        return Err(eyre::eyre!(
-            "Invalid recipient: expected 20 bytes for EVM address, got {} bytes",
-            intent.recipient.len()
-        ));
-    }
-    
-    // Check for zero address
-    if intent.recipient.iter().all(|&b| b == 0) {
-        return Err(eyre::eyre!("Invalid recipient: zero address"));
-    }
-    
-    let recipient = Address::from_slice(&intent.recipient);
-
-    let tx = TransactionRequest::new()
-        .to(recipient)
-        .value(U256::from(amount_to_send));
-
-    info!(to = ?recipient, amount = amount_to_send, "Sending ETH (legacy)...");
-
-    let pending_tx = client.send_transaction(tx, None).await?;
-    let receipt = pending_tx.await?.ok_or_else(|| eyre::eyre!("No receipt"))?;
-    let tx_hash = format!("{:?}", receipt.transaction_hash);
-
-    info!(tx_hash = %tx_hash, "ETH sent (legacy)!");
-
-    Ok(tx_hash)
-}
-
-/// Legacy v1 (no Wormhole) — kept for reference.
-pub async fn claim_order(config: &Config, order_id: [u8; 32]) -> Result<String> {
-    let client = make_client(config)?;
-    let contract_addr: Address = config.evm_contract_address.parse()?;
-
-    let selector = &ethers::utils::keccak256(b"fulfillOrder(bytes32)")[..4];
-    let mut calldata = selector.to_vec();
-    calldata.extend_from_slice(&order_id);
-
-    let tx = TransactionRequest::new()
-        .to(contract_addr)
-        .data(Bytes::from(calldata));
-
-    info!(order_id = %hex::encode(order_id), "Claiming order (legacy)...");
-
-    let pending = client.send_transaction(tx, None).await?;
-    let receipt = pending.await?.ok_or_else(|| eyre::eyre!("No receipt"))?;
-    let tx_hash = format!("{:?}", receipt.transaction_hash);
-
-    info!(tx_hash = %tx_hash, "Order claimed (legacy)!");
-
-    Ok(tx_hash)
 }
 
 // =============================================================================

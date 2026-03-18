@@ -9,10 +9,7 @@ use tracing::{error, info, warn};
 /// A Solana intent (open order locked on-chain).
 #[derive(Debug, Clone)]
 pub struct SolanaIntent {
-    /// base58-encoded account address of the intent PDA
-    pub account: String,
     pub intent_id: [u8; 32],
-    pub creator: [u8; 32],    // Solana pubkey
     pub recipient: [u8; 32],  // destination chain address (EVM = 20 bytes right-aligned)
     pub destination_chain: u16,
     pub amount: u64,      // lamports locked
@@ -20,8 +17,6 @@ pub struct SolanaIntent {
     pub floor_price: u64,
     pub deadline: i64,
     pub created_at: i64,
-    pub status: u8,
-    pub bump: u8,
 }
 
 /// Compute Anchor account discriminator: sha256("account:<Name>")[0..8]
@@ -45,7 +40,7 @@ fn account_discriminator(name: &str) -> [u8; 8] {
 ///   [130..138] created_at i64 LE
 ///   [138]     status u8
 ///   [139]     bump u8
-fn parse_intent(data: &[u8], account_address: &str) -> Option<SolanaIntent> {
+fn parse_intent(data: &[u8]) -> Option<SolanaIntent> {
     // Must be at least 8 (discriminator) + 140 bytes = 148 bytes
     if data.len() < 148 {
         return None;
@@ -57,9 +52,6 @@ fn parse_intent(data: &[u8], account_address: &str) -> Option<SolanaIntent> {
     let mut intent_id = [0u8; 32];
     intent_id.copy_from_slice(&d[0..32]);
 
-    let mut creator = [0u8; 32];
-    creator.copy_from_slice(&d[32..64]);
-
     let mut recipient = [0u8; 32];
     recipient.copy_from_slice(&d[64..96]);
 
@@ -69,13 +61,9 @@ fn parse_intent(data: &[u8], account_address: &str) -> Option<SolanaIntent> {
     let floor_price = u64::from_le_bytes(d[114..122].try_into().ok()?);
     let deadline = i64::from_le_bytes(d[122..130].try_into().ok()?);
     let created_at = i64::from_le_bytes(d[130..138].try_into().ok()?);
-    let status = d[138];
-    let bump = d[139];
 
     Some(SolanaIntent {
-        account: account_address.to_string(),
         intent_id,
-        creator,
         recipient,
         destination_chain,
         amount,
@@ -83,8 +71,6 @@ fn parse_intent(data: &[u8], account_address: &str) -> Option<SolanaIntent> {
         floor_price,
         deadline,
         created_at,
-        status,
-        bump,
     })
 }
 
@@ -99,7 +85,6 @@ struct RpcResponse<T> {
 
 #[derive(Debug, Deserialize)]
 struct AccountResult {
-    pubkey: String,
     account: AccountData,
 }
 
@@ -111,11 +96,11 @@ struct AccountData {
 /// Fetch all Intent accounts with status == 0 (open) from the program.
 async fn fetch_open_intents(rpc_url: &str, program_id: &str) -> Result<Vec<SolanaIntent>> {
     let discriminator = account_discriminator("Intent");
-    let disc_b64 = base64::engine::general_purpose::STANDARD.encode(&discriminator);
+    let disc_b64 = base64::engine::general_purpose::STANDARD.encode(discriminator);
 
     // Filter 1: memcmp at offset 0 for Intent discriminator
     // Filter 2: memcmp at offset 146 for status == 0 (STATUS_OPEN)
-    let status_open_b64 = base64::engine::general_purpose::STANDARD.encode(&[0u8]);
+    let status_open_b64 = base64::engine::general_purpose::STANDARD.encode([0u8]);
 
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -157,13 +142,13 @@ async fn fetch_open_intents(rpc_url: &str, program_id: &str) -> Result<Vec<Solan
 
     let mut intents = Vec::new();
     for item in &resp.result {
-        if item.account.data.len() < 1 {
+        if item.account.data.is_empty() {
             continue;
         }
         let raw = base64::engine::general_purpose::STANDARD
             .decode(&item.account.data[0])
             .unwrap_or_default();
-        if let Some(intent) = parse_intent(&raw, &item.pubkey) {
+        if let Some(intent) = parse_intent(&raw) {
             intents.push(intent);
         }
     }
@@ -278,9 +263,7 @@ pub async fn run(config: &Config) -> Result<()> {
 
             let sui_intent = crate::chains::sui_listener::SuiIntent {
                 intent_id: intent_id_hex.clone(),
-                creator: String::new(), // unused by fulfill_and_prove
                 recipient: evm_recipient_bytes,
-                destination_chain: intent.destination_chain,
                 amount: intent.amount,
                 start_price: intent.start_price,
                 floor_price: intent.floor_price,

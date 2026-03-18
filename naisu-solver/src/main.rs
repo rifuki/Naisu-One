@@ -17,10 +17,9 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     // ── Logging setup: stdout (human-readable) + file (JSON per-day) ──────────
-    // Logs dir: /Users/rifuki/mgodonf/web3/intent-bridge/logs/
     // Files rotate daily: solver.2026-02-27.log, solver.2026-02-28.log, ...
-    std::fs::create_dir_all("../logs")?;
-    let file_appender = tracing_appender::rolling::daily("../logs", "solver.log");
+    std::fs::create_dir_all("logs")?;
+    let file_appender = tracing_appender::rolling::daily("logs", "solver.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
 
     let filter = EnvFilter::new("intent_solver=info");
@@ -53,7 +52,6 @@ async fn main() -> Result<()> {
         evm2_contract = %config.evm2_contract_address,
         evm2_chain_id = config.evm2_chain_id,
         solana_program = %config.solana_program_id,
-        enable_auto_stake = config.enable_auto_stake,
         evm_solver_address = %evm_address,
         "Starting Intent Solver..."
     );

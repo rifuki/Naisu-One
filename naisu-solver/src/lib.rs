@@ -21,7 +21,6 @@ pub async fn run_headless() -> eyre::Result<()> {
         evm2_chain_id = config.evm2_chain_id,
         sui_package = %config.sui_package_id,
         solana_program = %config.solana_program_id,
-        enable_auto_stake = config.enable_auto_stake,
         "Starting Intent Solver (Headless)..."
     );
 
