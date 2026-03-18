@@ -5,6 +5,7 @@ import { injected } from 'wagmi/connectors';
 import { parseEther } from 'viem';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSolanaAddress } from '../hooks/useSolanaAddress';
+import SolverAuctionCard from '../components/SolverAuctionCard';
 
 const AGENT_URL = (import.meta.env.VITE_AGENT_URL as string | undefined)?.trim() || 'http://localhost:8787';
 const PROJECT_ID = (import.meta.env.VITE_AGENT_PROJECT_ID as string | undefined)?.trim() || 'naisu1';
@@ -22,6 +23,7 @@ interface Message {
   content: string;
   timestamp: Date;
   txData?: TxData;
+  solverAuction?: { userAddress: string; submittedAt: number };
 }
 
 const QUICK_PROMPTS = [
@@ -156,6 +158,12 @@ function MessageBubble({ msg, onSend }: { msg: Message; onSend: (tx: TxData) => 
             </div>
           )}
           {msg.txData && <TxCard tx={msg.txData} onSend={onSend} />}
+          {msg.solverAuction && (
+            <SolverAuctionCard
+              userAddress={msg.solverAuction.userAddress}
+              submittedAt={msg.solverAuction.submittedAt}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -302,9 +310,18 @@ export default function AgentPage() {
         chainId: tx.chainId,
       });
       setTxStatus(`Submitted!`);
-      
-      // Minta ActiveIntents untuk segera merefresh background datanya
       window.dispatchEvent(new Event('refresh_intents'));
+
+      // Inject solver auction card into chat
+      if (address) {
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 2).toString(),
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          solverAuction: { userAddress: address, submittedAt: Date.now() },
+        }]);
+      }
 
       const explorerBase = tx.chainId === 84532
         ? 'https://sepolia.basescan.org/tx/'
