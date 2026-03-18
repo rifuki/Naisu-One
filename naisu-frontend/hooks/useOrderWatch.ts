@@ -24,15 +24,18 @@ export interface OrderUpdateEvent {
 }
 
 interface UseOrderWatchOptions {
-  user:          string | undefined
-  chain?:        string
-  enabled?:      boolean
-  onOrderUpdate: (event: OrderUpdateEvent) => void
+  user:           string | undefined
+  chain?:         string
+  enabled?:       boolean
+  onOrderUpdate:  (event: OrderUpdateEvent) => void
+  onOrderCreated?: () => void
 }
 
-export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate }: UseOrderWatchOptions) {
-  const onUpdateRef = useRef(onOrderUpdate)
-  onUpdateRef.current = onOrderUpdate
+export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOrderCreated }: UseOrderWatchOptions) {
+  const onUpdateRef  = useRef(onOrderUpdate)
+  const onCreatedRef = useRef(onOrderCreated)
+  onUpdateRef.current  = onOrderUpdate
+  onCreatedRef.current = onOrderCreated
 
   useEffect(() => {
     if (!user || !enabled) return
@@ -54,6 +57,10 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate }: Us
           const data: OrderUpdateEvent = JSON.parse(e.data)
           onUpdateRef.current(data)
         } catch { /* ignore malformed */ }
+      })
+
+      es.addEventListener('order_created', () => {
+        onCreatedRef.current?.()
       })
 
       es.addEventListener('close', () => {

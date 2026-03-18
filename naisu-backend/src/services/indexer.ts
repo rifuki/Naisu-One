@@ -122,11 +122,11 @@ function upsert(order: IntentOrder): void {
 
   const prevStatus = prev?.status
   const newStatus  = order.status
-  if (prevStatus !== newStatus) {
+  if (!prev) {
+    indexerEvents.emit('order_created', order)
+  } else if (prevStatus !== newStatus) {
     indexerEvents.emit('order_update', order)
-    if (prev) {
-      logger.info({ orderId: order.orderId, prevStatus, newStatus }, 'Order status changed')
-    }
+    logger.info({ orderId: order.orderId, prevStatus, newStatus }, 'Order status changed')
   }
 }
 

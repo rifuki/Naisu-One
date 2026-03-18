@@ -296,6 +296,7 @@ export function useIntentOrders() {
           : o
       ))
     }, []),
+    onOrderCreated: refresh,
   })
 
   // Initial fetch + polling

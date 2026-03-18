@@ -89,7 +89,15 @@ intentRouter.get('/watch', async (c) => {
         }
       }
 
+      // Push order_created so frontend refreshes immediately when a new order is indexed
+      const onCreated = (order: ReturnType<typeof getOrdersByCreator>[number]) => {
+        if (order.creator.toLowerCase() !== userLower) return
+        if (chain && order.chain !== chain) return
+        send('order_created', { orderId: order.orderId, chain: order.chain })
+      }
+
       indexerEvents.on('order_update', onUpdate)
+      indexerEvents.on('order_created', onCreated)
 
       // Heartbeat every 30s to keep connection alive through proxies
       const heartbeat = setInterval(() => send('ping', { t: Date.now() }), 30_000)
@@ -106,6 +114,7 @@ intentRouter.get('/watch', async (c) => {
         clearInterval(heartbeat)
         clearTimeout(autoClose)
         indexerEvents.off('order_update', onUpdate)
+        indexerEvents.off('order_created', onCreated)
       }
 
       // Store cleanup on the controller cancel
