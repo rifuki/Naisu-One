@@ -25,7 +25,7 @@ pub struct Config {
 
     // EVM chain 2 (Base Sepolia)
     pub evm2_rpc_url: String,
-    pub evm_ws_url: Option<String>,  // EVM_WS_URL — optional, for WS mode (e.g. Alchemy wss://)
+    pub evm_ws_url: Option<String>,  // BASE_SEPOLIA_WS_URL — optional, for WS mode (e.g. Alchemy wss://)
     pub evm2_contract_address: String,
     pub evm2_chain_id: u64,
 
@@ -75,7 +75,7 @@ impl Config {
 
             evm2_rpc_url: env::var("EVM2_RPC_URL")
                 .unwrap_or_else(|_| "https://sepolia.base.org".to_string()),
-            evm_ws_url: env::var("EVM_WS_URL").ok(),
+            evm_ws_url: env::var("BASE_SEPOLIA_WS_URL").ok(),
             evm2_contract_address: require_env("EVM2_CONTRACT_ADDRESS")?,
             evm2_chain_id: env::var("EVM2_CHAIN_ID")
                 .unwrap_or_else(|_| "84532".to_string())

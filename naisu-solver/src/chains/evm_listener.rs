@@ -391,7 +391,7 @@ pub async fn run_with_config(
             run_ws_mode(&config, chain_id, rpc_url, &ws_url.clone(), contract_addr, http, last_block, order_filter, seen_orders).await;
         }
         None => {
-            info!("[{chain_name}] HTTP polling mode | set EVM_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
+            info!("[{chain_name}] HTTP polling mode | set BASE_SEPOLIA_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
             run_http_mode(&config, chain_id, rpc_url, contract_addr, http, &mut last_block, order_filter, seen_orders).await;
         }
     }
