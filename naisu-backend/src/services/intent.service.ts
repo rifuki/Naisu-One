@@ -9,7 +9,7 @@
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client'
 import { Transaction } from '@mysten/sui/transactions'
 import { createPublicClient, http, parseEther, encodeFunctionData, formatEther } from 'viem'
-import { avalancheFuji, baseSepolia } from 'viem/chains'
+import { baseSepolia } from 'viem/chains'
 import {
   PublicKey,
   Connection,
@@ -116,12 +116,6 @@ function getSuiClient(): SuiClient {
   return _suiClient
 }
 
-function getFujiClient() {
-  return createPublicClient({
-    chain: avalancheFuji,
-    transport: http(config.intent.evm.fuji.rpcUrl),
-  })
-}
 
 function getBaseClient() {
   return createPublicClient({
@@ -207,8 +201,8 @@ function wormholeChainId(chain: SupportedChain): number {
   switch (chain) {
     case 'solana':   return INTENT_BRIDGE.WORMHOLE.SOLANA
     case 'sui':      return INTENT_BRIDGE.WORMHOLE.SUI
-    case 'evm-base': return INTENT_BRIDGE.WORMHOLE.BASE_SEPOLIA
-    case 'evm-fuji': return INTENT_BRIDGE.WORMHOLE.FUJI
+    case 'evm-base':
+    case 'evm-fuji': return INTENT_BRIDGE.WORMHOLE.BASE_SEPOLIA
   }
 }
 
@@ -335,10 +329,8 @@ async function listEvmOrders(
   evmChain: 'evm-fuji' | 'evm-base',
   creator: string
 ): Promise<IntentOrder[]> {
-  const client   = evmChain === 'evm-fuji' ? getFujiClient() : getBaseClient()
-  const contract = evmChain === 'evm-fuji'
-    ? config.intent.evm.fuji.contract
-    : config.intent.evm.baseSepolia.contract
+  const client   = getBaseClient()
+  const contract = config.intent.evm.baseSepolia.contract
 
   // Base Sepolia & Fuji public RPCs limit getLogs to 10,000 block ranges.
   // We scan backwards in 10k-block windows (up to 5 windows = ~50k blocks ≈ 40 days)
@@ -642,7 +634,7 @@ export async function getIntentOrders(params: {
 
   const chains: SupportedChain[] = chain
     ? [chain]
-    : ['sui', 'evm-fuji', 'evm-base', 'solana']
+    : ['sui', 'evm-base', 'solana']
 
   const isEvmAddress     = /^0x[0-9a-fA-F]{40}$/.test(user)
   const isSolanaAddress  = !isEvmAddress && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(user)
@@ -652,7 +644,7 @@ export async function getIntentOrders(params: {
       try {
         if (c === 'sui') {
           results.push(...await listSuiOrders(user))
-        } else if (c === 'evm-fuji' || c === 'evm-base') {
+        } else if (c === 'evm-base') {
           if (!isEvmAddress) return
           results.push(...await listEvmOrders(c, user))
         } else if (c === 'solana') {
@@ -811,7 +803,7 @@ export async function buildIntentTx(params: {
     })
   }
 
-  throw new AppError('Unsupported chain or action', 400, ERROR_CODES.UNSUPPORTED_CHAIN)
+  throw new AppError('Unsupported chain or action', 400, ERROR_CODES.VALIDATION_ERROR)
 }
 
 // ─── Sui: build create_intent transaction ────────────────────────────────────
@@ -903,12 +895,8 @@ async function buildEvmCreateOrder(params: {
 }): Promise<BuildTxResult> {
   const { chain, recipientAddress, destinationChain, amount, durationSeconds, startPrice, floorPrice, withStake = false } = params
 
-  const contract    = chain === 'evm-fuji'
-    ? config.intent.evm.fuji.contract
-    : config.intent.evm.baseSepolia.contract
-  const chainId     = chain === 'evm-fuji'
-    ? config.intent.evm.fuji.chainId
-    : config.intent.evm.baseSepolia.chainId
+  const contract    = config.intent.evm.baseSepolia.contract
+  const chainId     = config.intent.evm.baseSepolia.chainId
   const amountWei   = parseEther(amount)
   const destChainId = wormholeChainId(destinationChain)
 
@@ -1081,7 +1069,7 @@ export async function getEvmNativeBalance(params: {
   address: string
 }): Promise<{ chain: string; address: string; balanceWei: string; balanceEth: string }> {
   const { chain, address } = params
-  const client = chain === 'evm-fuji' ? getFujiClient() : getBaseClient()
+  const client = getBaseClient()
 
   const balanceWei = await client.getBalance({ address: address as `0x${string}` })
 

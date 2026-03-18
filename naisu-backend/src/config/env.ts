@@ -85,21 +85,15 @@ const envSchema = z.object({
     .url()
     .default('https://fullnode.testnet.sui.io'),
 
-  // Intent Bridge — EVM (Avalanche Fuji testnet)
-  AVALANCHE_FUJI_RPC: z
-    .string()
-    .url()
-    .default('https://api.avax-test.network/ext/bc/C/rpc'),
-  AVALANCHE_FUJI_CONTRACT: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/)
-    .default('0x274768b4B16841d23B8248d1311fBDC760803E65'),
-
   // Intent Bridge — EVM (Base Sepolia)
   BASE_SEPOLIA_INTENT_CONTRACT: z
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/)
-    .default('0x0000000000000000000000000000000000000000'),
+    .default('0xFCDE966395c39ED59656BC0fd3a310747Eb68740'),
+  BASE_SEPOLIA_WS_URL: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().optional()
+  ),
 
   // Feature Flags
   ENABLE_UNISWAP_V4: z
@@ -207,13 +201,9 @@ export const config = {
       rpcUrl: env.SUI_RPC_URL,
     },
     evm: {
-      fuji: {
-        rpcUrl: env.AVALANCHE_FUJI_RPC,
-        contract: env.AVALANCHE_FUJI_CONTRACT as `0x${string}`,
-        chainId: 43113,
-      },
       baseSepolia: {
         rpcUrl: env.BASE_SEPOLIA_RPC,
+        wsUrl: env.BASE_SEPOLIA_WS_URL,
         contract: env.BASE_SEPOLIA_INTENT_CONTRACT as `0x${string}`,
         chainId: 84532,
       },

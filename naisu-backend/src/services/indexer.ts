@@ -1,28 +1,34 @@
 /**
- * Intent Indexer
+ * Intent Indexer — WS-first, event-driven
  *
- * Background worker yang terus poll on-chain events dari EVM (Base Sepolia + Fuji)
- * dan Solana, lalu simpan ke in-memory store.
+ * Architecture:
+ *   1. Initial backfill  — getLogs (EVM) + getProgramAccounts (Solana)
+ *   2. WS real-time      — viem watchContractEvent (eth_subscribe) + Solana onProgramAccountChange
+ *   3. HTTP poll fallback — if BASE_SEPOLIA_WS_URL not set (10s interval)
  *
- * Frontend dan SSE /watch cukup baca dari store ini — tidak perlu hit RPC langsung.
+ * Why WS-first?
+ *   Solver resolves intents in ~15s via WS. HTTP polling at 10s would miss
+ *   the OPEN window. WS gives sub-second latency on every status change.
  *
  * Flow:
- *   startIndexer() → run immediately + setInterval tiap POLL_INTERVAL_MS
- *   IndexerStore    → Map<orderId, IntentOrder>
- *   EventEmitter    → emit('order_update', order) saat status berubah
+ *   startIndexer()
+ *     → start WS subscriptions first   (buffers events during backfill)
+ *     → run initial backfill            (catches historical orders)
+ *     → WS continues streaming forever
+ *
+ *   stopIndexer()
+ *     → unwatch all WS subscriptions
+ *     → clear poll timer (if in fallback mode)
  */
 
 import EventEmitter from 'events'
-import {
-  createPublicClient,
-  http,
-  formatEther,
-} from 'viem'
-import { baseSepolia, avalancheFuji } from 'viem/chains'
+import { createPublicClient, http, webSocket, formatEther } from 'viem'
+import { baseSepolia } from 'viem/chains'
 import {
   Connection,
   PublicKey,
   LAMPORTS_PER_SOL,
+  type AccountInfo,
 } from '@solana/web3.js'
 import { BorshAccountsCoder } from '@coral-xyz/anchor'
 import IntentBridgeIDL from '../idl/intent_bridge_solana.json'
@@ -35,15 +41,15 @@ import type { IntentOrder, SupportedChain } from './intent.service'
 // Config
 // ============================================================================
 
-const POLL_INTERVAL_MS = 10_000   // poll tiap 10 detik
+const POLL_INTERVAL_MS = 10_000   // fallback HTTP poll interval
 const BLOCK_WINDOW     = 9_999n   // max getLogs range per chunk (Base Sepolia limit)
 const MAX_WINDOWS      = 6        // 6 × 10k = ~60k blocks ≈ 50 days
 
 // ============================================================================
-// ABI (minimal)
+// ABIs (minimal)
 // ============================================================================
 
-const ORDER_CREATED_EVENT = {
+const ORDER_CREATED_ABI = {
   name: 'OrderCreated',
   type: 'event',
   inputs: [
@@ -59,7 +65,7 @@ const ORDER_CREATED_EVENT = {
   ],
 } as const
 
-const ORDER_FULFILLED_EVENT = {
+const ORDER_FULFILLED_ABI = {
   name: 'OrderFulfilled',
   type: 'event',
   inputs: [
@@ -101,27 +107,20 @@ const ORDERS_FUNCTION_ABI = [
 // Store
 // ============================================================================
 
-// key = orderId (hex) or Solana account pubkey
-const store = new Map<string, IntentOrder>()
-
-// per-creator index: creator address (lowercase) → Set<orderId>
+const store    = new Map<string, IntentOrder>()
 const byCreator = new Map<string, Set<string>>()
 
-// Global event emitter — SSE route subscribes to this
 export const indexerEvents = new EventEmitter()
 indexerEvents.setMaxListeners(200)
 
-// ── Store helpers ─────────────────────────────────────────────────────────────
-
 function upsert(order: IntentOrder): void {
-  const prev = store.get(order.orderId)
+  const prev      = store.get(order.orderId)
   store.set(order.orderId, order)
 
   const creatorKey = order.creator.toLowerCase()
   if (!byCreator.has(creatorKey)) byCreator.set(creatorKey, new Set())
   byCreator.get(creatorKey)!.add(order.orderId)
 
-  // Emit only when status changes (or first insert)
   const prevStatus = prev?.status
   const newStatus  = order.status
   if (prevStatus !== newStatus) {
@@ -136,7 +135,7 @@ function upsert(order: IntentOrder): void {
 
 export function getOrdersByCreator(creator: string, chain?: SupportedChain): IntentOrder[] {
   const creatorKey = creator.toLowerCase()
-  const ids = byCreator.get(creatorKey)
+  const ids        = byCreator.get(creatorKey)
   if (!ids) return []
 
   const orders: IntentOrder[] = []
@@ -153,6 +152,7 @@ export function getAllOrders(): IntentOrder[] {
 
 export function getIndexerStatus() {
   return {
+    mode:        config.intent.evm.baseSepolia.wsUrl ? 'WS' : 'HTTP_POLL',
     totalOrders: store.size,
     lastPollAt:  lastPollAt ? new Date(lastPollAt).toISOString() : null,
     isRunning,
@@ -160,7 +160,7 @@ export function getIndexerStatus() {
 }
 
 // ============================================================================
-// EVM Indexer
+// Helpers
 // ============================================================================
 
 function statusLabel(s: number): 'OPEN' | 'FULFILLED' | 'CANCELLED' {
@@ -169,76 +169,26 @@ function statusLabel(s: number): 'OPEN' | 'FULFILLED' | 'CANCELLED' {
   return 'CANCELLED'
 }
 
-function evmExplorer(chain: SupportedChain, hash: string): string {
-  return chain === 'evm-base'
-    ? `https://sepolia.basescan.org/tx/${hash}`
-    : `https://testnet.snowtrace.io/tx/${hash}`
-}
-
-// Track highest indexed block per chain to avoid re-scanning
-const highWaterMark = new Map<string, bigint>()
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function indexEvmChain(
-  evmChain: 'evm-base' | 'evm-fuji',
-  client:   any,
+type AnyClient = any
+
+/**
+ * Fetch full order state from contract and upsert into store.
+ * Used by both initial backfill and WS OrderCreated handler.
+ */
+async function processEvmOrder(
+  client:   AnyClient,
   contract: `0x${string}`,
+  orderId:  `0x${string}`,
+  creator:  string,
+  txHash:   string,
 ): Promise<void> {
-  const latest = await client.getBlockNumber()
-  const hwKey  = evmChain
-
-  // First run: scan back MAX_WINDOWS * BLOCK_WINDOW blocks
-  // Subsequent runs: only scan new blocks since last high water mark
-  const hwm = highWaterMark.get(hwKey)
-  let fromBlock: bigint
-  if (hwm) {
-    fromBlock = hwm + 1n
-    if (fromBlock > latest) return // nothing new
-  } else {
-    const floor = latest > BigInt(MAX_WINDOWS) * BLOCK_WINDOW
-      ? latest - BigInt(MAX_WINDOWS) * BLOCK_WINDOW
-      : 0n
-    fromBlock = floor
-  }
-
-  // Collect all OrderCreated + OrderFulfilled in range, chunked
-  type RawLog = { args: Record<string, unknown>; transactionHash: `0x${string}` | null; blockNumber: bigint | null }
-  const createdLogs:   RawLog[] = []
-  const fulfilledLogs: RawLog[] = []
-
-  for (let from = fromBlock; from <= latest; from += BLOCK_WINDOW + 1n) {
-    const to = from + BLOCK_WINDOW > latest ? latest : from + BLOCK_WINDOW
-    await Promise.all([
-      client.getLogs({ address: contract, event: ORDER_CREATED_EVENT,   fromBlock: from, toBlock: to })
-        .then((r: unknown[]) => createdLogs.push(...r as RawLog[]))
-        .catch(() => {}),
-      client.getLogs({ address: contract, event: ORDER_FULFILLED_EVENT, fromBlock: from, toBlock: to })
-        .then((r: unknown[]) => fulfilledLogs.push(...r as RawLog[]))
-        .catch(() => {}),
-    ])
-  }
-
-  // Build fulfill map: orderId → { txHash, solver }
-  const fulfillMap = new Map<string, { txHash: string; solver: string }>()
-  for (const log of fulfilledLogs) {
-    const orderId = (log.args['orderId'] as string | undefined)?.toLowerCase()
-    const solver  = (log.args['solver']  as string | undefined) ?? ''
-    const txHash  = log.transactionHash ?? ''
-    if (orderId) fulfillMap.set(orderId, { txHash, solver })
-  }
-
-  // Process each OrderCreated
-  await Promise.allSettled(createdLogs.map(async (log) => {
-    const orderId = log.args['orderId'] as `0x${string}` | undefined
-    const creator = log.args['creator'] as string | undefined
-    if (!orderId || !creator) return
-
-    // Read full on-chain order state
+  try {
     const raw = await client.readContract({
-      address: contract,
-      abi: ORDERS_FUNCTION_ABI,
+      address:      contract,
+      abi:          ORDERS_FUNCTION_ABI,
       functionName: 'orders',
-      args: [orderId],
+      args:         [orderId],
     }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number, boolean]
 
     const [, recipient, destChain, amount, startPrice, floorPrice, deadline, createdAt, statusNum, withStake] = raw
@@ -247,18 +197,16 @@ async function indexEvmChain(
     let currentPrice: string | null = null
     if (isOpen && Date.now() / 1000 < Number(deadline)) {
       currentPrice = await client.readContract({
-        address: contract,
-        abi: ORDERS_FUNCTION_ABI,
+        address:      contract,
+        abi:          ORDERS_FUNCTION_ABI,
         functionName: 'getAuctionPrice',
-        args: [orderId],
+        args:         [orderId],
       }).then((p: unknown) => (p as bigint).toString()).catch(() => null)
     }
 
-    const fulfillInfo = fulfillMap.get(orderId.toLowerCase())
-
     upsert({
       orderId,
-      chain:            evmChain,
+      chain:            'evm-base',
       creator:          creator.toLowerCase(),
       recipient:        (recipient as string).replace('0x', ''),
       destinationChain: destChain,
@@ -269,121 +217,297 @@ async function indexEvmChain(
       currentPrice,
       deadline:         Number(deadline) * 1000,
       createdAt:        Number(createdAt) * 1000,
-      status:           fulfillInfo ? 'FULFILLED' : statusLabel(statusNum),
+      status:           statusLabel(statusNum),
       withStake:        withStake ?? false,
-      explorerUrl:      evmExplorer(evmChain, log.transactionHash ?? ''),
+      explorerUrl:      `https://sepolia.basescan.org/tx/${txHash}`,
     })
+  } catch (err) {
+    logger.warn({ err, orderId }, '[EVM] Failed to process order')
+  }
+}
+
+// ============================================================================
+// EVM — Initial backfill (getLogs)
+// ============================================================================
+
+const highWaterMark = new Map<string, bigint>()
+
+async function initialEvmBackfill(client: AnyClient, contract: `0x${string}`): Promise<void> {
+  const latest = await client.getBlockNumber()
+  const hwm    = highWaterMark.get('evm-base')
+  let fromBlock: bigint
+
+  if (hwm) {
+    fromBlock = hwm + 1n
+    if (fromBlock > latest) return
+  } else {
+    const floor = latest > BigInt(MAX_WINDOWS) * BLOCK_WINDOW
+      ? latest - BigInt(MAX_WINDOWS) * BLOCK_WINDOW
+      : 0n
+    fromBlock = floor
+  }
+
+  type RawLog = { args: Record<string, unknown>; transactionHash: `0x${string}` | null }
+  const createdLogs:   RawLog[] = []
+  const fulfilledLogs: RawLog[] = []
+
+  for (let from = fromBlock; from <= latest; from += BLOCK_WINDOW + 1n) {
+    const to = from + BLOCK_WINDOW > latest ? latest : from + BLOCK_WINDOW
+    await Promise.all([
+      client.getLogs({ address: contract, event: ORDER_CREATED_ABI,   fromBlock: from, toBlock: to })
+        .then((r: unknown[]) => createdLogs.push(...r as RawLog[]))
+        .catch(() => {}),
+      client.getLogs({ address: contract, event: ORDER_FULFILLED_ABI, fromBlock: from, toBlock: to })
+        .then((r: unknown[]) => fulfilledLogs.push(...r as RawLog[]))
+        .catch(() => {}),
+    ])
+  }
+
+  // Mark fulfilled orders
+  const fulfillMap = new Map<string, string>()
+  for (const log of fulfilledLogs) {
+    const orderId = (log.args['orderId'] as string | undefined)?.toLowerCase()
+    if (orderId) fulfillMap.set(orderId, log.transactionHash ?? '')
+  }
+
+  await Promise.allSettled(createdLogs.map(async (log) => {
+    const orderId = log.args['orderId'] as `0x${string}` | undefined
+    const creator = log.args['creator'] as string | undefined
+    if (!orderId || !creator) return
+    await processEvmOrder(client, contract, orderId, creator, log.transactionHash ?? '')
+    // Override status if fulfilled log found
+    const fulfillTx = fulfillMap.get(orderId.toLowerCase())
+    if (fulfillTx) {
+      const existing = store.get(orderId)
+      if (existing) upsert({ ...existing, status: 'FULFILLED', currentPrice: null })
+    }
   }))
 
-  // Also re-check existing OPEN orders on this chain to catch status changes
-  const openOrders = Array.from(store.values()).filter(
-    o => o.chain === evmChain && o.status === 'OPEN'
-  )
+  // Re-check existing OPEN orders to catch status changes
+  const openOrders = Array.from(store.values()).filter(o => o.chain === 'evm-base' && o.status === 'OPEN')
   await Promise.allSettled(openOrders.map(async (o) => {
     try {
       const raw = await client.readContract({
-        address: contract,
-        abi: ORDERS_FUNCTION_ABI,
-        functionName: 'orders',
-        args: [o.orderId as `0x${string}`],
-      }) as readonly [string, `0x${string}`, number, bigint, bigint, bigint, bigint, bigint, number]
-      const statusNum = raw[8]
+        address: contract, abi: ORDERS_FUNCTION_ABI, functionName: 'orders', args: [o.orderId as `0x${string}`],
+      }) as readonly unknown[]
+      const statusNum = raw[8] as number
       if (statusNum !== INTENT_BRIDGE.STATUS.OPEN) {
         upsert({ ...o, status: statusLabel(statusNum), currentPrice: null })
       }
     } catch { /* skip */ }
   }))
 
-  highWaterMark.set(hwKey, latest)
+  highWaterMark.set('evm-base', latest)
+  logger.debug({ orders: store.size, fromBlock: fromBlock.toString(), toBlock: latest.toString() }, '[EVM] Backfill complete')
 }
 
 // ============================================================================
-// Solana Indexer
+// EVM — WS subscription (eth_subscribe via viem webSocket transport)
 // ============================================================================
 
-const _intentAccountDef      = IntentBridgeIDL.accounts.find(a => a.name === 'Intent')!
-const SOL_DISCRIMINATOR       = Buffer.from(_intentAccountDef.discriminator)
-const _intentCoder            = new BorshAccountsCoder(IntentBridgeIDL as Parameters<typeof BorshAccountsCoder>[0])
+function startEvmWsSubscription(
+  wsUrl:      string,
+  contract:   `0x${string}`,
+  httpClient: AnyClient,
+): () => void {
+  const wsClient = createPublicClient({
+    chain:     baseSepolia,
+    transport: webSocket(wsUrl, { reconnect: { attempts: Infinity, delay: 3_000 } }),
+  })
 
-async function indexSolana(connection: Connection, programId: PublicKey): Promise<void> {
+  const unwatchCreated = wsClient.watchContractEvent({
+    address:      contract,
+    abi:          [ORDER_CREATED_ABI],
+    eventName:    'OrderCreated',
+    onLogs:       async (logs) => {
+      for (const log of logs) {
+        const { orderId, creator } = log.args as { orderId: `0x${string}`; creator: `0x${string}` }
+        logger.info({ orderId }, '[EVM WS] OrderCreated — processing')
+        await processEvmOrder(httpClient, contract, orderId, creator, log.transactionHash ?? '')
+      }
+    },
+    onError: (err) => logger.warn({ err }, '[EVM WS] OrderCreated error'),
+  })
+
+  const unwatchFulfilled = wsClient.watchContractEvent({
+    address:   contract,
+    abi:       [ORDER_FULFILLED_ABI],
+    eventName: 'OrderFulfilled',
+    onLogs:    (logs) => {
+      for (const log of logs) {
+        const { orderId } = log.args as { orderId: `0x${string}` }
+        logger.info({ orderId }, '[EVM WS] OrderFulfilled — updating status')
+        const existing = store.get(orderId)
+        if (existing) {
+          upsert({ ...existing, status: 'FULFILLED', currentPrice: null })
+        } else {
+          // Edge case: fulfilled before we indexed the created event
+          // Re-run backfill to pick it up
+          initialEvmBackfill(httpClient, contract).catch(() => {})
+        }
+      }
+    },
+    onError: (err) => logger.warn({ err }, '[EVM WS] OrderFulfilled error'),
+  })
+
+  logger.info({ wsUrl, contract }, '[EVM WS] Subscribed — OrderCreated + OrderFulfilled')
+  return () => { unwatchCreated(); unwatchFulfilled() }
+}
+
+// ============================================================================
+// Solana — Initial backfill (getProgramAccounts)
+// ============================================================================
+
+const _intentAccountDef = IntentBridgeIDL.accounts.find(a => a.name === 'Intent')!
+const SOL_DISCRIMINATOR  = Buffer.from(_intentAccountDef.discriminator)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _intentCoder       = new BorshAccountsCoder(IntentBridgeIDL as any)
+
+function decodeSolanaAccount(pubkey: PublicKey, data: Buffer): void {
+  try {
+    const decoded          = _intentCoder.decode('intent', data)
+    const intentId         = Buffer.from(decoded.intentId as number[]).toString('hex')
+    const creator          = new PublicKey(decoded.creator as Uint8Array).toBase58()
+    const recipient        = Buffer.from(decoded.recipient as number[]).toString('hex')
+    const destinationChain = decoded.destinationChain as number
+    const amount           = BigInt((decoded.amount as { toString(): string }).toString())
+    const startPrice       = BigInt((decoded.startPrice as { toString(): string }).toString())
+    const floorPrice       = BigInt((decoded.floorPrice as { toString(): string }).toString())
+    const deadline         = BigInt((decoded.deadline as { toString(): string }).toString())
+    const createdAt        = BigInt((decoded.createdAt as { toString(): string }).toString())
+    const statusByte       = decoded.status as number
+
+    const nowSec = BigInt(Math.floor(Date.now() / 1000))
+    let currentPrice: string | null = null
+    if (statusByte === INTENT_BRIDGE.STATUS.OPEN && nowSec < deadline) {
+      const elapsed       = nowSec - createdAt
+      const totalDuration = deadline - createdAt
+      const priceRange    = startPrice - floorPrice
+      if (totalDuration > 0n) {
+        currentPrice = (startPrice - (priceRange * elapsed) / totalDuration).toString()
+      }
+    }
+
+    let solStatus: 'OPEN' | 'FULFILLED' | 'CANCELLED' = 'CANCELLED'
+    if (statusByte === INTENT_BRIDGE.STATUS.OPEN)      solStatus = 'OPEN'
+    if (statusByte === INTENT_BRIDGE.STATUS.FULFILLED) solStatus = 'FULFILLED'
+
+    upsert({
+      orderId:          '0x' + intentId,
+      chain:            'solana',
+      creator,
+      recipient,
+      destinationChain,
+      amount:           (Number(amount) / LAMPORTS_PER_SOL).toFixed(9),
+      amountRaw:        amount.toString(),
+      startPrice:       startPrice.toString(),
+      floorPrice:       floorPrice.toString(),
+      currentPrice,
+      deadline:         Number(deadline) * 1000,
+      createdAt:        Number(createdAt) * 1000,
+      status:           solStatus,
+      withStake:        false,
+      explorerUrl:      `https://explorer.solana.com/address/${pubkey.toBase58()}?cluster=devnet`,
+    })
+  } catch { /* skip malformed account */ }
+}
+
+async function initialSolanaBackfill(connection: Connection, programId: PublicKey): Promise<void> {
   const accounts = await connection.getProgramAccounts(programId, {
     filters: [
       { memcmp: { offset: 0, bytes: SOL_DISCRIMINATOR.toString('base64'), encoding: 'base64' as const } },
     ],
   })
-
   for (const { pubkey, account } of accounts) {
-    try {
-      const decoded          = _intentCoder.decode('intent', account.data)
-      const intentId         = Buffer.from(decoded.intentId as number[]).toString('hex')
-      const creator          = new PublicKey(decoded.creator as Uint8Array).toBase58()
-      const recipient        = Buffer.from(decoded.recipient as number[]).toString('hex')
-      const destinationChain = decoded.destinationChain as number
-      const amount           = BigInt((decoded.amount as { toString(): string }).toString())
-      const startPrice       = BigInt((decoded.startPrice as { toString(): string }).toString())
-      const floorPrice       = BigInt((decoded.floorPrice as { toString(): string }).toString())
-      const deadline         = BigInt((decoded.deadline as { toString(): string }).toString())
-      const createdAt        = BigInt((decoded.createdAt as { toString(): string }).toString())
-      const statusByte       = decoded.status as number
-
-      const nowSec = BigInt(Math.floor(Date.now() / 1000))
-      let currentPrice: string | null = null
-      if (statusByte === INTENT_BRIDGE.STATUS.OPEN && nowSec < deadline) {
-        const elapsed       = nowSec - createdAt
-        const totalDuration = deadline - createdAt
-        const priceRange    = startPrice - floorPrice
-        if (totalDuration > 0n) {
-          currentPrice = (startPrice - (priceRange * elapsed) / totalDuration).toString()
-        }
-      }
-
-      let solStatus: 'OPEN' | 'FULFILLED' | 'CANCELLED' = 'CANCELLED'
-      if (statusByte === INTENT_BRIDGE.STATUS.OPEN)      solStatus = 'OPEN'
-      if (statusByte === INTENT_BRIDGE.STATUS.FULFILLED) solStatus = 'FULFILLED'
-
-      upsert({
-        orderId:          '0x' + intentId,
-        chain:            'solana',
-        creator,
-        recipient,
-        destinationChain,
-        amount:           (Number(amount) / LAMPORTS_PER_SOL).toFixed(9),
-        amountRaw:        amount.toString(),
-        startPrice:       startPrice.toString(),
-        floorPrice:       floorPrice.toString(),
-        currentPrice,
-        deadline:         Number(deadline) * 1000,
-        createdAt:        Number(createdAt) * 1000,
-        status:           solStatus,
-        explorerUrl:      `https://explorer.solana.com/address/${pubkey.toBase58()}?cluster=devnet`,
-      })
-    } catch { /* skip malformed account */ }
+    decodeSolanaAccount(pubkey, account.data)
   }
+  logger.debug({ accounts: accounts.length }, '[Solana] Backfill complete')
 }
 
 // ============================================================================
-// Main poll loop
+// Solana — WS subscription (onProgramAccountChange via @solana/web3.js)
 // ============================================================================
 
-let isRunning   = false
+function startSolanaWsSubscription(
+  connection: Connection,
+  programId:  PublicKey,
+): () => Promise<void> {
+  const subId = connection.onProgramAccountChange(
+    programId,
+    ({ accountId, accountInfo }: { accountId: PublicKey; accountInfo: AccountInfo<Buffer> }) => {
+      logger.debug({ account: accountId.toBase58() }, '[Solana WS] Account changed — decoding')
+      decodeSolanaAccount(accountId, accountInfo.data)
+    },
+    'confirmed',
+    [{ memcmp: { offset: 0, bytes: SOL_DISCRIMINATOR.toString('base64'), encoding: 'base64' as const } }],
+  )
+
+  logger.info({ program: programId.toBase58() }, '[Solana WS] Subscribed — onProgramAccountChange')
+  return async () => { await connection.removeProgramAccountChangeListener(subId) }
+}
+
+// ============================================================================
+// HTTP polling fallback
+// ============================================================================
+
+async function poll(client: AnyClient, contract: `0x${string}`, connection: Connection, programId: PublicKey): Promise<void> {
+  lastPollAt = Date.now()
+  await Promise.allSettled([
+    initialEvmBackfill(client, contract),
+    initialSolanaBackfill(connection, programId),
+  ])
+  logger.debug({ orders: store.size }, '[Indexer] Poll complete')
+}
+
+// ============================================================================
+// Lifecycle
+// ============================================================================
+
+let isRunning  = false
 let lastPollAt: number | null = null
 let pollTimer:  ReturnType<typeof setTimeout> | null = null
+const cleanupFns: Array<() => void | Promise<void>> = []
 
-async function poll(): Promise<void> {
-  lastPollAt = Date.now()
+export async function startIndexer(): Promise<void> {
+  if (isRunning) return
+  isRunning = true
 
-  const baseClient = createPublicClient({ chain: baseSepolia, transport: http(config.intent.evm.baseSepolia.rpcUrl) })
-  const fujiClient = createPublicClient({ chain: avalancheFuji, transport: http(config.intent.evm.fuji.rpcUrl) })
+  const { wsUrl, rpcUrl, contract } = config.intent.evm.baseSepolia
+  const httpClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) })
   const solConn    = new Connection(config.solana.rpcUrl, 'confirmed')
   const solProgram = new PublicKey(config.intent.solana.programId)
 
-  await Promise.allSettled([
-    indexEvmChain('evm-base', baseClient, config.intent.evm.baseSepolia.contract),
-    indexEvmChain('evm-fuji', fujiClient, config.intent.evm.fuji.contract),
-    indexSolana(solConn, solProgram),
-  ])
+  if (wsUrl) {
+    logger.info({ contract }, 'Intent indexer: WS mode')
 
-  logger.debug({ orders: store.size }, 'Indexer poll complete')
+    // Subscribe first — buffers any events that arrive during backfill
+    const cleanupEvm = startEvmWsSubscription(wsUrl, contract, httpClient)
+    const cleanupSol = startSolanaWsSubscription(solConn, solProgram)
+    cleanupFns.push(cleanupEvm, cleanupSol)
+
+    // Then backfill historical orders
+    await Promise.allSettled([
+      initialEvmBackfill(httpClient, contract),
+      initialSolanaBackfill(solConn, solProgram),
+    ])
+    logger.info({ orders: store.size }, 'Intent indexer: backfill complete, WS streaming active')
+  } else {
+    logger.info('Intent indexer: HTTP polling mode (set BASE_SEPOLIA_WS_URL for real-time)')
+    const run = async () => {
+      try { await poll(httpClient, contract, solConn, solProgram) }
+      catch (err) { logger.error({ err }, 'Indexer poll failed') }
+      finally { if (isRunning) pollTimer = setTimeout(run, POLL_INTERVAL_MS) }
+    }
+    run()
+  }
+}
+
+export function stopIndexer(): void {
+  isRunning = false
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  for (const fn of cleanupFns) { void fn() }
+  cleanupFns.length = 0
+  logger.info('Intent indexer stopped')
 }
 
 // ── Re-export type used by SSE route ─────────────────────────────────────────
@@ -395,30 +519,4 @@ export type OrderUpdateEvent = {
   amount:           string
   explorerUrl:      string
   destinationChain: number
-}
-
-export function startIndexer(): void {
-  if (isRunning) return
-  isRunning = true
-  logger.info('Intent indexer starting')
-
-  const run = async () => {
-    try {
-      await poll()
-    } catch (err) {
-      logger.error({ err }, 'Indexer poll failed')
-    } finally {
-      if (isRunning) {
-        pollTimer = setTimeout(run, POLL_INTERVAL_MS)
-      }
-    }
-  }
-
-  run()
-}
-
-export function stopIndexer(): void {
-  isRunning = false
-  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
-  logger.info('Intent indexer stopped')
 }
