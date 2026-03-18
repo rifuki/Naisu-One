@@ -153,32 +153,21 @@ const SwapPage: React.FC = () => {
 
           {/* You send */}
           <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 focus-within:border-primary/30 transition-all">
-            <div className="flex justify-between items-center mb-2">
+            {/* Row 1: label + address */}
+            <div className="flex justify-between items-center mb-3">
               <label className="text-xs font-medium text-slate-400">You send</label>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                {ethBalanceFmt !== null && (
-                  <span className="flex items-center gap-1">
-                    Balance: {ethBalanceFmt} ETH
-                    <button
-                      type="button"
-                      onClick={() => setAmount(ethBalanceRaw)}
-                      className="text-primary hover:text-primary/80 font-bold uppercase ml-1 transition-colors"
-                    >
-                      Max
-                    </button>
-                  </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-blue-400/80 inline-block" />
-                  Base Sepolia
+              {evmAddress && (
+                <span className="text-xs text-slate-500 font-mono">
+                  {evmAddress.slice(0, 6)}…{evmAddress.slice(-5)}
                 </span>
-              </div>
+              )}
             </div>
+            {/* Row 2: amount input + token pill */}
             <div className="flex items-center gap-3">
               <input
                 ref={inputRef}
                 className="bg-transparent border-none p-0 text-3xl font-medium text-white placeholder-slate-600 focus:ring-0 w-full outline-none"
-                placeholder="0.0"
+                placeholder="0"
                 type="text"
                 inputMode="decimal"
                 value={amount}
@@ -188,16 +177,39 @@ const SwapPage: React.FC = () => {
                 }}
                 autoFocus
               />
-              <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-full py-1.5 pl-2 pr-3 shrink-0">
-                <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-indigo-300">Ξ</span>
+              {/* Token pill — Relay style: icon | TOKEN\nchain */}
+              <div className="flex items-center gap-2.5 bg-surface border border-white/10 rounded-xl py-2 pl-2.5 pr-3 shrink-0">
+                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-indigo-300">Ξ</span>
                 </div>
-                <span className="font-bold text-white text-sm">ETH</span>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-bold text-white text-sm">ETH</span>
+                  <span className="text-[10px] text-slate-500">Base Sepolia</span>
+                </div>
               </div>
             </div>
-            {quote?.fromUsd && hasValidAmount && (
-              <p className="text-xs text-slate-500 mt-1">{fmtUsd(quote.fromUsd * parseFloat(amount))}</p>
-            )}
+            {/* Row 3: USD value + balance */}
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-xs text-slate-600">
+                {quote?.fromUsd && hasValidAmount
+                  ? fmtUsd(quote.fromUsd * parseFloat(amount))
+                  : '\u00a0'}
+              </span>
+              {ethBalanceFmt !== null ? (
+                <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                  Balance: {ethBalanceFmt}
+                  <button
+                    type="button"
+                    onClick={() => setAmount(ethBalanceRaw)}
+                    className="text-[10px] font-bold text-primary hover:text-primary/70 uppercase transition-colors"
+                  >
+                    Max
+                  </button>
+                </span>
+              ) : (
+                <span className="text-xs text-slate-600">Balance: —</span>
+              )}
+            </div>
           </div>
 
           {/* Divider arrow */}
@@ -209,40 +221,54 @@ const SwapPage: React.FC = () => {
 
           {/* You receive */}
           <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5 transition-all">
-            <div className="flex justify-between items-center mb-2">
+            {/* Row 1: label + solana address */}
+            <div className="flex justify-between items-center mb-3">
               <label className="text-xs font-medium text-slate-400">You receive</label>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                {solBalance !== null && (
-                  <span>Balance: {solBalance} {withStake ? 'mSOL*' : 'SOL'}</span>
-                )}
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-purple-400/80 inline-block" />
-                  Solana Devnet
+              {solanaAddress ? (
+                <span className="text-xs text-slate-500 font-mono">
+                  {solanaAddress.slice(0, 6)}…{solanaAddress.slice(-5)}
                 </span>
-              </div>
+              ) : (
+                <span className="text-xs text-amber-500/80">wallet not connected</span>
+              )}
             </div>
+            {/* Row 2: estimated amount + token pill */}
             <div className="flex items-center gap-3">
               <div className="text-3xl font-medium w-full">
                 {isQuoteLoading ? (
-                  <span className="text-slate-600 text-2xl">Fetching...</span>
+                  <span className="text-slate-600 text-2xl animate-pulse">…</span>
                 ) : quote && hasValidAmount ? (
                   <span className="text-white">{parseFloat(quote.estimatedReceive).toFixed(4)}</span>
                 ) : (
-                  <span className="text-slate-600">0.0</span>
+                  <span className="text-slate-600">0</span>
                 )}
               </div>
-              <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-full py-1.5 pl-2 pr-3 shrink-0">
-                <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-purple-300">{withStake ? 'm' : '◎'}</span>
+              {/* Token pill */}
+              <div className="flex items-center gap-2.5 bg-surface border border-white/10 rounded-xl py-2 pl-2.5 pr-3 shrink-0">
+                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-purple-300">{withStake ? 'm' : '◎'}</span>
                 </div>
-                <span className="font-bold text-white text-sm">{withStake ? 'mSOL' : 'SOL'}</span>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-bold text-white text-sm">{withStake ? 'mSOL' : 'SOL'}</span>
+                  <span className="text-[10px] text-slate-500">Solana Devnet</span>
+                </div>
               </div>
             </div>
-            {quote?.toUsd && hasValidAmount && quote.rate && (
-              <p className="text-xs text-slate-500 mt-1">
-                ≈ {fmtUsd(quote.toUsd * parseFloat(quote.estimatedReceive))}
-              </p>
-            )}
+            {/* Row 3: USD value + balance */}
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-xs text-slate-600">
+                {quote?.toUsd && hasValidAmount && quote.estimatedReceive
+                  ? `≈ ${fmtUsd(quote.toUsd * parseFloat(quote.estimatedReceive))}`
+                  : '\u00a0'}
+              </span>
+              {solBalance !== null ? (
+                <span className="text-xs text-slate-500">
+                  Balance: {solBalance} {withStake ? 'mSOL' : 'SOL'}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-600">Balance: —</span>
+              )}
+            </div>
           </div>
 
           {/* Quote info */}
