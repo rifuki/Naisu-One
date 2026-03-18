@@ -448,6 +448,9 @@ export default function ActiveIntents() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<ChainType>('evm');
 
+  const [optimisticCount, setOptimisticCount] = useState(0);
+  const [bounceBadge, setBounceBadge] = useState(false);
+
   const { address: evmAddress } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const { connected: solConnected } = useWallet();
@@ -469,6 +472,25 @@ export default function ActiveIntents() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 5000);
   };
+
+  // ── Optimistic Orders Sync ──────────────────────────────────────────────────
+  const prevOrdersCount = React.useRef(0);
+  useEffect(() => {
+    if (evmOrders.length + solanaOrders.length > prevOrdersCount.current) {
+      setOptimisticCount(0);
+    }
+    prevOrdersCount.current = evmOrders.length + solanaOrders.length;
+  }, [evmOrders.length, solanaOrders.length]);
+
+  useEffect(() => {
+    const handleOptimistic = () => {
+      setOptimisticCount(c => c + 1);
+      setBounceBadge(true);
+      setTimeout(() => setBounceBadge(false), 1000);
+    };
+    window.addEventListener('optimistic-intent-created', handleOptimistic);
+    return () => window.removeEventListener('optimistic-intent-created', handleOptimistic);
+  }, []);
 
   // ticker untuk auction countdown — tetap di sini
   // (useIntentOrders handle fetch + polling)
@@ -512,7 +534,8 @@ export default function ActiveIntents() {
   }, [allOrders]);
 
   const filteredOrders = activeTab === 'evm' ? evmOrders : solanaOrders;
-  const totalActive = stats.open + stats.expired;
+  const realTotalActive = stats.open + stats.expired;
+  const displayCount = realTotalActive + optimisticCount;
   const isLoading = evmLoading || solanaLoading;
 
   if (!evmAddress && !solConnected) return null;
@@ -543,18 +566,19 @@ export default function ActiveIntents() {
         className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl
           bg-[#0f1117] border border-white/10 shadow-2xl hover:border-primary/40 
           transition-all duration-300 group
-          ${stats.open > 0 ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-[#0c1211] shadow-[0_0_20px_rgba(13,242,223,0.4)] animate-pulse' : ''}
+          ${displayCount > 0 ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-[#0c1211] shadow-[0_0_20px_rgba(13,242,223,0.4)] animate-pulse' : ''}
         `}
       >
-        <span className={`material-symbols-outlined text-xl text-primary transition-transform ${stats.open > 0 ? 'group-hover:-translate-y-1' : ''}`}>
+        <span className={`material-symbols-outlined text-xl text-primary transition-transform ${displayCount > 0 ? 'group-hover:-translate-y-1' : ''}`}>
           receipt_long
         </span>
         <span className="text-sm font-semibold text-white hidden sm:block">Intents</span>
-        {totalActive > 0 && (
-          <span className={`flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold
+        {displayCount > 0 && (
+          <span className={`flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold transition-all
             ${stats.expired > 0 ? 'bg-orange-500 text-black' : 'bg-primary text-black'}
+            ${bounceBadge ? 'scale-150 shadow-lg !bg-white' : ''}
           `}>
-            {totalActive}
+            {displayCount}
           </span>
         )}
       </button>

@@ -18,6 +18,7 @@ export default function IntentPage() {
   const initialIntentRef = useRef(location.state?.initialIntent as string | undefined);
   const initialSentRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isTxSent, setIsTxSent] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>>([]);
 
@@ -87,7 +88,6 @@ export default function IntentPage() {
           chainId: tx.chainId,
         });
 
-        setPendingTx(undefined);
         setTxStatus(null);
 
         if (hash) {
@@ -95,6 +95,14 @@ export default function IntentPage() {
             ...prev,
             { hash, chainId: tx.chainId, msgIdx: currentMsgIdxRef.current, submittedAt: Date.now() },
           ]);
+          setIsTxSent(true);
+          setTimeout(() => {
+            setPendingTx(undefined);
+            setIsTxSent(false);
+            window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
+          }, 600);
+        } else {
+          setPendingTx(undefined);
         }
       } catch (err) {
         setTxStatus(null);
@@ -146,7 +154,7 @@ export default function IntentPage() {
         />
 
         {pendingTx && !isLoading && (
-          <div className="absolute bottom-32 left-0 right-0 z-30">
+          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isTxSent ? 'animate-throw-to-widget pointer-events-none' : ''}`}>
             <TransactionReviewCard
               pendingTx={pendingTx}
               txStatus={txStatus}
