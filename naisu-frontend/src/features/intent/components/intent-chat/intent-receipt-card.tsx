@@ -117,7 +117,12 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
     ? activeIntent.winnerSolver
     : storedWinnerSolver;
   
-  const isComplete = currentProgress.every(p => p.done);
+  // Check if this receipt was already fulfilled (stored data shows completion)
+  // This handles the case when user revisits a completed session
+  const wasFulfilled = storedFillPrice || storedWinnerSolver || data.fulfilledAt || 
+    progress.every(p => p.done); // If stored progress already complete
+  
+  const isComplete = currentProgress.every(p => p.done) || wasFulfilled;
   const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
   const startSol = formatLamports(intent.startPrice);
