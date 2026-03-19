@@ -1,3 +1,4 @@
+import React from 'react';
 import type { ChatSession } from '@/hooks/useChatSessions';
 
 interface ChatSidebarProps {
@@ -8,6 +9,20 @@ interface ChatSidebarProps {
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onOpenSettings: () => void;
+  onExport?: () => void;
+  onImport?: (file: File) => Promise<{ success: boolean; count: number; error?: string }>;
+  onClearAll?: () => void;
+}
+
+function shortenSessionId(id: string): string {
+  if (id.length <= 12) return id;
+  // For UUID format, show first 8 and last 4
+  if (id.includes('-')) {
+    const parts = id.split('-');
+    return `${parts[0]!}…${parts[parts.length - 1]!.slice(-4)}`;
+  }
+  // For other formats, show first 8 and last 4
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
 function relativeTime(ts: number): string {
@@ -43,44 +58,67 @@ export function ChatSidebar({
   onSwitchSession,
   onDeleteSession,
   onOpenSettings,
+  onExport,
+  onImport,
+  onClearAll,
 }: ChatSidebarProps) {
   const { today, yesterday, older } = groupSessions(sessions);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const SessionItem = ({ s }: { s: ChatSession }) => (
-    <div
-      className={`w-full flex items-center pr-1.5 rounded-lg transition-colors group ${
-        s.id === activeSessionId
-          ? 'bg-white/10 text-white'
-          : `text-slate-400 ${disabled ? '' : 'hover:bg-white/5 hover:text-slate-200'} ${disabled ? 'opacity-50' : ''}`
-      }`}
-    >
-      <button
-        onClick={() => onSwitchSession(s.id)}
-        disabled={disabled}
-        title={s.title}
-        className={`flex-1 flex items-center gap-2 px-2.5 py-2 overflow-hidden text-left ${disabled ? 'cursor-not-allowed' : ''}`}
-      >
-        <span className="material-symbols-outlined text-[15px] shrink-0 opacity-60">chat_bubble</span>
-        <span className="text-xs font-medium truncate">{s.title}</span>
-      </button>
-      
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDeleteSession(s.id);
-        }}
-        disabled={disabled}
-        title="Delete chat"
-        className={`p-1.5 transition-all shrink-0 flex items-center justify-center rounded-md ${
-          disabled 
-            ? 'opacity-0 text-slate-500 cursor-not-allowed' 
-            : 'opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 text-slate-500'
+  const SessionItem = ({ s }: { s: ChatSession }) => {
+    const hasIntents = (s.intentCount || 0) > 0;
+    const allFulfilled = hasIntents && (s.fulfilledCount || 0) >= (s.intentCount || 0);
+    
+    return (
+      <div
+        className={`w-full flex items-center pr-1.5 rounded-lg transition-colors group ${
+          s.id === activeSessionId
+            ? 'bg-white/10 text-white'
+            : `text-slate-400 ${disabled ? '' : 'hover:bg-white/5 hover:text-slate-200'} ${disabled ? 'opacity-50' : ''}`
         }`}
       >
-        <span className="material-symbols-outlined text-[14px]">delete</span>
-      </button>
-    </div>
-  );
+        <button
+          onClick={() => onSwitchSession(s.id)}
+          disabled={disabled}
+          title={`${s.title}${hasIntents ? ` • ${s.intentCount} intent${s.intentCount !== 1 ? 's' : ''}` : ''}`}
+          className={`flex-1 flex items-center gap-2 px-2.5 py-2 overflow-hidden text-left ${disabled ? 'cursor-not-allowed' : ''}`}
+        >
+          <span className="material-symbols-outlined text-[15px] shrink-0 opacity-60">chat_bubble</span>
+          <span className="text-xs font-medium truncate flex-1">{s.title}</span>
+          
+          {/* Intent count badge */}
+          {hasIntents && (
+            <span 
+              className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${
+                allFulfilled 
+                  ? 'bg-green-500/20 text-green-400' 
+                  : 'bg-primary/20 text-primary'
+              }`}
+              title={`${s.fulfilledCount || 0}/${s.intentCount || 0} fulfilled`}
+            >
+              {s.intentCount}
+            </span>
+          )}
+        </button>
+        
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteSession(s.id);
+          }}
+          disabled={disabled}
+          title="Delete chat"
+          className={`p-1.5 transition-all shrink-0 flex items-center justify-center rounded-md ${
+            disabled 
+              ? 'opacity-0 text-slate-500 cursor-not-allowed' 
+              : 'opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 text-slate-500'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[14px]">delete</span>
+        </button>
+      </div>
+    );
+  };
 
   const Section = ({ label, items }: { label: string; items: ChatSession[] }) =>
     items.length === 0 ? null : (
@@ -92,9 +130,41 @@ export function ChatSidebar({
       </div>
     );
 
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onImport) return;
+    
+    const result = await onImport(file);
+    if (result.success) {
+      alert(result.count > 0 ? `Imported ${result.count} sessions` : 'No new sessions to import');
+    } else {
+      alert(`Import failed: ${result.error}`);
+    }
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Find active session for showing its ID
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+
   return (
     <div className="hidden md:flex flex-col w-[240px] h-full bg-[#070a09] border-r border-white/5 shrink-0">
       <div className="p-3 flex flex-col gap-3 flex-1 min-h-0">
+        {/* Session ID display */}
+        {activeSession && (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5" title={`Session: ${activeSessionId}`}>
+            <span className="material-symbols-outlined text-[12px] text-slate-500">tag</span>
+            <span className="text-[10px] font-mono text-slate-400 truncate">{shortenSessionId(activeSessionId)}</span>
+            <button
+              onClick={() => navigator.clipboard.writeText(activeSessionId)}
+              className="ml-auto text-slate-600 hover:text-slate-300 transition-colors"
+              title="Copy session ID"
+            >
+              <span className="material-symbols-outlined text-[11px]">content_copy</span>
+            </button>
+          </div>
+        )}
+
         {/* New Chat Button */}
         <button
           onClick={onNewChat}
@@ -127,7 +197,7 @@ export function ChatSidebar({
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-white/5 shrink-0">
+      <div className="p-3 border-t border-white/5 shrink-0 flex flex-col gap-2">
         <button
           onClick={onOpenSettings}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
@@ -137,6 +207,52 @@ export function ChatSidebar({
           </div>
           <span className="text-sm font-medium">Agent Settings</span>
         </button>
+        
+        {/* Export/Import buttons */}
+        <div className="flex items-center gap-2">
+          {onExport && (
+            <button
+              onClick={onExport}
+              title="Export all chats"
+              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
+            >
+              <span className="material-symbols-outlined text-[14px]">download</span>
+              Export
+            </button>
+          )}
+          {onImport && (
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Import chats"
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">upload</span>
+                Import
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                className="hidden"
+              />
+            </>
+          )}
+          {onClearAll && sessions.length > 1 && (
+            <button
+              onClick={() => {
+                if (confirm('Clear ALL chat history? This cannot be undone.')) {
+                  onClearAll();
+                }
+              }}
+              title="Clear all"
+              className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-500 hover:text-red-400 text-xs transition-colors"
+            >
+              <span className="material-symbols-outlined text-[14px]">delete_sweep</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

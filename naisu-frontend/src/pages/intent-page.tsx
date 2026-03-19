@@ -15,6 +15,19 @@ import type { WidgetConfirmPayload } from '@/features/intent/components/widgets'
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
 const PENDING_INTENT_KEY = 'naisu_pending_signed_intent';
 
+// Storage key for fulfilled intent state per session
+const FULFILLED_STATE_KEY = (sessionId: string) => `naisu_fulfilled_${sessionId}`;
+
+interface FulfilledState {
+  intentFulfilled: boolean;
+  fillPrice?: string;
+  winnerSolver?: string;
+  signedAt?: number;
+  fulfilledAt?: number;
+  signedIntentSnapshot?: SignIntentParams;
+  intentProgress?: ProgressStep[];  // Persist progress steps
+}
+
 interface ProgressStep {
   key: string
   label: string
@@ -63,9 +76,62 @@ export default function IntentPage() {
 
   const { 
     sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
+    exportSessions, importSessions, clearAllSessions, updateIntentCount,
     messages, isLoading, error, sendMessage, addMessage, pendingTx, setPendingTx,
     pendingGaslessIntent, setPendingGaslessIntent
   } = useGlobalAgent();
+
+  // Load persisted fulfilled state when session changes
+  useEffect(() => {
+    if (!activeSessionId) return;
+    try {
+      const saved = localStorage.getItem(FULFILLED_STATE_KEY(activeSessionId));
+      if (saved) {
+        const state: FulfilledState = JSON.parse(saved);
+        setIntentFulfilled(state.intentFulfilled);
+        setFillPrice(state.fillPrice);
+        setWinnerSolver(state.winnerSolver);
+        setSignedAt(state.signedAt);
+        setFulfilledAt(state.fulfilledAt);
+        setSignedIntentSnapshot(state.signedIntentSnapshot);
+        // Restore progress steps if available
+        if (state.intentProgress) {
+          setIntentProgress(state.intentProgress);
+        }
+      } else {
+        // Reset state if no persisted data for this session
+        setIntentFulfilled(false);
+        setFillPrice(undefined);
+        setWinnerSolver(undefined);
+        setSignedAt(undefined);
+        setFulfilledAt(undefined);
+        setSignedIntentSnapshot(undefined);
+        setIntentProgress(null);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }, [activeSessionId]);
+
+  // Persist fulfilled state whenever it changes
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (!intentFulfilled && !signedIntentSnapshot) {
+      // Clean up storage if no state to save
+      try { localStorage.removeItem(FULFILLED_STATE_KEY(activeSessionId)); } catch { /* ignore */ }
+      return;
+    }
+    const state: FulfilledState = {
+      intentFulfilled,
+      fillPrice,
+      winnerSolver,
+      signedAt,
+      fulfilledAt,
+      signedIntentSnapshot,
+      intentProgress,
+    };
+    try { localStorage.setItem(FULFILLED_STATE_KEY(activeSessionId), JSON.stringify(state)); } catch { /* quota */ }
+  }, [activeSessionId, intentFulfilled, fillPrice, winnerSolver, signedAt, fulfilledAt, signedIntentSnapshot, intentProgress]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -78,7 +144,13 @@ export default function IntentPage() {
       if (event.status === 'FULFILLED') {
         // Clear persisted signed intent — it has been fulfilled on-chain
         try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
+        
+        // Update intent count for stats
+        if (activeSessionId) {
+          updateIntentCount(activeSessionId, true);
+        }
         // Mark all steps done and set fulfilled flag — card stays permanently as receipt
+        // Note: useEffect will auto-save to localStorage when these states change
         setIntentProgress(prev => prev
           ? prev.map(s => ({ ...s, done: true, active: false }))
           : prev
@@ -228,6 +300,26 @@ export default function IntentPage() {
 
   /** New Chat: create a new session, stay on /intent */
   const handleNewChat = useCallback(() => {
+    // Check if current session has messages or fulfillment state
+    const hasMessages = messages.length > 0;
+    const hasFulfillmentState = intentFulfilled || signedIntentSnapshot;
+    const isEffectivelyEmpty = !hasMessages && !hasFulfillmentState;
+    
+    // If session is effectively empty (no messages, no fulfillment), just reset without creating new session
+    if (isEffectivelyEmpty && activeSession) {
+      setInputValue('');
+      setSubmittedTxs([]);
+      setPendingTx(undefined);
+      setPendingGaslessIntent(undefined);
+      setGaslessStatus(null);
+      setIsGaslessFailed(false);
+      setIsGaslessSuccess(false);
+      setIntentProgress(null);
+      trackedIntentIdRef.current = null;
+      currentMsgIdxRef.current = 0;
+      return;
+    }
+    
     setInputValue('');
     setSubmittedTxs([]);
     setPendingTx(undefined);
@@ -245,7 +337,7 @@ export default function IntentPage() {
     trackedIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
     createSession();
-  }, [createSession, setPendingTx, setPendingGaslessIntent]);
+  }, [createSession, setPendingTx, setPendingGaslessIntent, messages.length, intentFulfilled, signedIntentSnapshot, activeSession]);
 
   /** Handle widget confirm — agent sent a quote_review widget, user confirmed selections */
   const handleWidgetConfirm = useCallback((payload: WidgetConfirmPayload) => {
@@ -305,6 +397,11 @@ export default function IntentPage() {
       trackedIntentIdRef.current = result.submissionResult.intentId;
       setSignedIntentSnapshot(pendingGaslessIntent);
       setSignedAt(Date.now());
+      
+      // Update intent count (signed but not fulfilled yet)
+      if (activeSessionId) {
+        updateIntentCount(activeSessionId, false);
+      }
       setPendingGaslessIntent(undefined);
       setGaslessStatus(null);
       setIsGaslessSuccess(false);
@@ -381,6 +478,9 @@ export default function IntentPage() {
         onSwitchSession={switchSession}
         onDeleteSession={deleteSession}
         onOpenSettings={() => setShowSettings(true)}
+        onExport={exportSessions}
+        onImport={importSessions}
+        onClearAll={clearAllSessions}
       />
 
       <div className="flex-1 flex flex-col relative overflow-hidden">

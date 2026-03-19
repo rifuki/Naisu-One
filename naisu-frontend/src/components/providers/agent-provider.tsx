@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useAccount } from 'wagmi';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
-import { useChatSessions, type ChatSession } from '@/hooks/useChatSessions';
+import { useChatSessions, type ChatSession, type ExportedData } from '@/hooks/useChatSessions';
 import { useAgent, type AgentMessage, type TxData, type GaslessIntentData } from '@/hooks/useAgent';
 
 interface AgentContextValue {
@@ -11,6 +11,9 @@ interface AgentContextValue {
   createSession: () => ChatSession;
   switchSession: (id: string) => void;
   deleteSession: (id: string) => void;
+  exportSessions: () => void;
+  importSessions: (file: File) => Promise<{ success: boolean; count: number; error?: string }>;
+  clearAllSessions: () => void;
   messages: AgentMessage[];
   isLoading: boolean;
   error: string | null;
@@ -20,6 +23,7 @@ interface AgentContextValue {
   setPendingTx: (tx?: TxData) => void;
   pendingGaslessIntent?: GaslessIntentData;
   setPendingGaslessIntent: (intent?: GaslessIntentData) => void;
+  updateIntentCount: (sessionId: string, fulfilled: boolean) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -35,7 +39,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     createSession,
     switchSession,
     updateActiveSession,
-    deleteSession
+    deleteSession,
+    exportSessions,
+    importSessions,
+    clearAllSessions,
+    updateIntentCount,
   } = useChatSessions(address ?? 'guest');
 
   const {
@@ -55,9 +63,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       messages: activeSession?.messages ?? [],
       backendSessionId: activeSession?.backendSessionId,
       onMessagesChange: (msgs, backendSessionId) => {
-        // Auto-generate title from first user message
-        const title = msgs.find(m => m.role === 'user')?.content.slice(0, 40) ?? 'New Chat';
-        updateActiveSession({ messages: msgs, backendSessionId, title });
+        // Auto-generate title is now handled in useChatSessions.updateActiveSession
+        updateActiveSession({ messages: msgs, backendSessionId });
       },
     }
   );
@@ -66,8 +73,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     <AgentContext.Provider 
       value={{
         sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
+        exportSessions, importSessions, clearAllSessions,
         messages, isLoading, error, sendMessage, addMessage, pendingTx, setPendingTx,
-        pendingGaslessIntent, setPendingGaslessIntent
+        pendingGaslessIntent, setPendingGaslessIntent,
+        updateIntentCount,
       }}
     >
       {children}

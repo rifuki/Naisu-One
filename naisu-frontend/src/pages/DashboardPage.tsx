@@ -18,7 +18,8 @@ const DashboardPage: React.FC = () => {
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [processStatus, setProcessStatus] = useState<'idle' | 'processing' | 'success'>('idle');
 
-  // Simple mock calculation logic
+  // ⚠️ MOCK CALCULATION - Hardcoded rates for demo only
+  // Real app should fetch from Pyth oracle or price API
   useEffect(() => {
       if(!amount) {
           setCalculatedAmount('');
@@ -27,12 +28,11 @@ const DashboardPage: React.FC = () => {
       const val = parseFloat(amount);
       if(isNaN(val)) return;
       
-      // Mock exchange rate variance
+      // HARDCODED MOCK RATES - NOT REAL PRICES
       const rate = fromNetwork.id === 'eth' ? 2800 : (fromNetwork.id === 'sui' ? 1.5 : 1);
       const toRate = toNetwork.id === 'eth' ? 2800 : (toNetwork.id === 'sui' ? 1.5 : 1);
       
       const converted = (val * rate) / toRate;
-      // Subtract "fee"
       const afterFee = converted * 0.995; 
       
       setCalculatedAmount(afterFee.toFixed(4));
@@ -67,6 +67,7 @@ const DashboardPage: React.FC = () => {
   };
 
   const handleConfirm = () => {
+      // ⚠️ SIMULATED TRANSACTION - No real blockchain interaction
       setProcessStatus('processing');
       setTimeout(() => {
           setProcessStatus('success');
@@ -80,6 +81,23 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
+      {/* ⚠️ MOCK DATA WARNING */}
+      <div className="mb-8 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-amber-400 text-xl">warning</span>
+          <div>
+            <h3 className="text-amber-400 font-semibold mb-1">Demo Page - Mock Data</h3>
+            <p className="text-amber-300/80 text-sm">
+              This page uses <strong>hardcoded exchange rates</strong> (ETH=$2800) and <strong>simulated transactions</strong> for demo purposes only. 
+              No real blockchain interactions occur here.
+            </p>
+            <a href="#/intent" className="inline-flex items-center gap-1.5 mt-2 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors">
+              Use Intent Agent for real transactions <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col items-center mb-12">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold uppercase tracking-wider mb-4">
           <span className="relative flex h-2 w-2">

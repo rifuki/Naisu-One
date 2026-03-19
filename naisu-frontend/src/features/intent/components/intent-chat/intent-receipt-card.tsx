@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+// Receipt card - shows final state, no animations
 
 interface ProgressStep {
   key: string;
@@ -55,27 +55,9 @@ interface IntentReceiptCardProps {
 
 export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
   const { intent, progress, fillPrice, winnerSolver } = data;
-  const [currentProgress, setCurrentProgress] = useState(progress);
-  
-  // Simulate progress updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentProgress(prev => {
-        const lastDoneIndex = prev.map(p => p.done).lastIndexOf(true);
-        if (lastDoneIndex < prev.length - 1 && !prev[lastDoneIndex + 1].done) {
-          const next = [...prev];
-          next[lastDoneIndex + 1] = { ...next[lastDoneIndex + 1], done: true };
-          if (lastDoneIndex + 2 < next.length) {
-            next[lastDoneIndex + 2] = { ...next[lastDoneIndex + 2], active: true };
-          }
-          return next;
-        }
-        return prev;
-      });
-    }, 2000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  // Use progress directly - no animation for receipts
+  // Receipts show the final/historical state, not live simulation
+  const currentProgress = progress;
   
   const isComplete = currentProgress.every(p => p.done);
   const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;

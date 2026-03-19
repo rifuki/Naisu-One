@@ -11,6 +11,12 @@ interface SignIntentMessageProps {
   onConfirm: () => void;
   onDismiss: () => void;
   timestamp?: number;
+  // Fulfilled state props
+  fulfilled?: boolean;
+  fillPrice?: string;
+  winnerSolver?: string;
+  signedAt?: number;
+  fulfilledAt?: number;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -37,6 +43,11 @@ export function SignIntentMessage({
   onConfirm,
   onDismiss,
   timestamp,
+  fulfilled,
+  fillPrice,
+  winnerSolver,
+  signedAt,
+  fulfilledAt,
 }: SignIntentMessageProps) {
   const timeAgo = useTimeAgo(timestamp);
   const absoluteTime = formatAbsoluteTime(timestamp);
@@ -65,6 +76,11 @@ export function SignIntentMessage({
             onConfirm={onConfirm}
             onDismiss={onDismiss}
             embedded
+            fulfilled={fulfilled}
+            fillPrice={fillPrice}
+            winnerSolver={winnerSolver}
+            signedAt={signedAt}
+            fulfilledAt={fulfilledAt}
           />
         </div>
       </div>

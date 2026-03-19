@@ -94,6 +94,8 @@ export function MessageList({
           />
         )}
 
+        {/* Note: Fulfilled receipts are rendered via [INTENT_RECEIPT] markers in chat messages */}
+
         {/* Loading indicator */}
         {isLoading && (
           <div
