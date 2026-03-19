@@ -468,11 +468,11 @@ export default function IntentPage() {
       
       // Set active intent in Zustand store with detailed progress steps
       const initialProgress = [
-        { key: 'signed',    label: '✓ Signed & submitted',           detail: 'Intent broadcast to network', done: true,  active: false },
-        { key: 'rfq',       label: '📡 Broadcasting RFQ',              detail: 'Requesting quotes from solvers…', done: false, active: true  },
-        { key: 'winner',    label: '🏆 Selecting winner',              detail: 'Evaluating solver quotes…', done: false, active: false },
-        { key: 'executing', label: '⛓️ Executing on-chain',            detail: 'Transaction being mined…', done: false, active: false },
-        { key: 'fulfilled', label: '✨ Finalizing bridge',             detail: 'Waiting for confirmation…', done: false, active: false },
+        { key: 'signed',    label: 'Signed & submitted',           detail: 'Intent broadcast to network', done: true,  active: false },
+        { key: 'rfq',       label: 'Broadcasting RFQ',              detail: 'Requesting quotes from solvers…', done: false, active: true  },
+        { key: 'winner',    label: 'Selecting winner',              detail: 'Evaluating solver quotes…', done: false, active: false },
+        { key: 'executing', label: 'Executing on-chain',            detail: 'Transaction being mined…', done: false, active: false },
+        { key: 'fulfilled', label: 'Finalizing bridge',             detail: 'Waiting for confirmation…', done: false, active: false },
       ];
       setActiveIntent({
         intentId: result.submissionResult.intentId,
@@ -486,11 +486,11 @@ export default function IntentPage() {
         intentId: result.submissionResult.intentId,
         intent: pendingGaslessIntent,
         progress: [
-          { key: 'signed', label: '✓ Signed & submitted', detail: 'Intent broadcast to network', done: true, active: false },
-          { key: 'rfq', label: '📡 Broadcasting RFQ', detail: 'Requesting quotes from solvers…', done: false, active: true },
-          { key: 'winner', label: '🏆 Selecting winner', detail: 'Evaluating solver quotes…', done: false, active: false },
-          { key: 'executing', label: '⛓️ Executing on-chain', detail: 'Transaction being mined…', done: false, active: false },
-          { key: 'fulfilled', label: '✨ Finalizing bridge', detail: 'Waiting for confirmation…', done: false, active: false },
+          { key: 'signed', label: 'Signed & submitted', detail: 'Intent broadcast to network', done: true, active: false },
+          { key: 'rfq', label: 'Broadcasting RFQ', detail: 'Requesting quotes from solvers…', done: false, active: true },
+          { key: 'winner', label: 'Selecting winner', detail: 'Evaluating solver quotes…', done: false, active: false },
+          { key: 'executing', label: 'Executing on-chain', detail: 'Transaction being mined…', done: false, active: false },
+          { key: 'fulfilled', label: 'Finalizing bridge', detail: 'Waiting for confirmation…', done: false, active: false },
         ],
         fillPrice,
         winnerSolver,

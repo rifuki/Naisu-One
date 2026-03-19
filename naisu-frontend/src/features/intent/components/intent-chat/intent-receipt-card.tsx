@@ -1,11 +1,47 @@
 // Receipt card - shows final state or live progress from Zustand store
 import { useIntentStore } from '@/store';
+import { 
+  CheckCircle2, 
+  Radio, 
+  Trophy, 
+  Link2, 
+  Sparkles, 
+  Circle,
+  Loader2,
+  ShieldCheck,
+  Signature,
+  ArrowRight,
+  Wallet,
+  Fuel
+} from 'lucide-react';
 
 interface ProgressStep {
   key: string;
   label: string;
+  detail?: string;
   done: boolean;
   active: boolean;
+}
+
+// Icon mapping for each progress step
+const stepIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  signed: CheckCircle2,
+  rfq: Radio,
+  winner: Trophy,
+  executing: Link2,
+  fulfilled: Sparkles,
+};
+
+function StepIcon({ step, className }: { step: ProgressStep; className?: string }) {
+  const Icon = stepIcons[step.key] || Circle;
+  
+  if (step.done) {
+    return <CheckCircle2 className={`text-green-400 ${className}`} size={16} />;
+  }
+  if (step.active) {
+    return <Loader2 className={`text-primary animate-spin ${className}`} size={16} />;
+  }
+  return <Icon className={`text-slate-500 ${className}`} size={16} />;
 }
 
 interface IntentReceiptData {
@@ -97,7 +133,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
       {/* Fulfilled banner */}
       {isComplete && (
         <div className="px-5 py-2 flex items-center gap-2 bg-green-500/10 border-b border-green-500/20">
-          <span className="material-symbols-outlined text-green-400 text-[16px]">verified</span>
+          <ShieldCheck className="text-green-400" size={16} />
           <span className="text-[11px] font-bold text-green-400 uppercase tracking-[0.1em]">Fulfilled — Receipt</span>
           <span className="ml-auto text-[10px] text-green-500/60">Permanent record</span>
         </div>
@@ -106,9 +142,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
       {/* Title row */}
       <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-white/5">
         <div className={`size-6 rounded-lg flex items-center justify-center shrink-0 ${isComplete ? 'bg-green-500/15 border border-green-500/20' : 'bg-primary/15 border border-primary/20'}`}>
-          <span className={`material-symbols-outlined text-[14px] ${isComplete ? 'text-green-400' : 'text-primary'}`}>
-            {isComplete ? 'check_circle' : 'signature'}
-          </span>
+          {isComplete ? <CheckCircle2 className="text-green-400" size={14} /> : <Signature className="text-primary" size={14} />}
         </div>
         <span className={`text-[11px] font-bold uppercase tracking-[0.12em] ${isComplete ? 'text-green-400' : 'text-primary'}`}>
           {isComplete ? 'Intent Fulfilled' : 'Sign Intent'}
@@ -128,7 +162,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
           <div className="flex items-baseline gap-2 mb-1">
             <span className="text-[22px] font-bold text-white tabular-nums">{intent.amount}</span>
             <span className="text-[13px] text-slate-400 font-medium">ETH</span>
-            <span className="material-symbols-outlined text-slate-600 text-[16px]">arrow_forward</span>
+            <ArrowRight className="text-slate-600" size={16} />
             {isComplete ? (
               <>
                 <span className="text-[22px] font-bold text-green-400 tabular-nums">{displayPrice}</span>
@@ -145,7 +179,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
           {/* Recipient */}
           <div className="col-span-2 flex items-center justify-between py-1.5 px-3 rounded-lg bg-white/3 border border-white/6">
             <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-slate-500 text-[13px]">account_balance_wallet</span>
+              <Wallet className="text-slate-500" size={13} />
               <span className="text-[10px] text-slate-500 uppercase tracking-wider">Recipient</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -181,7 +215,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
           {/* Gas cost */}
           <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-green-500/5 border border-green-500/20">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-green-400 text-[14px]">local_gas_station</span>
+              <Fuel className="text-green-400" size={14} />
               <span className="text-[10px] text-green-400 uppercase tracking-wider font-medium">Network Fee</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -200,6 +234,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
           <div className="relative">
             {currentProgress.map((step, idx) => {
               const isLast = idx === currentProgress.length - 1;
+              const StepIconComponent = stepIcons[step.key] || Circle;
               
               return (
                 <div key={step.key} className="relative flex gap-3">
@@ -207,15 +242,15 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
                     <div className="relative z-10">
                       {step.done ? (
                         <div className="size-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-green-400 text-[14px]">check</span>
+                          <CheckCircle2 className="text-green-400" size={14} />
                         </div>
                       ) : step.active ? (
                         <div className="size-6 rounded-full bg-primary/20 border border-primary/50 flex items-center justify-center">
-                          <div className="size-2.5 rounded-full bg-primary animate-pulse" />
+                          <Loader2 className="text-primary animate-spin" size={14} />
                         </div>
                       ) : (
                         <div className="size-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                          <div className="size-1.5 rounded-full bg-slate-600" />
+                          <StepIconComponent className="text-slate-600" size={12} />
                         </div>
                       )}
                     </div>
@@ -232,6 +267,13 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
                     }`}>
                       {step.label}
                     </span>
+                    {step.detail && (
+                      <span className={`text-[9px] mt-0.5 ${
+                        step.done ? 'text-green-400/60' : step.active ? 'text-primary/60' : 'text-slate-600'
+                      }`}>
+                        {step.detail}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
