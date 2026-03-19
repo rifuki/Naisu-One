@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
-import { SignIntentMessage } from './sign-intent-message';
+import { GaslessIntentReviewCard } from '../gasless-intent-review-card';
 import ReactMarkdown from 'react-markdown';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
 import { formatAbsoluteTime } from '@/lib/time-utils';
+import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -340,64 +342,15 @@ export function MessageBubble({
     );
   }
 
-  // For gasless_intent widget, show Dutch Auction Plan widget OR Sign Intent
+  // For gasless_intent widget, unified card with internal phase state
   if (parsed?.kind === 'gasless_intent') {
-    const intent = parsed.widget;
-    
-    // Check if this intent is the one pending for signing
-    const isPendingSign = pendingSignIntent && 
-      pendingSignIntent.recipientAddress === intent.recipientAddress &&
-      pendingSignIntent.amount === intent.amount;
-    
-    // If pending sign, show SignIntentMessage instead
-    if (isPendingSign && onSignIntentConfirm && onSignIntentDismiss) {
-      return (
-        <SignIntentMessage
-          intent={pendingSignIntent}
-          status={signIntentStatus ?? null}
-          isFailed={isSignIntentFailed ?? false}
-          isSuccess={isSignIntentSuccess ?? false}
-          onConfirm={onSignIntentConfirm}
-          onDismiss={onSignIntentDismiss}
-          timestamp={message.timestamp}
-        />
-      );
-    }
-    
     return (
-      <div
-        className="group flex gap-3 opacity-0 animate-fade-in-up"
-        style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
-      >
-        <div className="flex-shrink-0 mt-1 hidden sm:block">
-          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m12.728 0l-.707.707M12 21v-1m0-16a9 9 0 110 18 9 9 0 010-18z" />
-            </svg>
-          </div>
-        </div>
-        <div className="flex-1 max-w-md">
-          <MessageHeader name="Nesu" timestamp={message.timestamp} />
-          <DutchAuctionPlanWidget
-            amount={intent.amount}
-            startPrice={intent.startPrice}
-            floorPrice={intent.floorPrice}
-            durationSeconds={intent.durationSeconds}
-            destinationChain={intent.destinationChain}
-            outputToken={intent.outputToken}
-            recipientAddress={intent.recipientAddress}
-            onConfirm={onDutchPlanConfirm ? (plan) => {
-              onDutchPlanConfirm({
-                ...intent,
-                durationSeconds: plan.durationSeconds,
-                startPrice: plan.startPrice,
-              });
-            } : undefined}
-            isConfirmed={false}
-          />
-          <MessageActions text={`Dutch Auction Plan: ${intent.amount} ETH → ${intent.destinationChain}`} />
-        </div>
-      </div>
+      <UnifiedIntentBubble 
+        intent={parsed.widget}
+        onSignIntent={onSignIntentConfirm}
+        signStatus={signIntentStatus}
+        isSigning={isSignIntentFailed || isSignIntentSuccess}
+      />
     );
   }
 
@@ -466,4 +419,240 @@ export function MessageBubble({
       </div>
     </div>
   );
+}
+
+
+// Internal component for unified intent flow with phase state
+interface UnifiedIntentBubbleProps {
+  intent: {
+    recipientAddress: string;
+    destinationChain: string;
+    amount: string;
+    outputToken: string;
+    startPrice: string;
+    floorPrice: string;
+    durationSeconds: number;
+    nonce: number;
+  };
+  onSignIntent?: () => void;
+  signStatus?: string | null;
+  isSigning?: boolean;
+}
+
+function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: UnifiedIntentBubbleProps) {
+  const [phase, setPhase] = useState<'plan' | 'sign' | 'done'>('plan');
+  const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
+  
+  const destLabel = intent.destinationChain === 'solana' ? 'Solana' : intent.destinationChain;
+  const tokenLabel = intent.outputToken === 'sol' ? 'SOL' : intent.outputToken === 'msol' ? 'mSOL' : intent.outputToken.toUpperCase();
+  
+  const formatSol = (lamports: string) => {
+    try { return (Number(BigInt(lamports)) / 1e9).toFixed(4); } catch { return lamports; }
+  };
+  
+  const startSol = formatSol(intent.startPrice);
+  const floorSol = formatSol(intent.floorPrice);
+  const DURATION_OPTIONS = [
+    { label: '2 min', seconds: 120 },
+    { label: '5 min', seconds: 300 },
+    { label: '10 min', seconds: 600 },
+  ];
+  const currentOption = DURATION_OPTIONS.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS[1];
+
+  // Plan Phase
+  if (phase === 'plan') {
+    return (
+      <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m12.728 0l-.707.707M12 21v-1m0-16a9 9 0 110 18 9 9 0 010-18z" />
+            </svg>
+          </div>
+        </div>
+        <div className="flex-1 max-w-md">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[12px] font-semibold text-white">Nesu</span>
+            <span className="text-[10px] text-slate-500">just now</span>
+          </div>
+          
+          <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
+            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
+              <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+              <span className="text-[11px] font-medium text-primary">Dutch Auction Plan</span>
+              <span className="ml-auto text-[10px] text-slate-500">{intent.amount} ETH → {destLabel}</span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Conversion */}
+              <div className="text-center">
+                <div className="text-2xl font-bold text-white">{startSol} - {floorSol}</div>
+                <div className="text-sm text-primary">{tokenLabel}</div>
+                <div className="text-[10px] text-slate-500 mt-1">Price decays from start to floor</div>
+              </div>
+
+              {/* Pricing */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded-lg bg-green-500/5 border border-green-500/20">
+                  <div className="text-[10px] text-green-500/80">Best case</div>
+                  <div className="text-sm font-semibold text-green-400">{startSol}</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-white/5 border border-white/10">
+                  <div className="text-[10px] text-slate-500">Worst case</div>
+                  <div className="text-sm font-semibold text-slate-300">{floorSol}</div>
+                </div>
+              </div>
+
+              {/* Duration selector */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                    <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Duration
+                  </span>
+                  <button
+                    onClick={() => setShowDurationPicker(!showDurationPicker)}
+                    className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors"
+                  >
+                    {currentOption.label}
+                    <svg className={`w-3 h-3 transition-transform ${showDurationPicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                {showDurationPicker && (
+                  <div className="flex gap-2">
+                    {DURATION_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.seconds}
+                        onClick={() => { setSelectedDuration(opt.seconds); setShowDurationPicker(false); }}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                          selectedDuration === opt.seconds ? 'bg-primary text-black' : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Recipient */}
+              <div className="pt-2 border-t border-white/5">
+                <div className="text-[10px] text-slate-500 mb-1">Recipient</div>
+                <code className="font-mono text-[11px] text-slate-200 bg-[#1a1a1a] px-2 py-1.5 rounded border border-white/10 block overflow-hidden" style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="text-slate-500">`</span>
+                  {intent.recipientAddress}
+                  <span className="text-slate-500">`</span>
+                </code>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 space-y-2">
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <svg className="w-3 h-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <span>Floor price guaranteed on-chain</span>
+              </div>
+              <button
+                onClick={() => setPhase('sign')}
+                className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-black text-sm font-semibold transition-all active:scale-[0.98]"
+              >
+                Confirm Plan
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Sign Phase
+  if (phase === 'sign') {
+    return (
+      <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </div>
+        </div>
+        <div className="flex-1 max-w-md">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[12px] font-semibold text-white">Nesu</span>
+            <span className="text-[10px] text-slate-500">just now</span>
+          </div>
+          
+          <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
+            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
+              <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span className="text-[11px] font-medium text-primary">Sign Intent</span>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-medium">FREE</span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="text-center">
+                <div className="text-lg text-slate-300">Bridge</div>
+                <div className="text-2xl font-bold text-white">{intent.amount} ETH</div>
+                <div className="text-sm text-slate-400">→</div>
+                <div className="text-xl font-semibold text-primary">{floorSol} - {startSol} {tokenLabel}</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-500">Duration</span>
+                  <span className="text-slate-300">{currentOption.label}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-500">Recipient</span>
+                  <code className="text-slate-300">{intent.recipientAddress.slice(0, 6)}...{intent.recipientAddress.slice(-4)}</code>
+                </div>
+              </div>
+
+              {signStatus && (
+                <div className="text-[11px] text-primary text-center">{signStatus}</div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 flex gap-2">
+              <button
+                onClick={() => setPhase('plan')}
+                className="flex-1 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-medium transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => {
+                  onSignIntent?.();
+                  setPhase('done');
+                }}
+                disabled={isSigning}
+                className="flex-1 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-black text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+              >
+                {isSigning && (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+                Sign
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Done Phase - will show receipt instead
+  return null;
 }
