@@ -92,24 +92,17 @@ export function MessageList({
               monitorTx={monitorTx}
               onWidgetConfirm={onWidgetConfirm}
               onDutchPlanConfirm={onDutchPlanConfirm}
+              pendingSignIntent={pendingSignIntent}
+              signIntentStatus={signIntentStatus}
+              isSignIntentFailed={isSignIntentFailed}
+              isSignIntentSuccess={isSignIntentSuccess}
+              onSignIntentConfirm={onSignIntentConfirm}
+              onSignIntentDismiss={onSignIntentDismiss}
             />
           );
         })}
 
-        {/* Inline sign intent card — appears when agent sends gasless_intent widget, user can sign directly in chat */}
-        {pendingSignIntent && onSignIntentConfirm && onSignIntentDismiss && (
-          <SignIntentMessage
-            intent={pendingSignIntent}
-            status={signIntentStatus ?? null}
-            isFailed={isSignIntentFailed ?? false}
-            isSuccess={isSignIntentSuccess ?? false}
-            onConfirm={onSignIntentConfirm}
-            onDismiss={onSignIntentDismiss}
-            timestamp={Date.now()}
-          />
-        )}
-
-        {/* Note: Fulfilled receipts are rendered via [INTENT_RECEIPT] markers in chat messages */}
+        {/* Note: Sign intent and Fulfilled receipts are now rendered via MessageBubble */}
 
         {/* Loading indicator */}
         {isLoading && (

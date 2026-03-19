@@ -2,6 +2,7 @@ import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
+import { SignIntentMessage } from './sign-intent-message';
 import ReactMarkdown from 'react-markdown';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
 import { formatAbsoluteTime } from '@/lib/time-utils';
@@ -12,12 +13,30 @@ export interface ChatMessage {
   timestamp?: number;
 }
 
+interface SignIntentParams {
+  recipientAddress: string;
+  destinationChain: string;
+  amount: string;
+  outputToken: string;
+  startPrice: string;
+  floorPrice: string;
+  durationSeconds: number;
+  nonce: number;
+}
+
 interface MessageBubbleProps {
   message: ChatMessage;
   renderContent: (content: string) => React.ReactNode;
   monitorTx?: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
+  // For unified card flow
+  pendingSignIntent?: SignIntentParams | null;
+  signIntentStatus?: string | null;
+  isSignIntentFailed?: boolean;
+  isSignIntentSuccess?: boolean;
+  onSignIntentConfirm?: () => void;
+  onSignIntentDismiss?: () => void;
 }
 
 interface TxInfo {
@@ -242,7 +261,11 @@ function GaslessIntentSummary({ intent, text, renderContent }: {
   );
 }
 
-export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm }: MessageBubbleProps) {
+export function MessageBubble({ 
+  message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm,
+  pendingSignIntent, signIntentStatus, isSignIntentFailed, isSignIntentSuccess,
+  onSignIntentConfirm, onSignIntentDismiss
+}: MessageBubbleProps) {
   if (message.role === 'user') {
     // Hide system/widget-confirm messages from chat UI
     if (
@@ -317,9 +340,29 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
     );
   }
 
-  // For gasless_intent widget, show Dutch Auction Plan widget
+  // For gasless_intent widget, show Dutch Auction Plan widget OR Sign Intent
   if (parsed?.kind === 'gasless_intent') {
     const intent = parsed.widget;
+    
+    // Check if this intent is the one pending for signing
+    const isPendingSign = pendingSignIntent && 
+      pendingSignIntent.recipientAddress === intent.recipientAddress &&
+      pendingSignIntent.amount === intent.amount;
+    
+    // If pending sign, show SignIntentMessage instead
+    if (isPendingSign && onSignIntentConfirm && onSignIntentDismiss) {
+      return (
+        <SignIntentMessage
+          intent={pendingSignIntent}
+          status={signIntentStatus ?? null}
+          isFailed={isSignIntentFailed ?? false}
+          isSuccess={isSignIntentSuccess ?? false}
+          onConfirm={onSignIntentConfirm}
+          onDismiss={onSignIntentDismiss}
+          timestamp={message.timestamp}
+        />
+      );
+    }
     
     return (
       <div
@@ -344,7 +387,6 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
             outputToken={intent.outputToken}
             recipientAddress={intent.recipientAddress}
             onConfirm={onDutchPlanConfirm ? (plan) => {
-              // Update intent with selected plan
               onDutchPlanConfirm({
                 ...intent,
                 durationSeconds: plan.durationSeconds,
