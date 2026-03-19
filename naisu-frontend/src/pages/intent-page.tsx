@@ -400,6 +400,30 @@ export default function IntentPage() {
   }, [createSession, setPendingTx, setPendingGaslessIntent, messages.length, intentFulfilled, signedIntentSnapshot, activeSession]);
 
   /** Handle widget confirm — agent sent a quote_review widget, user confirmed selections */
+  const handleDutchPlanConfirm = useCallback((intentData: {
+    type: 'gasless_intent';
+    recipientAddress: string;
+    destinationChain: string;
+    amount: string;
+    outputToken: string;
+    startPrice: string;
+    floorPrice: string;
+    durationSeconds: number;
+    nonce: number;
+  }) => {
+    // Set pending gasless intent to trigger sign UI
+    setPendingGaslessIntent({
+      recipientAddress: intentData.recipientAddress,
+      destinationChain: intentData.destinationChain,
+      amount: intentData.amount,
+      outputToken: intentData.outputToken,
+      startPrice: intentData.startPrice,
+      floorPrice: intentData.floorPrice,
+      durationSeconds: intentData.durationSeconds,
+      nonce: intentData.nonce,
+    });
+  }, [setPendingGaslessIntent]);
+
   const handleWidgetConfirm = useCallback((payload: WidgetConfirmPayload) => {
     if (payload.widgetType === 'quote_review') {
       const { outputToken, durationSeconds } = payload.selection as { outputToken: string; durationSeconds: number };
@@ -566,6 +590,7 @@ export default function IntentPage() {
           onNewChat={handleNewChat}
           onOpenSettings={() => setShowSettings(true)}
           onWidgetConfirm={handleWidgetConfirm}
+          onDutchPlanConfirm={handleDutchPlanConfirm}
           pendingSignIntent={pendingGaslessIntent && !intentProgress ? pendingGaslessIntent : undefined}
           signIntentStatus={gaslessStatus}
           isSignIntentFailed={isGaslessFailed}

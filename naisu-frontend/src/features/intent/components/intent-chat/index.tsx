@@ -13,6 +13,18 @@ const SUGGESTIONS = [
   'Check my portfolio across chains',
 ];
 
+interface GaslessIntentData {
+  type: 'gasless_intent';
+  recipientAddress: string;
+  destinationChain: string;
+  amount: string;
+  outputToken: string;
+  startPrice: string;
+  floorPrice: string;
+  durationSeconds: number;
+  nonce: number;
+}
+
 interface IntentChatProps {
   messages: ChatMessage[];
   inputValue: string;
@@ -26,6 +38,7 @@ interface IntentChatProps {
   onNewChat: () => void;
   onOpenSettings: () => void;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
+  onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // Sign intent card props (rendered inline in chat instead of floating)
   pendingSignIntent?: SignIntentParams | null;
   signIntentStatus?: string | null;
@@ -67,6 +80,7 @@ export function IntentChat({
   onNewChat,
   onOpenSettings,
   onWidgetConfirm,
+  onDutchPlanConfirm,
   pendingSignIntent,
   signIntentStatus,
   isSignIntentFailed,
@@ -92,6 +106,7 @@ export function IntentChat({
         onRetry={onRetry}
         renderContent={renderMarkdown}
         onWidgetConfirm={onWidgetConfirm}
+        onDutchPlanConfirm={onDutchPlanConfirm}
         pendingSignIntent={pendingSignIntent}
         signIntentStatus={signIntentStatus}
         isSignIntentFailed={isSignIntentFailed}
