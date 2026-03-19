@@ -1,5 +1,5 @@
 import LiveProgressCard from '@/components/LiveProgressCard';
-import { QuoteReviewWidget, BalanceDisplayWidget } from '../widgets';
+import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import ReactMarkdown from 'react-markdown';
@@ -316,18 +316,9 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
     );
   }
 
-  // For gasless_intent widget, show ONLY the inline text (strip the JSON block)
-  // The actual signing UI is handled by the inline GaslessIntentReviewCard
+  // For gasless_intent widget, show Dutch Auction Plan widget
   if (parsed?.kind === 'gasless_intent') {
     const intent = parsed.widget;
-    const startSol = formatLamports(intent.startPrice);
-    const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
-    const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
-    
-    // Concise, highlighted message
-    const conciseText = `**${intent.amount} ETH → ~${startSol} ${tokenLabel}** on ${destLabel}
-
-Sign below — no gas fees!`;
     
     return (
       <div
@@ -336,17 +327,25 @@ Sign below — no gas fees!`;
       >
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m12.728 0l-.707.707M12 21v-1m0-16a9 9 0 110 18 9 9 0 010-18z" />
+            </svg>
           </div>
         </div>
         <div className="flex-1 max-w-2xl">
           <MessageHeader name="Nesu" timestamp={message.timestamp} />
-          <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
-            <div className="prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown>{conciseText}</ReactMarkdown>
-            </div>
+          <div className="mt-2">
+            <DutchAuctionPlanWidget
+              amount={intent.amount}
+              startPrice={intent.startPrice}
+              floorPrice={intent.floorPrice}
+              durationSeconds={intent.durationSeconds}
+              destinationChain={intent.destinationChain}
+              outputToken={intent.outputToken}
+              recipientAddress={intent.recipientAddress}
+            />
           </div>
-          <MessageActions text={parsed.text || conciseText} />
+          <MessageActions text={`Dutch Auction Plan: ${intent.amount} ETH → ${intent.destinationChain}`} />
         </div>
       </div>
     );
