@@ -474,13 +474,13 @@ export default function ActiveIntents() {
   };
 
   // ── Optimistic Orders Sync ──────────────────────────────────────────────────
-  const prevOrdersCount = React.useRef(0);
+  const prevOrderIdsRef = React.useRef(new Set<string>());
   useEffect(() => {
-    if (evmOrders.length + solanaOrders.length > prevOrdersCount.current) {
-      setOptimisticCount(0);
-    }
-    prevOrdersCount.current = evmOrders.length + solanaOrders.length;
-  }, [evmOrders.length, solanaOrders.length]);
+    const currentIds = new Set([...evmOrders, ...solanaOrders].map(o => o.id));
+    const hasNew = [...currentIds].some(id => !prevOrderIdsRef.current.has(id));
+    if (hasNew) setOptimisticCount(0);
+    prevOrderIdsRef.current = currentIds;
+  }, [evmOrders, solanaOrders]);
 
   useEffect(() => {
     const handleOptimistic = () => {

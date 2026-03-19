@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
 import { parseEther, type Address, type Hex } from 'viem'
+import { PublicKey } from '@solana/web3.js'
 import { submitIntentSignature, type GaslessIntent, type SubmitSignatureResponse } from '../api/submit-intent-signature'
 
 // Contract address from environment variable
@@ -96,10 +97,16 @@ export function useSignIntent() {
       // Convert amount to wei
       const amountWei = parseEther(params.amount).toString()
 
-      // Pad recipient address to bytes32
-      const recipientPadded = params.recipientAddress.startsWith('0x') 
-        ? params.recipientAddress.padEnd(66, '0') as Hex
-        : `0x${params.recipientAddress.padStart(64, '0')}` as Hex
+      // Convert recipient address to bytes32 hex
+      let recipientPadded: Hex
+      if (params.recipientAddress.startsWith('0x')) {
+        // EVM / Sui hex address — left-pad to 32 bytes
+        recipientPadded = `0x${params.recipientAddress.slice(2).padStart(64, '0')}` as Hex
+      } else {
+        // Solana base58 pubkey — decode to 32 raw bytes then hex-encode (browser-safe)
+        const pubkeyBytes = new PublicKey(params.recipientAddress).toBytes()
+        recipientPadded = `0x${Array.from(pubkeyBytes).map(b => b.toString(16).padStart(2, '0')).join('')}` as Hex
+      }
 
       // Build the intent object
       const intent: GaslessIntent = {

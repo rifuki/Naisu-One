@@ -218,10 +218,13 @@ export function buildToolkit(params: {
         .describe("Output token on destination chain."),
     }),
     func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
-      // Hard redirect: EVM source must always use gasless flow
-      if (chain !== "sui" || action !== "create_intent") {
+      // Hard redirect: if senderAddress looks like EVM (0x...) this is NOT a Sui source intent.
+      // Redirect to gasless regardless of what chain the LLM passed.
+      const isEvmSender = /^0x[0-9a-fA-F]{40}$/i.test(senderAddress);
+      if (isEvmSender) {
         const gaslessUrl = `${INTENT_API}/build-gasless`;
-        const gaslessBody = { senderAddress, recipientAddress, destinationChain: destinationChain === "evm-base" ? "solana" : destinationChain, amount, durationSeconds, outputToken };
+        const gaslessDest = (destinationChain === "evm-base") ? "solana" : destinationChain;
+        const gaslessBody = { senderAddress, recipientAddress, destinationChain: gaslessDest, amount, durationSeconds, outputToken };
         const gaslessRes = await fetch(gaslessUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
