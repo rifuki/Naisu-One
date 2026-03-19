@@ -1,8 +1,9 @@
 /**
  * Intent Store - Global state for active intent progress
- * Using Zustand for clean state management across components
+ * Using Zustand with persist middleware for localStorage
  */
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export interface ProgressStep {
   key: string;
@@ -16,6 +17,7 @@ export interface ActiveIntent {
   intentId: string;
   contractOrderId?: string;
   progress: ProgressStep[];
+  progressUpdatedAt?: number; // Timestamp of last progress update
   isFulfilled: boolean;
   fillPrice?: string;
   winnerSolver?: string;
@@ -35,38 +37,50 @@ interface IntentState {
   clearActiveIntent: () => void;
 }
 
-export const useIntentStore = create<IntentState>((set) => ({
-  activeIntent: null,
-  
-  setActiveIntent: (intent) => set({ activeIntent: intent }),
-  
-  updateProgress: (progress) => 
-    set((state) => ({
-      activeIntent: state.activeIntent 
-        ? { ...state.activeIntent, progress }
-        : null
-    })),
-  
-  updateIntentId: (contractOrderId) =>
-    set((state) => ({
-      activeIntent: state.activeIntent
-        ? { ...state.activeIntent, contractOrderId }
-        : null
-    })),
-  
-  markFulfilled: (fillPrice, winnerSolver) =>
-    set((state) => ({
-      activeIntent: state.activeIntent
-        ? {
-            ...state.activeIntent,
-            isFulfilled: true,
-            fulfilledAt: Date.now(),
-            fillPrice: fillPrice || state.activeIntent.fillPrice,
-            winnerSolver: winnerSolver || state.activeIntent.winnerSolver,
-            progress: state.activeIntent.progress.map(s => ({ ...s, done: true, active: false }))
-          }
-        : null
-    })),
-  
-  clearActiveIntent: () => set({ activeIntent: null }),
-}));
+export const useIntentStore = create<IntentState>()(
+  persist(
+    (set) => ({
+      activeIntent: null,
+      
+      setActiveIntent: (intent) => set({ activeIntent: intent }),
+      
+      updateProgress: (progress) => 
+        set((state) => ({
+          activeIntent: state.activeIntent 
+            ? { 
+                ...state.activeIntent, 
+                progress,
+                progressUpdatedAt: Date.now()
+              }
+            : null
+        })),
+      
+      updateIntentId: (contractOrderId) =>
+        set((state) => ({
+          activeIntent: state.activeIntent
+            ? { ...state.activeIntent, contractOrderId }
+            : null
+        })),
+      
+      markFulfilled: (fillPrice, winnerSolver) =>
+        set((state) => ({
+          activeIntent: state.activeIntent
+            ? {
+                ...state.activeIntent,
+                isFulfilled: true,
+                fulfilledAt: Date.now(),
+                fillPrice: fillPrice || state.activeIntent.fillPrice,
+                winnerSolver: winnerSolver || state.activeIntent.winnerSolver,
+                progress: state.activeIntent.progress.map(s => ({ ...s, done: true, active: false })),
+                progressUpdatedAt: Date.now()
+              }
+            : null
+        })),
+      
+      clearActiveIntent: () => set({ activeIntent: null }),
+    }),
+    {
+      name: 'naisu-active-intent',
+    }
+  )
+);
