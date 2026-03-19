@@ -242,7 +242,7 @@ function GaslessIntentSummary({ intent, text, renderContent }: {
   );
 }
 
-export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfirm }: MessageBubbleProps) {
+export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm }: MessageBubbleProps) {
   if (message.role === 'user') {
     // Hide system/widget-confirm messages from chat UI
     if (
