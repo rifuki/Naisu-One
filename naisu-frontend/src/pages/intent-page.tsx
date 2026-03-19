@@ -219,15 +219,21 @@ export default function IntentPage() {
         console.log('[intent-page] onProgress skipped - orderId mismatch');
         return;
       }
+      
+      // Get fresh progress from store
+      const currentProgress = useIntentStore.getState().activeIntent?.progress;
+      if (!currentProgress) {
+        console.log('[intent-page] onProgress skipped - no active intent');
+        return;
+      }
+      
       if (evt.type === 'rfq_broadcast') {
         const count = (evt.data['solverCount'] as number | undefined) ?? 1;
-        if (intentProgress) {
-          updateProgress(intentProgress.map(s =>
-            s.key === 'rfq'
-              ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
-              : s
-          ));
-        }
+        updateProgress(currentProgress.map(s =>
+          s.key === 'rfq'
+            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
+            : s
+        ));
       } else if (evt.type === 'rfq_winner') {
         const winner  = evt.data['winner']      as string | undefined;
         const priceRaw = evt.data['quotedPrice'] as string | undefined;
@@ -240,35 +246,32 @@ export default function IntentPage() {
           : undefined;
         
         // Update Zustand store with winner info and progress
-        if (winner || priceSol) {
-          useIntentStore.setState((state) => ({
-            activeIntent: state.activeIntent ? {
-              ...state.activeIntent,
-              winnerSolver: winner || state.activeIntent.winnerSolver,
-              fillPrice: priceSol || state.activeIntent.fillPrice,
-            } : null
-          }));
+        const currentIntent = useIntentStore.getState().activeIntent;
+        if (currentIntent && (winner || priceSol)) {
+          useIntentStore.setState({
+            activeIntent: {
+              ...currentIntent,
+              winnerSolver: winner || currentIntent.winnerSolver,
+              fillPrice: priceSol || currentIntent.fillPrice,
+            }
+          });
         }
         
         // Mark all steps up to and including winner as done; set executing active
-        if (intentProgress) {
-          updateProgress(intentProgress.map(s => {
-            if (s.key === 'rfq')       return { ...s, done: true, active: false };
-            if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
-            if (s.key === 'executing') return { ...s, active: true };
-            return s;
-          }));
-        }
+        updateProgress(currentProgress.map(s => {
+          if (s.key === 'rfq')       return { ...s, done: true, active: false };
+          if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
+          if (s.key === 'executing') return { ...s, active: true };
+          return s;
+        }));
       } else if (evt.type === 'execute_sent') {
         // Mark all steps up to and including executing as done; set fulfilled active
-        if (intentProgress) {
-          updateProgress(intentProgress.map(s => {
-            if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
-            if (s.key === 'executing') return { ...s, done: true, active: false };
-            if (s.key === 'fulfilled') return { ...s, active: true };
-            return s;
-          }));
-        }
+        updateProgress(currentProgress.map(s => {
+          if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
+          if (s.key === 'executing') return { ...s, done: true, active: false };
+          if (s.key === 'fulfilled') return { ...s, active: true };
+          return s;
+        }));
       }
     }, []),
   });
