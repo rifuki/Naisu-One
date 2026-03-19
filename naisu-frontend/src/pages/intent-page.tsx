@@ -411,7 +411,7 @@ export default function IntentPage() {
     durationSeconds: number;
     nonce: number;
   }) => {
-    // Set pending gasless intent to trigger sign UI
+    // Set pending gasless intent with user-selected plan
     setPendingGaslessIntent({
       recipientAddress: intentData.recipientAddress,
       destinationChain: intentData.destinationChain,

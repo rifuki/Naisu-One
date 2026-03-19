@@ -343,7 +343,14 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
             destinationChain={intent.destinationChain}
             outputToken={intent.outputToken}
             recipientAddress={intent.recipientAddress}
-            onConfirm={onDutchPlanConfirm ? () => onDutchPlanConfirm(intent) : undefined}
+            onConfirm={onDutchPlanConfirm ? (plan) => {
+              // Update intent with selected plan
+              onDutchPlanConfirm({
+                ...intent,
+                durationSeconds: plan.durationSeconds,
+                startPrice: plan.startPrice,
+              });
+            } : undefined}
             isConfirmed={false}
           />
           <MessageActions text={`Dutch Auction Plan: ${intent.amount} ETH → ${intent.destinationChain}`} />
