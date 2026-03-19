@@ -139,33 +139,68 @@ export function buildToolkit(params: {
   });
 
   /**
+   * intent_build_gasless — Build a gasless EIP-712 intent for the user to sign.
+   * NO gas required from the user. Solver pays all on-chain fees.
+   * Use this for EVM → Solana/Sui. Never use intent_build_tx for EVM source.
+   */
+  const intentBuildGasless = new DynamicStructuredTool({
+    name: "intent_build_gasless",
+    description:
+      "Build a gasless cross-chain intent for the user to sign (EIP-712 typed data). " +
+      "The user signs a FREE message — zero ETH gas required. " +
+      "The winning solver pays all on-chain gas fees. " +
+      "ALWAYS use this for EVM → Solana or EVM → Sui bridge intents. " +
+      "Do NOT use intent_build_tx for EVM source chain. " +
+      "Always call intent_quote first to verify activeSolvers > 0.",
+    schema: z.object({
+      senderAddress: z.string().describe("User's EVM wallet address (0x...)"),
+      recipientAddress: z.string().describe("Destination wallet address (Solana base58 or Sui 0x)"),
+      destinationChain: z.enum(["solana", "sui"]).describe("Destination chain"),
+      amount: z.string().describe("Amount to bridge as human-readable string, e.g. '0.1'"),
+      durationSeconds: z.number().int().positive().max(86400).default(300).describe("Auction duration in seconds (default 300 = 5 min)"),
+      outputToken: z.enum(["sol", "msol"]).default("sol").describe("Output token: 'sol' (default) or 'msol' (Marinade liquid staking)"),
+    }),
+    func: async ({ senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
+      const url = `${INTENT_API}/build-gasless`;
+      const body = { senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      // Return only the data object so agent outputs it directly in a ```json block
+      if (json.success && json.data) return JSON.stringify(json.data);
+      return JSON.stringify(json);
+    },
+  });
+
+  /**
    * intent_build_tx — Construct an unsigned transaction for the user to sign.
    * Returns raw tx data; the frontend wallet signs and broadcasts.
+   * Use only for Sui source chain intents.
    */
   const intentBuildTx = new DynamicStructuredTool({
     name: "intent_build_tx",
     description:
-      "Build an unsigned cross-chain intent transaction for the user to sign in their wallet. " +
-      "For Sui: returns base64 txBytes. For EVM: returns { to, data, value, chainId }. " +
-      "The backend NEVER signs or broadcasts — the user signs in their own wallet. " +
-      "Use this when the user says 'bridge X from Y to Z' or 'create an intent to swap'. " +
-      "Set outputToken='msol' when the user says 'bridge and stake' or 'get mSOL' (Marinade liquid staking). Set outputToken='usdc' when the user says 'get USDC' or 'swap to USDC' (Orca Whirlpool). Default is 'sol' for raw SOL. " +
-      "Always call intent_quote first to confirm the user understands the terms.",
+      "Build an unsigned Sui → EVM intent transaction (create_intent). " +
+      "ONLY for Sui source chain. For EVM source, use intent_build_gasless instead. " +
+      "Returns base64 txBytes for the user to sign in their Sui wallet.",
     schema: z.object({
       chain: z
-        .enum(["sui", "evm-fuji", "evm-base", "solana"])
-        .describe("Chain to send FROM (where the user's funds are locked)"),
+        .enum(["sui"])
+        .describe("Must be 'sui' — this tool is for Sui source only"),
       action: z
-        .enum(["create_intent", "create_order"])
-        .describe("'create_intent' for Sui source, 'create_order' for EVM source"),
+        .enum(["create_intent"])
+        .describe("Always 'create_intent' for Sui source"),
       senderAddress: z
         .string()
-        .describe("User's wallet address on the source chain"),
+        .describe("User's Sui wallet address"),
       recipientAddress: z
         .string()
-        .describe("User's destination address on the target chain (EVM 0x, Solana base58, or Sui address)"),
+        .describe("User's destination address on the target chain"),
       destinationChain: z
-        .enum(["sui", "evm-fuji", "evm-base", "solana"])
+        .enum(["evm-base", "solana"])
         .describe("Chain to receive funds ON"),
       amount: z
         .string()
@@ -178,11 +213,24 @@ export function buildToolkit(params: {
         .default(300)
         .describe("Dutch auction duration in seconds (default 300 = 5 minutes)"),
       outputToken: z
-        .enum(["sol", "msol", "usdc"])
+        .enum(["sol", "msol"])
         .default("sol")
-        .describe("Output token the recipient will receive on Solana: 'sol' (raw SOL, default), 'msol' (Marinade liquid staked SOL), or 'usdc' (Orca Whirlpool SOL→USDC swap). Only applicable when destinationChain is 'solana'."),
+        .describe("Output token on destination chain."),
     }),
     func: async ({ chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
+      // Hard redirect: EVM source must always use gasless flow
+      if (chain !== "sui" || action !== "create_intent") {
+        const gaslessUrl = `${INTENT_API}/build-gasless`;
+        const gaslessBody = { senderAddress, recipientAddress, destinationChain: destinationChain === "evm-base" ? "solana" : destinationChain, amount, durationSeconds, outputToken };
+        const gaslessRes = await fetch(gaslessUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(gaslessBody),
+        });
+        const json = await gaslessRes.json();
+        if (json.success && json.data) return JSON.stringify(json.data);
+        return JSON.stringify(json);
+      }
       const url = `${INTENT_API}/build-tx`;
       const body = { chain, action, senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken };
       const res = await fetch(url, {
@@ -237,6 +285,7 @@ export function buildToolkit(params: {
     intentQuote,
     intentPrice,
     intentOrders,
+    intentBuildGasless,
     intentBuildTx,
     solanaBalance,
     evmBalance,

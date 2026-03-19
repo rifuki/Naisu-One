@@ -85,11 +85,11 @@ const envSchema = z.object({
     .url()
     .default('https://fullnode.testnet.sui.io'),
 
-  // Intent Bridge — EVM (Base Sepolia)
+  // Intent Bridge — EVM (Base Sepolia) — Upgraded with Gasless EIP-712
   BASE_SEPOLIA_INTENT_CONTRACT: z
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/)
-    .default('0xab32659262b0438b3837f0e4e5cb60ae2c9e7701'),
+    .default('0x26B7E5af3F1831ca938444c02CecFeBBb86F748e'),
   BASE_SEPOLIA_WS_URL: z.preprocess(
     (val) => (val === '' ? undefined : val),
     z.string().optional()

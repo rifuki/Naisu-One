@@ -58,9 +58,9 @@ contract IntentBridgeTest is Test {
 
     function testCreateOrder() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
 
-        (address _creator,,, uint256 _amount,,,,,uint8 _status,,,) = bridge.orders(orderId);
+        (address _creator,,, uint256 _amount,,,,,uint8 _status,,,,) = bridge.orders(orderId);
         assertEq(_creator, creator);
         assertEq(_amount, 1 ether);
         assertEq(_status, 0);
@@ -68,20 +68,20 @@ contract IntentBridgeTest is Test {
 
     function testCancelOrder() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
 
         uint256 beforeBalance = creator.balance;
         vm.prank(creator);
         bridge.cancelOrder(orderId);
 
         assertEq(creator.balance, beforeBalance + 1 ether);
-        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,,) = bridge.orders(orderId);
         assertEq(status, 2);
     }
 
     function testCancelNotCreator() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 100, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 100, 0);
 
         vm.prank(solver);
         vm.expectRevert("Not creator");
@@ -91,7 +91,7 @@ contract IntentBridgeTest is Test {
     function testAuctionPriceDecay() public {
         uint256 t = block.timestamp;
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 100, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 100, 0);
         assertEq(bridge.getAuctionPrice(orderId), 1000);
 
         vm.warp(t + 50);
@@ -132,7 +132,7 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderSui() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
 
         uint256 amountMist = 600;
         bytes memory payload = abi.encodePacked(
@@ -145,7 +145,7 @@ contract IntentBridgeTest is Test {
         bridge.settleOrder(hex"deadbeef");
 
         assertEq(solver.balance, solverBefore + 1 ether);
-        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,,) = bridge.orders(orderId);
         assertEq(status, 1);
     }
 
@@ -157,7 +157,7 @@ contract IntentBridgeTest is Test {
         // startPrice=22 SOL (110% of market ✓), floorPrice=15 SOL (75% of market ✓)
         bytes32 solanaRecipient = bytes32(uint256(0xDA1C0B2C3D4E5F67));
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(solanaRecipient, 1, SOL_START, SOL_FLOOR, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(solanaRecipient, 1, SOL_START, SOL_FLOOR, 3600, 0);
 
         // Solver sends SOL (amountLamports >= floorPrice)
         uint256 amountLamports = SOL_FLOOR;
@@ -171,7 +171,7 @@ contract IntentBridgeTest is Test {
         bridge.settleOrder(hex"cafe");
 
         assertEq(solver.balance, solverBefore + 1 ether);
-        (,,,,,,,,uint8 status,,,) = bridge.orders(orderId);
+        (,,,,,,,,uint8 status,,,,) = bridge.orders(orderId);
         assertEq(status, 1);
     }
 
@@ -179,7 +179,7 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderReplayProtection() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
 
         bytes memory payload = abi.encodePacked(
             orderId, bytes32(uint256(uint160(solver))), bytes32(uint256(600))
@@ -196,7 +196,7 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderUnknownChain() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
         bytes memory payload = abi.encodePacked(
             orderId, bytes32(uint256(uint160(solver))), bytes32(uint256(600))
         );
@@ -209,7 +209,7 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderWrongEmitter() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
         bytes memory payload = abi.encodePacked(
             orderId, bytes32(uint256(uint160(solver))), bytes32(uint256(600))
         );
@@ -222,7 +222,7 @@ contract IntentBridgeTest is Test {
 
     function testSettleOrderInvalidVAA() public {
         vm.prank(creator);
-        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, false);
+        bytes32 orderId = bridge.createOrder{value: 1 ether}(bytes32(uint256(0x1234)), 21, 1000, 500, 3600, 0);
         bytes memory payload = abi.encodePacked(
             orderId, bytes32(uint256(uint160(solver))), bytes32(uint256(600))
         );

@@ -6,18 +6,23 @@
  *   GET  /api/v1/intent/orders?user=...&chain=...
  *   GET  /api/v1/intent/price?fromChain=...&toChain=...
  *   POST /api/v1/intent/build-tx
+ *   POST /api/v1/intent/submit-signature (NEW - Gasless)
  */
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as intentService from '@services/intent.service'
 import type { SupportedChain } from '@services/intent.service'
-import { getOrdersByCreator, getIndexerStatus, indexerEvents } from '@services/indexer'
+import { getOrdersByCreator, getIndexerStatus, indexerEvents, injectGaslessOrder } from '@services/indexer'
 import { getActiveSolverCount, solverEvents } from '@services/solver.service'
 import type { SolverProgressEvent } from '@services/solver.service'
 import type { OrderUpdateEvent } from '@services/indexer'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
+import { verifyIntentSignature } from '@lib/signature-verifier'
+import { addIntent, updateIntentStatus, getOrderbookStats, getUserNonce } from '@services/intent-orderbook.service'
+import { formatEther } from 'viem'
+import type { Hex, Address } from 'viem'
 
 export const intentRouter = new Hono()
 
@@ -279,6 +284,63 @@ intentRouter.get('/price', zValidator('query', priceQuery), async (c) => {
 })
 
 // ============================================================================
+// POST /build-gasless — Gasless Intent Parameters (EIP-712, no on-chain tx)
+// ============================================================================
+
+/**
+ * Returns all parameters needed for the frontend to construct an EIP-712
+ * signed intent. The user signs a message (no gas) and the winning solver
+ * calls executeIntent() on-chain.
+ */
+const buildGaslessBody = z.object({
+  senderAddress:    z.string().min(1),
+  recipientAddress: z.string().min(1),
+  destinationChain: z.enum(['solana', 'sui']),
+  amount:           z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, {
+    message: 'amount must be a positive number string',
+  }),
+  durationSeconds:  z.number().int().positive().max(86400).optional(),
+  outputToken:      z.enum(['sol', 'msol']).default('sol'),
+})
+
+intentRouter.post('/build-gasless', zValidator('json', buildGaslessBody), async (c) => {
+  const body = c.req.valid('json')
+
+  if (getActiveSolverCount() === 0) {
+    return c.json({
+      success: false,
+      error: 'No solver is currently active. Please try again when a solver is online.',
+    }, 503)
+  }
+
+  const toChain = body.destinationChain === 'solana' ? 'solana' : 'sui'
+  const quote = await intentService.getIntentQuote({
+    fromChain: 'evm-base',
+    toChain:   toChain as SupportedChain,
+    token:     'native',
+    amount:    body.amount,
+  })
+
+  const nonce = getUserNonce(body.senderAddress as Address)
+  const durationSeconds = body.durationSeconds ?? 300
+
+  return c.json({
+    success: true,
+    data: {
+      type:             'gasless_intent',
+      recipientAddress: body.recipientAddress,
+      destinationChain: body.destinationChain,
+      amount:           body.amount,
+      outputToken:      body.outputToken,
+      startPrice:       quote.currentAuctionPrice ?? quote.floorPrice,
+      floorPrice:       quote.floorPrice,
+      durationSeconds,
+      nonce,
+    },
+  })
+})
+
+// ============================================================================
 // POST /build-tx
 // ============================================================================
 
@@ -335,6 +397,207 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
 
   return c.json({ success: true, data: result })
 })
+
+// ============================================================================
+// POST /submit-signature — Gasless Intent Submission (EIP-712 Signature)
+// ============================================================================
+
+/**
+ * Submit a signed intent off-chain (gasless for user).
+ * Backend verifies signature, stores intent in memory, runs RFQ with solvers.
+ * Winning solver will call executeIntent() on-chain with this signature.
+ *
+ * Request body:
+ * {
+ *   "intent": {
+ *     "creator": "0xUserAddress",
+ *     "recipient": "0x...", // bytes32 hex string
+ *     "destinationChain": 1, // uint16 (1 = Solana, 21 = Sui)
+ *     "amount": "1000000000000000000", // wei string
+ *     "startPrice": "22000000000", // lamports string
+ *     "floorPrice": "15000000000",
+ *     "deadline": 1234567890, // unix timestamp
+ *     "intentType": 0, // 0=SOL, 1=mSOL, 2=USDC
+ *     "nonce": 0 // user's current nonce
+ *   },
+ *   "signature": "0xabc..." // EIP-712 signature (65 bytes hex)
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "intentId": "0x...",
+ *     "status": "pending_rfq",
+ *     "estimatedFillTime": 30000 // ms
+ *   }
+ * }
+ */
+const submitSignatureBody = z.object({
+  intent: z.object({
+    creator:          z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    recipient:        z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    destinationChain: z.number().int().positive(),
+    amount:           z.string().regex(/^\d+$/),
+    startPrice:       z.string().regex(/^\d+$/),
+    floorPrice:       z.string().regex(/^\d+$/),
+    deadline:         z.number().int().positive(),
+    intentType:       z.number().int().min(0).max(2),
+    nonce:            z.number().int().min(0),
+  }),
+  signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/), // 65 bytes = 130 hex chars
+})
+
+intentRouter.post('/submit-signature', zValidator('json', submitSignatureBody), async (c) => {
+  const body = c.req.valid('json')
+
+  logger.info(
+    { 
+      creator: body.intent.creator,
+      amount: body.intent.amount,
+      destinationChain: body.intent.destinationChain,
+      nonce: body.intent.nonce
+    },
+    'Gasless intent signature submitted'
+  )
+
+  // Block if no solver is available
+  if (getActiveSolverCount() === 0) {
+    return c.json({
+      success: false,
+      error: 'No solver is currently active. Your intent cannot be filled. Please try again when a solver is online.',
+    }, 503)
+  }
+
+  // Validate deadline hasn't already passed
+  const now = Math.floor(Date.now() / 1000)
+  if (body.intent.deadline <= now) {
+    return c.json({
+      success: false,
+      error: 'Intent deadline has already passed',
+    }, 400)
+  }
+
+  // Convert string amounts to bigint for signature verification
+  const intentForVerification = {
+    creator: body.intent.creator as Address,
+    recipient: body.intent.recipient as Hex,
+    destinationChain: body.intent.destinationChain,
+    amount: BigInt(body.intent.amount),
+    startPrice: BigInt(body.intent.startPrice),
+    floorPrice: BigInt(body.intent.floorPrice),
+    deadline: BigInt(body.intent.deadline),
+    intentType: body.intent.intentType,
+    nonce: BigInt(body.intent.nonce),
+  }
+
+  // Verify EIP-712 signature
+  const isValidSignature = await verifyIntentSignature(
+    intentForVerification,
+    body.signature as Hex
+  )
+
+  if (!isValidSignature) {
+    logger.warn({ creator: body.intent.creator, nonce: body.intent.nonce }, 'Invalid signature')
+    return c.json({
+      success: false,
+      error: 'Invalid signature',
+    }, 400)
+  }
+
+  // Generate unique intent ID
+  const intentId = `0x${Buffer.from(
+    `${body.intent.creator}${body.intent.nonce}${Date.now()}`
+  ).toString('hex').slice(0, 64)}`
+
+  // Add to orderbook with proper typing
+  const pendingIntent = addIntent(
+    intentId,
+    {
+      creator: body.intent.creator as Address,
+      recipient: body.intent.recipient as Hex,
+      destinationChain: body.intent.destinationChain,
+      amount: body.intent.amount,
+      startPrice: body.intent.startPrice,
+      floorPrice: body.intent.floorPrice,
+      deadline: body.intent.deadline,
+      intentType: body.intent.intentType,
+      nonce: body.intent.nonce,
+    },
+    body.signature as Hex
+  )
+
+  // Update status to rfq_active (RFQ system will pick this up)
+  updateIntentStatus(intentId, 'rfq_active')
+
+  // Inject into indexer store so Active Intents widget shows it as OPEN
+  injectGaslessOrder({
+    intentId,
+    creator:          body.intent.creator,
+    recipient:        body.intent.recipient,
+    destinationChain: body.intent.destinationChain,
+    amount:           formatEther(BigInt(body.intent.amount)),
+    amountRaw:        body.intent.amount,
+    startPrice:       body.intent.startPrice,
+    floorPrice:       body.intent.floorPrice,
+    deadline:         body.intent.deadline,
+    intentType:       body.intent.intentType,
+  })
+
+  logger.info({ intentId, creator: body.intent.creator }, 'Intent added to orderbook, starting RFQ')
+
+  return c.json({
+    success: true,
+    data: {
+      intentId,
+      status: 'rfq_active',
+      estimatedFillTime: 30000, // 30 seconds
+      message: 'Intent verified and submitted. Solvers are bidding...'
+    }
+  })
+})
+
+// ============================================================================
+// GET /orderbook/stats — Debug endpoint to view orderbook statistics
+// ============================================================================
+
+intentRouter.get('/orderbook/stats', (c) => {
+  return c.json({ success: true, data: getOrderbookStats() })
+})
+
+// ============================================================================
+// GET /nonce — Get expected nonce for a user address (for gasless intents)
+// ============================================================================
+
+/**
+ * Returns the expected nonce for a user's next gasless intent.
+ * This should be included in the EIP-712 signed message to prevent replay attacks.
+ *
+ * Example:
+ *   GET /api/v1/intent/nonce?address=0xABC...
+ */
+intentRouter.get(
+  '/nonce',
+  zValidator('query', z.object({
+    address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address'),
+  })),
+  (c) => {
+    const { address } = c.req.valid('query')
+
+    logger.info({ address }, 'Nonce requested')
+
+    const nonce = getUserNonce(address as Address)
+
+    return c.json({ 
+      success: true, 
+      data: { 
+        address,
+        nonce,
+        message: 'Include this nonce in your next signed intent'
+      } 
+    })
+  }
+)
 
 // ============================================================================
 // GET /evm-balance — Get native ETH balance of an EVM address

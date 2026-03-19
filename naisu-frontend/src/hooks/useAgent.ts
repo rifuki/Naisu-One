@@ -30,6 +30,18 @@ export interface TxData {
   decoded?: TxDetails;      // populated when calldata is decodable
 }
 
+// Gasless intent data extracted from agent response
+export interface GaslessIntentData {
+  recipientAddress: string;
+  destinationChain: 'solana' | 'sui';
+  amount: string;           // ETH amount as string (e.g., "0.1")
+  outputToken: 'sol' | 'msol' | 'marginfi';
+  startPrice: string;       // in lamports
+  floorPrice: string;       // in lamports
+  durationSeconds: number;
+  nonce: number;
+}
+
 const WORMHOLE_CHAIN_LABELS: Record<number, string> = {
   1:     'Solana',
   21:    'Sui',
@@ -145,6 +157,33 @@ function extractTxData(content: string): TxData | undefined {
   return undefined;
 }
 
+/**
+ * Extract gasless intent data from agent response.
+ * Agent should output a JSON block with type: "gasless_intent"
+ */
+function extractGaslessIntent(content: string): GaslessIntentData | undefined {
+  // Look for a gasless intent JSON block
+  const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?"type"\s*:\s*"gasless_intent"[\s\S]*?\})\s*```/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      if (parsed.type === 'gasless_intent' && parsed.recipientAddress && parsed.amount) {
+        return {
+          recipientAddress: parsed.recipientAddress,
+          destinationChain: parsed.destinationChain || 'solana',
+          amount: parsed.amount,
+          outputToken: parsed.outputToken || 'sol',
+          startPrice: parsed.startPrice,
+          floorPrice: parsed.floorPrice,
+          durationSeconds: parsed.durationSeconds || 300,
+          nonce: parsed.nonce ?? 0,
+        };
+      }
+    } catch { /* fall through */ }
+  }
+  return undefined;
+}
+
 export interface UseAgentOptions {
   /** Messages from the active session — controlled externally */
   messages: AgentMessage[];
@@ -163,6 +202,7 @@ export function useAgent(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingTx, setPendingTx] = useState<TxData | undefined>();
+  const [pendingGaslessIntent, setPendingGaslessIntent] = useState<GaslessIntentData | undefined>();
   const sessionIdRef = useRef<string | undefined>(opts?.backendSessionId);
 
   // Always-up-to-date refs so async callbacks never read stale closures
@@ -205,6 +245,7 @@ export function useAgent(
 
     setError(null);
     setPendingTx(undefined);
+    setPendingGaslessIntent(undefined);
     setIsLoading(true);
 
     const newUserMsg: AgentMessage = { role: 'user', content: userMessage };
@@ -243,8 +284,14 @@ export function useAgent(
 
       if (data.ok) {
         sessionIdRef.current = data.sessionId;
-        const tx = extractTxData(data.message);
-        if (tx) setPendingTx(tx);
+        // Check for gasless intent first (preferred), then fall back to legacy tx
+        const gaslessIntent = extractGaslessIntent(data.message);
+        if (gaslessIntent) {
+          setPendingGaslessIntent(gaslessIntent);
+        } else {
+          const tx = extractTxData(data.message);
+          if (tx) setPendingTx(tx);
+        }
         appendMessages(prev => [...prev, { role: 'assistant' as const, content: data.message }]);
       } else {
         throw new Error(data.error ?? 'Unknown error');
@@ -279,6 +326,7 @@ export function useAgent(
     }
     setError(null);
     setPendingTx(undefined);
+    setPendingGaslessIntent(undefined);
     sessionIdRef.current = undefined;
   }, []);
 
@@ -288,6 +336,8 @@ export function useAgent(
     error,
     pendingTx,
     setPendingTx,
+    pendingGaslessIntent,
+    setPendingGaslessIntent,
     sendMessage,
     addMessage,
     reset,

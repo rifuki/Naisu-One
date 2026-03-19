@@ -2,7 +2,7 @@ import React, { createContext, useContext, ReactNode } from 'react';
 import { useAccount } from 'wagmi';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useChatSessions, type ChatSession } from '@/hooks/useChatSessions';
-import { useAgent, type AgentMessage, type TxData } from '@/hooks/useAgent';
+import { useAgent, type AgentMessage, type TxData, type GaslessIntentData } from '@/hooks/useAgent';
 
 interface AgentContextValue {
   sessions: ChatSession[];
@@ -18,6 +18,8 @@ interface AgentContextValue {
   addMessage: (content: string, role?: 'assistant' | 'user') => void;
   pendingTx?: TxData;
   setPendingTx: (tx?: TxData) => void;
+  pendingGaslessIntent?: GaslessIntentData;
+  setPendingGaslessIntent: (intent?: GaslessIntentData) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -43,7 +45,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     sendMessage,
     addMessage,
     pendingTx,
-    setPendingTx
+    setPendingTx,
+    pendingGaslessIntent,
+    setPendingGaslessIntent
   } = useAgent(
     address || 'anonymous',
     solanaAddress || '',
@@ -62,7 +66,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     <AgentContext.Provider 
       value={{
         sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
-        messages, isLoading, error, sendMessage, addMessage, pendingTx, setPendingTx
+        messages, isLoading, error, sendMessage, addMessage, pendingTx, setPendingTx,
+        pendingGaslessIntent, setPendingGaslessIntent
       }}
     >
       {children}

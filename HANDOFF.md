@@ -1,6 +1,18 @@
 # Naisu One — Handoff Document
 
-_Last updated: 2026-03-18 (Session 4)_
+_Last updated: 2026-03-19 (Session 10)_
+
+---
+
+## 🚨 CURRENT CONTRACT ADDRESS (Gasless EIP-712)
+
+| Chain | Contract | Address | Verified |
+|-------|----------|---------|----------|
+| **Base Sepolia** | IntentBridge (Gasless EIP-712) | `0x26B7E5af3F1831ca938444c02CecFeBBb86F748e` | ✅ Blockscout, Sourcify |
+| Solana Devnet | IntentBridge | `Cp6HRKWXgeEycareLXGttNj8dTNfRiFB4Y4UtDuq5EcN` | - |
+| Sui Testnet | IntentBridge | `0x920f52f8b6734e5333330d50b8b6925d38b39c6d0498dd0053b76e889365cecb` | - |
+
+**⚠️ All older addresses in this document are deprecated. Always use the addresses above.**
 
 ---
 
@@ -195,6 +207,96 @@ Implementation plan decentralized solver network Naisu:
 - Phase 1/2/3 roadmap
 - API spec solver ↔ backend ↔ frontend
 - Demo setup 3 solver lokal
+
+---
+
+## Session 10 Summary (2026-03-19)
+
+Latest commits: (pending — gasless intent system, bugfixing in progress)
+
+### 23. Gasless Off-Chain Intents — EIP-712 Signature Flow
+
+**Major architectural upgrade** from on-chain order creation (user pays gas) to off-chain signature submission (solver pays gas), similar to UniswapX, CowSwap, and 1inch Fusion.
+
+**Benefits:**
+- ✅ Zero gas cost for users — users sign EIP-712 messages off-chain
+- ✅ Faster order creation — no blockchain confirmation needed
+- ✅ RFQ-based solver exclusivity — backend runs auction, only winner gets signature
+- ✅ No front-running/MEV — private RFQ instead of public mempool
+
+#### Smart Contract (`IntentBridge.sol`)
+
+**New/modified:**
+- Added EIP-712 support via OpenZeppelin v5.6.1 (`EIP712`, `ECDSA`, `ReentrancyGuard`)
+- New `INTENT_TYPEHASH` constant for EIP-712 typed data
+- New `Intent` struct for off-chain signed data
+- New `nonces` mapping for replay protection
+- New `executeIntent(Intent calldata, bytes calldata signature)` — solver submits user's signed intent + ETH
+- Legacy `createOrder()` kept for backward compatibility
+
+**Deployed:** `0x26B7E5af3F1831ca938444c02CecFeBBb86F748e` (Base Sepolia)
+**Verified:** Blockscout ✅, Sourcify ✅
+
+#### Backend
+
+**New files:**
+- `naisu-backend/src/lib/signature-verifier.ts` — EIP-712 verification using viem
+- `naisu-backend/src/services/intent-orderbook.service.ts` — in-memory order book for gasless intents
+
+**New endpoints (`routes/intent.ts`):**
+- `POST /api/v1/intent/submit-signature` — submit EIP-712 signed intent
+- `GET /api/v1/intent/nonce?address=...` — query user's current nonce
+- `GET /api/v1/intent/orderbook/stats` — debug: orderbook stats
+
+#### Frontend
+
+**New files:**
+- `naisu-frontend/src/features/intent/api/submit-intent-signature.ts` — API client
+- `naisu-frontend/src/features/intent/hooks/use-sign-intent.ts` — hook using `useSignTypedData`
+- `naisu-frontend/src/features/intent/hooks/use-user-nonce.ts` — hook to fetch nonce
+- `naisu-frontend/src/features/intent/components/gasless-intent-review-card.tsx` — UI with "FREE - No Gas" badge
+
+**Modified:**
+- `intent-page.tsx` — gasless flow support
+- `useAgent.ts` — extract `GaslessIntentData` from agent responses
+- `agent-provider.tsx` — `pendingGaslessIntent` state
+
+#### Agent Prompt (`nesu.md`)
+
+- Changed "build tx" → "build gasless intent"
+- Removed gas check requirement (user doesn't need ETH for gas)
+- Added "FREE" messaging
+- Added explicit instruction: after `intent_build_gasless`, output `data` object in ```json block
+
+#### Agent Toolkit (`toolkit.ts`) — Session 10 bugfix
+
+- Added `intent_build_gasless` tool → calls `POST /api/v1/intent/build-gasless`
+- Restricted `intent_build_tx` schema to Sui only (`chain: "sui"`, `action: "create_intent"`)
+- Added hard redirect in `intent_build_tx` func: if `chain !== "sui"` → auto-call `/build-gasless` and return gasless intent format
+- This bypasses Kimi LLM schema-ignore bug
+
+#### Backend Additions — Session 10
+
+- `POST /api/v1/intent/build-gasless` — returns `{ type: "gasless_intent", startPrice, floorPrice, nonce, ... }` for frontend EIP-712 signing
+- `indexer.ts` — export `injectGaslessOrder()` so gasless intents appear in Active Intents widget
+- `/submit-signature` now calls `injectGaslessOrder()` after signature verified
+
+#### Known Issues / Still Debugging
+
+- **Solver doesn't handle gasless RFQ yet** — solver listens to chain WS for `OrderCreated`, but gasless intents don't emit that event. Solver needs to respond to backend RFQ calls and call `executeIntent()` on new contract.
+- Full end-to-end gasless flow not yet tested successfully
+- User Base Sepolia ETH drained from tests to old contract (get from faucet to retest)
+
+#### Environment Updates
+
+All `.env` files updated with new contract address:
+- `naisu-backend/.env`, `.env.example`
+- `naisu-frontend/.env`, `.env.example`
+- `naisu-solver/.env`, `.env.example`
+- `naisu-agent/.env`
+- `naisu-contracts/evm/.env`
+
+Frontend hook now reads from `VITE_CONTRACT_BASE_SEPOLIA` env var instead of hardcoded address.
 
 ---
 

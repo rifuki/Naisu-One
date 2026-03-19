@@ -132,6 +132,44 @@ function upsert(order: IntentOrder): void {
   }
 }
 
+// ── Public write API — gasless intents ───────────────────────────────────────
+
+/**
+ * Inject a gasless (off-chain signed) intent into the indexer store so that
+ * Active Intents widget shows it as OPEN while waiting for solver execution.
+ */
+export function injectGaslessOrder(params: {
+  intentId: string
+  creator: string
+  recipient: string
+  destinationChain: number  // Wormhole chain ID (1=Solana, 21=Sui)
+  amount: string            // human-readable ETH amount
+  amountRaw: string         // amount in wei
+  startPrice: string        // in destination base units (lamports / mist)
+  floorPrice: string
+  deadline: number          // unix seconds
+  intentType: number
+}): void {
+  const order: IntentOrder = {
+    orderId:          params.intentId,
+    chain:            'evm-base',
+    creator:          params.creator,
+    recipient:        params.recipient,
+    destinationChain: params.destinationChain,
+    amount:           params.amount,
+    amountRaw:        params.amountRaw,
+    startPrice:       params.startPrice,
+    floorPrice:       params.floorPrice,
+    currentPrice:     params.startPrice,
+    deadline:         params.deadline * 1000,  // sec → ms
+    createdAt:        Date.now(),
+    status:           'OPEN',
+    intentType:       params.intentType,
+    explorerUrl:      '',  // no on-chain tx yet — solver will submit
+  }
+  upsert(order)
+}
+
 // ── Public read API ───────────────────────────────────────────────────────────
 
 export function getOrdersByCreator(creator: string, chain?: SupportedChain): IntentOrder[] {

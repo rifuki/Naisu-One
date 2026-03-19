@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 // === Pyth Oracle Interface (minimal) ===
 // Docs: https://docs.pyth.network/price-feeds/use-real-data/evm
 interface IPyth {
@@ -43,7 +47,7 @@ interface IWormhole {
     function messageFee() external view returns (uint256);
 }
 
-contract IntentBridge {
+contract IntentBridge is EIP712, ReentrancyGuard {
     // === Constants ===
     uint256 public constant MIN_SOLVER_BOND    = 0.05 ether;
     uint256 public constant BOND_COOLDOWN      = 7 days;
@@ -52,6 +56,11 @@ contract IntentBridge {
     uint8 public constant STATUS_OPEN      = 0;
     uint8 public constant STATUS_FULFILLED = 1;
     uint8 public constant STATUS_CANCELLED = 2;
+
+    // === EIP-712 Type Hash ===
+    bytes32 public constant INTENT_TYPEHASH = keccak256(
+        "Intent(address creator,bytes32 recipient,uint16 destinationChain,uint256 amount,uint256 startPrice,uint256 floorPrice,uint256 deadline,uint8 intentType,uint256 nonce)"
+    );
 
     // === Pyth Price Oracle ===
     // Base Sepolia: https://docs.pyth.network/price-feeds/contract-addresses/evm
@@ -76,6 +85,18 @@ contract IntentBridge {
     uint256 public constant PYTH_MAX_AGE = 3600;
 
     // === Structs ===
+    struct Intent {
+        address creator;
+        bytes32 recipient;
+        uint16  destinationChain;
+        uint256 amount;
+        uint256 startPrice;
+        uint256 floorPrice;
+        uint256 deadline;
+        uint8   intentType; // 0=SOL, 1=mSOL (Marinade), 2=USDC (Orca)
+        uint256 nonce;      // Replay protection
+    }
+
     struct Order {
         address creator;
         bytes32 recipient;
@@ -86,7 +107,8 @@ contract IntentBridge {
         uint256 deadline;
         uint256 createdAt;
         uint8   status;
-        uint8   intentType; // 0=SOL, 1=mSOL (Marinade), 2=USDC (Orca)
+        uint8   intentType;
+        uint256 nonce;
         // Solver network — set by backend after RFQ; zero = open race
         address exclusiveSolver;
         uint256 exclusivityDeadline;
@@ -103,6 +125,7 @@ contract IntentBridge {
     // === State ===
     address public owner;
     mapping(bytes32  => Order)      public orders;
+    mapping(address  => uint256)    public nonces;  // User nonce for replay protection
     mapping(address  => SolverInfo) public solvers;
     uint256 public orderCount;
 
@@ -139,7 +162,9 @@ contract IntentBridge {
         _;
     }
 
-    constructor(address _wormhole, uint8 _consistencyLevel, address _pyth) {
+    constructor(address _wormhole, uint8 _consistencyLevel, address _pyth)
+        EIP712("NaisuIntentBridge", "1")
+    {
         owner = msg.sender;
         wormhole = IWormhole(_wormhole);
         consistencyLevel = _consistencyLevel;
@@ -222,6 +247,88 @@ contract IntentBridge {
 
     // === User Functions ===
 
+    /// @notice Execute an intent signed by the user (gasless for user).
+    /// @dev Solver submits intent + signature. Contract validates signature and stores order.
+    ///      This is called by the winning solver after the backend RFQ process.
+    /// @param intent The intent data signed by the user
+    /// @param signature The EIP-712 signature from the user
+    /// @return orderId The unique identifier for this order
+    function executeIntent(
+        Intent calldata intent,
+        bytes calldata signature
+    ) external payable nonReentrant returns (bytes32 orderId) {
+        // Validate intent parameters
+        require(intent.amount > 0,             "No ETH specified");
+        require(intent.startPrice >= intent.floorPrice, "Invalid price range");
+        require(intent.deadline > block.timestamp, "Deadline in past");
+        require(intent.recipient != bytes32(0), "Invalid recipient");
+        require(msg.value == intent.amount,     "ETH mismatch");
+
+        // Verify nonce
+        require(intent.nonce == nonces[intent.creator], "Invalid nonce");
+        nonces[intent.creator]++;
+
+        // Verify EIP-712 signature
+        bytes32 structHash = keccak256(abi.encode(
+            INTENT_TYPEHASH,
+            intent.creator,
+            intent.recipient,
+            intent.destinationChain,
+            intent.amount,
+            intent.startPrice,
+            intent.floorPrice,
+            intent.deadline,
+            intent.intentType,
+            intent.nonce
+        ));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = ECDSA.recover(digest, signature);
+        require(signer == intent.creator, "Invalid signature");
+
+        // Check deadline hasn't passed
+        require(block.timestamp <= intent.deadline, "Intent expired");
+
+        // Generate unique order ID
+        orderId = keccak256(abi.encodePacked(
+            intent.creator,
+            intent.nonce,
+            block.timestamp,
+            block.number
+        ));
+
+        // Store order
+        orders[orderId] = Order({
+            creator:             intent.creator,
+            recipient:           intent.recipient,
+            destinationChain:    intent.destinationChain,
+            amount:              intent.amount,
+            startPrice:          intent.startPrice,
+            floorPrice:          intent.floorPrice,
+            deadline:            intent.deadline,
+            createdAt:           block.timestamp,
+            status:              STATUS_OPEN,
+            intentType:          intent.intentType,
+            nonce:               intent.nonce,
+            exclusiveSolver:     address(0),
+            exclusivityDeadline: 0
+        });
+        orderCount++;
+
+        emit OrderCreated(
+            orderId,
+            intent.creator,
+            intent.recipient,
+            intent.destinationChain,
+            intent.amount,
+            intent.startPrice,
+            intent.floorPrice,
+            intent.deadline,
+            intent.intentType
+        );
+    }
+
+    /// @notice Legacy function - now deprecated in favor of gasless executeIntent
+    /// @dev Kept for backward compatibility but not recommended
     function createOrder(
         bytes32 recipient,
         uint16  destinationChain,
@@ -253,6 +360,7 @@ contract IntentBridge {
             createdAt:           block.timestamp,
             status:              STATUS_OPEN,
             intentType:          intentType,
+            nonce:               nonces[msg.sender]++,
             exclusiveSolver:     address(0),
             exclusivityDeadline: 0
         });

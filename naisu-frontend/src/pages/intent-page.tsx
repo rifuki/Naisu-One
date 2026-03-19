@@ -6,7 +6,9 @@ import { useGlobalAgent } from '@/components/providers/agent-provider';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
+import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
+import { useSignIntent } from '@/features/intent/hooks/use-sign-intent';
 import type { TxData } from '@/hooks/useAgent';
 
 export default function IntentPage() {
@@ -20,15 +22,24 @@ export default function IntentPage() {
   const [isTxFailed, setIsTxFailed] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [submittedTxs, setSubmittedTxs] = useState<Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>>([]);
+  
+  // Gasless intent states
+  const [gaslessStatus, setGaslessStatus] = useState<string | null>(null);
+  const [isGaslessFailed, setIsGaslessFailed] = useState(false);
+  const [isGaslessSuccess, setIsGaslessSuccess] = useState(false);
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const publicClient = usePublicClient();
+  
+  // Gasless signing hook
+  const signIntent = useSignIntent();
 
   // ── Global Agent State ────────────────────────────────────
   const { 
     sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
-    messages, isLoading, error, sendMessage, pendingTx, setPendingTx 
+    messages, isLoading, error, sendMessage, pendingTx, setPendingTx,
+    pendingGaslessIntent, setPendingGaslessIntent
   } = useGlobalAgent();
 
   const currentMsgIdxRef = useRef(0);
@@ -124,9 +135,52 @@ export default function IntentPage() {
     setInputValue('');
     setSubmittedTxs([]);
     setPendingTx(undefined);
+    setPendingGaslessIntent(undefined);
+    setGaslessStatus(null);
+    setIsGaslessFailed(false);
+    setIsGaslessSuccess(false);
     currentMsgIdxRef.current = 0;
     createSession();
-  }, [createSession, setPendingTx]);
+  }, [createSession, setPendingTx, setPendingGaslessIntent]);
+
+  /** Handle gasless intent signing */
+  const handleSignGaslessIntent = useCallback(async () => {
+    if (!pendingGaslessIntent) return;
+
+    setGaslessStatus('Sign message in wallet...');
+
+    try {
+      const result = await signIntent.mutateAsync({
+        recipientAddress: pendingGaslessIntent.recipientAddress,
+        destinationChain: pendingGaslessIntent.destinationChain,
+        amount: pendingGaslessIntent.amount,
+        outputToken: pendingGaslessIntent.outputToken,
+        startPrice: pendingGaslessIntent.startPrice,
+        floorPrice: pendingGaslessIntent.floorPrice,
+        durationSeconds: pendingGaslessIntent.durationSeconds,
+        nonce: pendingGaslessIntent.nonce,
+      });
+
+      setGaslessStatus('Intent submitted!');
+      setIsGaslessSuccess(true);
+      
+      setTimeout(() => {
+        setPendingGaslessIntent(undefined);
+        setGaslessStatus(null);
+        setIsGaslessSuccess(false);
+        window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
+        sendMessage(`[System] Intent signed and submitted. ID: ${result.submissionResult.intentId}\nPlease provide a polite, concise confirmation that the intent was submitted gaslessly (FREE!) and solvers are now bidding to fill it.`);
+      }, 1200);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Signing failed';
+      setGaslessStatus(errorMsg);
+      setIsGaslessFailed(true);
+      setTimeout(() => {
+        setIsGaslessFailed(false);
+        setGaslessStatus(null);
+      }, 3000);
+    }
+  }, [pendingGaslessIntent, signIntent, setPendingGaslessIntent, sendMessage]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
@@ -173,6 +227,25 @@ export default function IntentPage() {
                 setPendingTx(undefined);
                 setTxStatus(null);
                 setIsTxFailed(false);
+              }}
+            />
+          </div>
+        )}
+
+        {/* Gasless Intent Review Card */}
+        {pendingGaslessIntent && !isLoading && (
+          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isGaslessSuccess ? 'animate-magic-lamp pointer-events-none' : ''} ${isGaslessFailed ? 'animate-shake' : ''}`}>
+            <GaslessIntentReviewCard
+              intent={pendingGaslessIntent}
+              status={gaslessStatus}
+              isFailed={isGaslessFailed}
+              isSuccess={isGaslessSuccess}
+              onConfirm={handleSignGaslessIntent}
+              onDismiss={() => {
+                setPendingGaslessIntent(undefined);
+                setGaslessStatus(null);
+                setIsGaslessFailed(false);
+                setIsGaslessSuccess(false);
               }}
             />
           </div>
