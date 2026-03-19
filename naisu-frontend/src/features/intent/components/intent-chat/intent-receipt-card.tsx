@@ -94,8 +94,12 @@ interface IntentReceiptCardProps {
 export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
   const { intent, progress, fillPrice: storedFillPrice, winnerSolver: storedWinnerSolver } = data;
   
-  // Get live progress from Zustand store
+  // Get live progress and completed intents from Zustand store
   const activeIntent = useIntentStore((state) => state.activeIntent);
+  const getCompletedIntent = useIntentStore((state) => state.getCompletedIntent);
+  
+  // Check completed intents history for this receipt
+  const completedIntent = data.intentId ? getCompletedIntent(data.intentId) : undefined;
   
   // Check if this receipt matches the active intent (by intentId or contractOrderId)
   const isActive = data.intentId && (
@@ -103,26 +107,31 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
     activeIntent?.contractOrderId === data.intentId
   );
   
-  // Use live progress if this is the active intent, otherwise use stored
+  // Priority: 1. Active intent (live), 2. Completed intent (history), 3. Stored data
   const currentProgress = isActive && activeIntent?.progress 
     ? activeIntent.progress 
+    : completedIntent?.progress 
+    ? completedIntent.progress 
     : progress;
   
-  // Use live fulfillment data if available
+  // Use live/completed fulfillment data if available
   const currentFillPrice = isActive && activeIntent?.fillPrice 
     ? activeIntent.fillPrice 
+    : completedIntent?.fillPrice
+    ? completedIntent.fillPrice
     : storedFillPrice;
   
   const currentWinnerSolver = isActive && activeIntent?.winnerSolver
     ? activeIntent.winnerSolver
+    : completedIntent?.winnerSolver
+    ? completedIntent.winnerSolver
     : storedWinnerSolver;
   
-  // Check if this receipt was already fulfilled (stored data shows completion)
-  // This handles the case when user revisits a completed session
-  const wasFulfilled = storedFillPrice || storedWinnerSolver || data.fulfilledAt || 
-    progress.every(p => p.done); // If stored progress already complete
+  // Check if this receipt was already fulfilled
+  const wasFulfilled = !!completedIntent || storedFillPrice || storedWinnerSolver || data.fulfilledAt || 
+    progress.every(p => p.done);
   
-  const isComplete = currentProgress.every(p => p.done) || wasFulfilled;
+  const isComplete = currentProgress.every(p => p.done) || wasFulfilled || !!completedIntent;
   const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
   const startSol = formatLamports(intent.startPrice);

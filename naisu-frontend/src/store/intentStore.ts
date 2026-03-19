@@ -28,6 +28,8 @@ export interface ActiveIntent {
 interface IntentState {
   // Active intent being tracked
   activeIntent: ActiveIntent | null;
+  // History of completed intents for looking up final state
+  completedIntents: Record<string, ActiveIntent>; // key: intentId
   
   // Actions
   setActiveIntent: (intent: ActiveIntent | null) => void;
@@ -35,12 +37,14 @@ interface IntentState {
   updateIntentId: (contractOrderId: string) => void;
   markFulfilled: (fillPrice?: string, winnerSolver?: string) => void;
   clearActiveIntent: () => void;
+  getCompletedIntent: (intentId: string) => ActiveIntent | undefined;
 }
 
 export const useIntentStore = create<IntentState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       activeIntent: null,
+      completedIntents: {},
       
       setActiveIntent: (intent) => set({ activeIntent: intent }),
       
@@ -63,8 +67,8 @@ export const useIntentStore = create<IntentState>()(
         })),
       
       markFulfilled: (fillPrice, winnerSolver) =>
-        set((state) => ({
-          activeIntent: state.activeIntent
+        set((state) => {
+          const fulfilledIntent = state.activeIntent
             ? {
                 ...state.activeIntent,
                 isFulfilled: true,
@@ -74,10 +78,22 @@ export const useIntentStore = create<IntentState>()(
                 progress: state.activeIntent.progress.map(s => ({ ...s, done: true, active: false })),
                 progressUpdatedAt: Date.now()
               }
-            : null
-        })),
+            : null;
+          
+          // Save to completed intents history
+          const completedIntents = fulfilledIntent 
+            ? { ...state.completedIntents, [fulfilledIntent.intentId]: fulfilledIntent }
+            : state.completedIntents;
+          
+          return {
+            activeIntent: fulfilledIntent,
+            completedIntents
+          };
+        }),
       
       clearActiveIntent: () => set({ activeIntent: null }),
+      
+      getCompletedIntent: (intentId) => get().completedIntents[intentId],
     }),
     {
       name: 'naisu-active-intent',
