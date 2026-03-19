@@ -60,6 +60,13 @@ export default function IntentPage() {
   const previousIntentIdRef = useRef<string | null>(null); // Store old ID during gasless transition
   // Snapshot of the signed intent — used to render the inline card in chat (stays permanently as receipt)
   const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
+  
+  // Dispatch progress updates for IntentReceiptCard to listen
+  useEffect(() => {
+    if (intentProgress) {
+      window.dispatchEvent(new CustomEvent('intent-progress-update', { detail: { progress: intentProgress } }));
+    }
+  }, [intentProgress]);
   // Fulfillment details for receipt card
   const [fillPrice, setFillPrice] = useState<string | undefined>();
   const [winnerSolver, setWinnerSolver] = useState<string | undefined>();
@@ -234,11 +241,14 @@ export default function IntentPage() {
       }
       if (evt.type === 'rfq_broadcast') {
         const count = (evt.data['solverCount'] as number | undefined) ?? 1;
-        setIntentProgress(prev => prev ? prev.map(s =>
-          s.key === 'rfq'
-            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
-            : s
-        ) : prev);
+        setIntentProgress(prev => {
+          console.log('[intent-page] rfq_broadcast setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
+          return prev ? prev.map(s =>
+            s.key === 'rfq'
+              ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
+              : s
+          ) : prev;
+        });
       } else if (evt.type === 'rfq_winner') {
         const winner  = evt.data['winner']      as string | undefined;
         const priceRaw = evt.data['quotedPrice'] as string | undefined;
@@ -255,20 +265,26 @@ export default function IntentPage() {
         if (priceSol) setFillPrice(priceSol);
         
         // Mark all steps up to and including winner as done; set executing active
-        setIntentProgress(prev => prev ? prev.map(s => {
-          if (s.key === 'rfq')       return { ...s, done: true, active: false };
-          if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
-          if (s.key === 'executing') return { ...s, active: true };
-          return s;
-        }) : prev);
+        setIntentProgress(prev => {
+          console.log('[intent-page] rfq_winner setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
+          return prev ? prev.map(s => {
+            if (s.key === 'rfq')       return { ...s, done: true, active: false };
+            if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
+            if (s.key === 'executing') return { ...s, active: true };
+            return s;
+          }) : prev;
+        });
       } else if (evt.type === 'execute_sent') {
         // Mark all steps up to and including executing as done; set fulfilled active
-        setIntentProgress(prev => prev ? prev.map(s => {
-          if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
-          if (s.key === 'executing') return { ...s, done: true, active: false };
-          if (s.key === 'fulfilled') return { ...s, active: true };
-          return s;
-        }) : prev);
+        setIntentProgress(prev => {
+          console.log('[intent-page] execute_sent setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
+          return prev ? prev.map(s => {
+            if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
+            if (s.key === 'executing') return { ...s, done: true, active: false };
+            if (s.key === 'fulfilled') return { ...s, active: true };
+            return s;
+          }) : prev;
+        });
       }
     }, []),
   });

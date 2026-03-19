@@ -1,4 +1,5 @@
 // Receipt card - shows final state, no animations
+import { useEffect, useState } from 'react';
 
 interface ProgressStep {
   key: string;
@@ -53,11 +54,31 @@ interface IntentReceiptCardProps {
   data: IntentReceiptData;
 }
 
+// Hook to listen for live progress updates from intent-page
+function useLiveProgress() {
+  const [liveProgress, setLiveProgress] = useState<ProgressStep[] | null>(null);
+  
+  useEffect(() => {
+    const handleProgressUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.progress) {
+        setLiveProgress(detail.progress);
+      }
+    };
+    
+    window.addEventListener('intent-progress-update', handleProgressUpdate);
+    return () => window.removeEventListener('intent-progress-update', handleProgressUpdate);
+  }, []);
+  
+  return liveProgress;
+}
+
 export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
   const { intent, progress, fillPrice, winnerSolver } = data;
-  // Use progress directly - no animation for receipts
-  // Receipts show the final/historical state, not live simulation
-  const currentProgress = progress;
+  const liveProgress = useLiveProgress();
+  // Use live progress if available (active intent tracking)
+  // Otherwise use the stored progress from receipt data
+  const currentProgress = liveProgress || progress;
   
   const isComplete = currentProgress.every(p => p.done);
   const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
