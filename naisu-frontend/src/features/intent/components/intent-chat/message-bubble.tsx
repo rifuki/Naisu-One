@@ -478,55 +478,48 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
           </div>
           
           <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
-            {/* Bridge Route Header */}
-            <div className="px-4 py-3 bg-primary/10 border-b border-primary/20">
-              <div className="flex items-center justify-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-indigo-400">B</span>
-                  </div>
-                  <span className="text-[11px] text-slate-300">Base Sepolia</span>
-                </div>
-                <div className="flex items-center gap-1 text-slate-500">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                  <span className="text-[10px]">{intent.amount} ETH</span>
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-purple-400">S</span>
-                  </div>
-                  <span className="text-[11px] text-slate-300">{destLabel}</span>
-                </div>
+            {/* Card Header */}
+            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                <span className="text-[11px] font-medium text-primary">Dutch Auction</span>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+                <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span className="text-[9px] text-primary font-medium">Pyth</span>
               </div>
             </div>
 
-            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
-              <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-              <span className="text-[11px] font-medium text-primary">Dutch Auction</span>
-              <span className="ml-auto text-[10px] text-slate-500">You receive {tokenLabel}</span>
-            </div>
-
             <div className="p-4 space-y-4">
-              {/* Pricing explanation */}
-              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              {/* Bridge Route */}
+              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                      <span className="text-[8px] font-bold text-indigo-400">B</span>
+                    </div>
+                    <span className="text-[11px] text-slate-300">Base</span>
+                  </div>
+                  <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                   </svg>
-                  <span className="text-[11px] font-medium text-primary">Dynamic Pricing</span>
+                  <div className="text-center">
+                    <div className="text-sm font-bold text-white">{intent.amount} ETH</div>
+                  </div>
+                  <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center">
+                      <span className="text-[8px] font-bold text-purple-400">S</span>
+                    </div>
+                    <span className="text-[11px] text-slate-300">{destLabel}</span>
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Price powered by <span className="text-primary font-medium">Pyth Network</span>. 
-                  Multiple solvers compete to give you the best rate. 
-                  Price starts high and improves over time until filled.
-                </p>
               </div>
 
               {/* Pricing explanation */}
