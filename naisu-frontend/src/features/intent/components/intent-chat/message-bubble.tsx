@@ -478,37 +478,55 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
           </div>
           
           <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
+            {/* Bridge Route Header */}
+            <div className="px-4 py-3 bg-primary/10 border-b border-primary/20">
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                    <span className="text-[8px] font-bold text-indigo-400">B</span>
+                  </div>
+                  <span className="text-[11px] text-slate-300">Base Sepolia</span>
+                </div>
+                <div className="flex items-center gap-1 text-slate-500">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                  <span className="text-[10px]">{intent.amount} ETH</span>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center">
+                    <span className="text-[8px] font-bold text-purple-400">S</span>
+                  </div>
+                  <span className="text-[11px] text-slate-300">{destLabel}</span>
+                </div>
+              </div>
+            </div>
+
             <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
               <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
-              <span className="text-[11px] font-medium text-primary">Dutch Auction Plan</span>
-              <span className="ml-auto text-[10px] text-slate-500">{intent.amount} ETH → {destLabel}</span>
+              <span className="text-[11px] font-medium text-primary">Dutch Auction</span>
+              <span className="ml-auto text-[10px] text-slate-500">You receive {tokenLabel}</span>
             </div>
 
             <div className="p-4 space-y-4">
-              {/* What happens to ETH */}
-              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+              {/* Pricing explanation */}
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
                 <div className="flex items-center gap-2 mb-2">
                   <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="text-[11px] font-medium text-slate-300">Bridge Details</span>
+                  <span className="text-[11px] font-medium text-primary">Dynamic Pricing</span>
                 </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">You send</span>
-                    <span className="text-white font-medium">{intent.amount} ETH</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">From</span>
-                    <span className="text-slate-300">Base Sepolia</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">To</span>
-                    <span className="text-slate-300">{destLabel}</span>
-                  </div>
-                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Price powered by <span className="text-primary font-medium">Pyth Network</span>. 
+                  Multiple solvers compete to give you the best rate. 
+                  Price starts high and improves over time until filled.
+                </p>
               </div>
 
               {/* Pricing explanation */}
@@ -517,11 +535,12 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                   <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="text-[11px] font-medium text-primary">Solver Competition</span>
+                  <span className="text-[11px] font-medium text-primary">Dynamic Pricing</span>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Multiple solvers compete to fill your order. The winning solver offers the best rate. 
-                  Price starts high and decays over time until someone fills it.
+                  Price powered by <span className="text-primary font-medium">Pyth Network</span>. 
+                  Multiple solvers compete to give you the best rate. 
+                  Price starts high and improves over time until filled.
                 </p>
               </div>
 
@@ -532,14 +551,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                 <div className="text-sm text-primary">{tokenLabel}</div>
               </div>
 
-              {/* Best/Worst case */}
+              {/* Price range */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-green-500/5 border border-green-500/20">
-                  <div className="text-[10px] text-green-500/80">Best case (if filled early)</div>
+                  <div className="text-[10px] text-green-500/80">Target price</div>
                   <div className="text-sm font-semibold text-green-400">{startSol} {tokenLabel}</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/5 border border-white/10">
-                  <div className="text-[10px] text-slate-500">Worst case (floor price)</div>
+                  <div className="text-[10px] text-slate-500">Minimum guaranteed</div>
                   <div className="text-sm font-semibold text-slate-300">{floorSol} {tokenLabel}</div>
                 </div>
               </div>
