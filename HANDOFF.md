@@ -1,5 +1,22 @@
 # Naisu One — Session Handoff
 
+## Session 17 — COMPLETED (2026-03-20)
+
+### Session 17 — Summary
+Session 17 completed the receipt card redesign and order fulfillment flow. All E2E features are now working.
+
+### Major Achievements
+1. **Order Fulfillment Flow (E2E)**: Working end-to-end with real-time progress
+2. **Zustand State Management**: Global state for intent progress with persistence
+3. **Unified Intent Card**: Plan → Sign → Receipt in single transforming card
+4. **Dutch Auction Widget**: Interactive duration selector with Pyth Network integration
+5. **Lucide Icons**: Replaced all emojis and material symbols
+6. **State Persistence**: Completed intents history survives page refresh
+
+See `PROGRESS_SUMMARY.md` for full details.
+
+---
+
 ## Session 16 — In Progress (2026-03-19)
 
 ### Architecture (unchanged)
