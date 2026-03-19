@@ -480,6 +480,7 @@ export default function IntentPage() {
       
       // Add receipt message to chat history
       const receiptContent = `[INTENT_RECEIPT]${JSON.stringify({
+        intentId: result.submissionResult.intentId,
         intent: pendingGaslessIntent,
         progress: [
           { key: 'signed', label: 'Signed & submitted', done: true, active: false },

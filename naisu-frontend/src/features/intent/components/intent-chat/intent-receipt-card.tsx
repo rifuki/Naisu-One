@@ -9,6 +9,7 @@ interface ProgressStep {
 }
 
 interface IntentReceiptData {
+  intentId?: string;  // To match with active intent in Zustand store
   intent: {
     recipientAddress: string;
     destinationChain: string;
@@ -60,9 +61,11 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
   // Get live progress from Zustand store
   const activeIntent = useIntentStore((state) => state.activeIntent);
   
-  // Check if this receipt matches the active intent
-  const isActive = activeIntent?.contractOrderId === intent.recipientAddress || 
-                   activeIntent?.intentId?.includes(intent.recipientAddress.slice(0, 20));
+  // Check if this receipt matches the active intent (by intentId or contractOrderId)
+  const isActive = data.intentId && (
+    activeIntent?.intentId === data.intentId || 
+    activeIntent?.contractOrderId === data.intentId
+  );
   
   // Use live progress if this is the active intent, otherwise use stored
   const currentProgress = isActive && activeIntent?.progress 
