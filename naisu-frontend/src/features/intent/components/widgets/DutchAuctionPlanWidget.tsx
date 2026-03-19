@@ -12,6 +12,8 @@ interface DutchAuctionPlanWidgetProps {
   destinationChain: string;
   outputToken: string;
   recipientAddress?: string;
+  onConfirm?: () => void; // If provided, show Confirm button
+  isConfirmed?: boolean; // If true, show "Plan confirmed" footer
 }
 
 const DEST_LABELS: Record<string, string> = {
@@ -55,6 +57,8 @@ export function DutchAuctionPlanWidget({
   destinationChain,
   outputToken,
   recipientAddress,
+  onConfirm,
+  isConfirmed,
 }: DutchAuctionPlanWidgetProps) {
   const startSol = formatLamports(startPrice);
   const floorSol = formatLamports(floorPrice);
@@ -118,17 +122,28 @@ export function DutchAuctionPlanWidget({
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-2 bg-green-500/5 border-t border-green-500/20">
-        <div className="flex items-center gap-2">
-          <div className="size-4 rounded-full bg-green-500/20 flex items-center justify-center">
-            <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <span className="text-[10px] text-green-400/80">Plan confirmed — signed and submitted</span>
+      {/* Footer - Confirm button or Confirmed status */}
+      {onConfirm ? (
+        <div className="px-4 py-3 bg-primary/5 border-t border-primary/20">
+          <button
+            onClick={onConfirm}
+            className="w-full py-2 px-4 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-medium transition-all active:scale-[0.98]"
+          >
+            Confirm Plan & Sign
+          </button>
         </div>
-      </div>
+      ) : isConfirmed ? (
+        <div className="px-4 py-2 bg-green-500/5 border-t border-green-500/20">
+          <div className="flex items-center gap-2">
+            <div className="size-4 rounded-full bg-green-500/20 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <span className="text-[10px] text-green-400/80">Plan confirmed — signed and submitted</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

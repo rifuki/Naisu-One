@@ -17,6 +17,7 @@ interface MessageBubbleProps {
   renderContent: (content: string) => React.ReactNode;
   monitorTx?: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
+  onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
 }
 
 interface TxInfo {
@@ -342,6 +343,8 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
             destinationChain={intent.destinationChain}
             outputToken={intent.outputToken}
             recipientAddress={intent.recipientAddress}
+            onConfirm={onDutchPlanConfirm ? () => onDutchPlanConfirm(intent) : undefined}
+            isConfirmed={false}
           />
           <MessageActions text={`Dutch Auction Plan: ${intent.amount} ETH → ${intent.destinationChain}`} />
         </div>

@@ -4,6 +4,18 @@ import { SignIntentMessage } from './sign-intent-message';
 import type { WidgetConfirmPayload } from '../widgets';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
+interface GaslessIntentData {
+  type: 'gasless_intent';
+  recipientAddress: string;
+  destinationChain: string;
+  amount: string;
+  outputToken: string;
+  startPrice: string;
+  floorPrice: string;
+  durationSeconds: number;
+  nonce: number;
+}
+
 interface MessageListProps {
   messages: ChatMessage[];
   submittedTxs: Array<{ hash: string; chainId: number; msgIdx: number; submittedAt: number }>;
@@ -13,6 +25,7 @@ interface MessageListProps {
   onRetry?: () => void;
   renderContent: (content: string) => ReactNode;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
+  onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // Sign intent card props (rendered inline in chat)
   pendingSignIntent?: SignIntentParams | null;
   signIntentStatus?: string | null;
@@ -31,6 +44,7 @@ export function MessageList({
   onRetry,
   renderContent,
   onWidgetConfirm,
+  onDutchPlanConfirm,
   pendingSignIntent,
   signIntentStatus,
   isSignIntentFailed,
@@ -77,6 +91,7 @@ export function MessageList({
               renderContent={renderContent}
               monitorTx={monitorTx}
               onWidgetConfirm={onWidgetConfirm}
+              onDutchPlanConfirm={onDutchPlanConfirm}
             />
           );
         })}
