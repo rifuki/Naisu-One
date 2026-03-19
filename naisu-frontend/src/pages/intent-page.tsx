@@ -57,6 +57,7 @@ export default function IntentPage() {
   const [intentProgress, setIntentProgress] = useState<ProgressStep[] | null>(null);
   const [intentFulfilled, setIntentFulfilled] = useState(false);
   const trackedIntentIdRef = useRef<string | null>(null);
+  const previousIntentIdRef = useRef<string | null>(null); // Store old ID during gasless transition
   // Snapshot of the signed intent — used to render the inline card in chat (stays permanently as receipt)
   const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
   // Fulfillment details for receipt card
@@ -140,8 +141,11 @@ export default function IntentPage() {
     user:    address,
     enabled: !!address && intentProgress !== null,
     onOrderFulfilled: useCallback((data: OrderFulfilledEvent) => {
-      console.log('[intent-page] onOrderFulfilled received:', data);
-      if (data.orderId !== trackedIntentIdRef.current) {
+      const currentId = trackedIntentIdRef.current;
+      const previousId = previousIntentIdRef.current;
+      const matches = data.orderId === currentId || (previousId && data.orderId === previousId);
+      console.log('[intent-page] onOrderFulfilled received:', { data, currentId, previousId, matches });
+      if (!matches) {
         console.log('[intent-page] order_fulfilled mismatch, skipping');
         return;
       }
@@ -154,14 +158,18 @@ export default function IntentPage() {
       // Trigger fulfillment via order_update handler which will set intentFulfilled=true
     }, [intentFulfilled]),
     onOrderUpdate: useCallback((event) => {
+      const currentId = trackedIntentIdRef.current;
+      const previousId = previousIntentIdRef.current;
+      const matches = event.orderId === currentId || (previousId && event.orderId === previousId);
       console.log('[intent-page] onOrderUpdate received:', { 
         eventOrderId: event.orderId, 
-        trackedId: trackedIntentIdRef.current, 
+        currentId, 
+        previousId,
+        matches,
         status: event.status,
-        match: event.orderId === trackedIntentIdRef.current 
       });
-      if (event.orderId !== trackedIntentIdRef.current) {
-        console.log('[intent-page] orderId mismatch, skipping. Expected:', trackedIntentIdRef.current, 'Got:', event.orderId);
+      if (!matches) {
+        console.log('[intent-page] orderId mismatch, skipping. Expected:', currentId, 'or', previousId, 'Got:', event.orderId);
         return;
       }
       if (event.status === 'FULFILLED') {
@@ -187,6 +195,7 @@ export default function IntentPage() {
         setIntentFulfilled(true);
         setFulfilledAt(Date.now());
         trackedIntentIdRef.current = null;
+        previousIntentIdRef.current = null;
         setPendingGaslessIntent(undefined);
         setGaslessStatus(null);
         window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
@@ -197,13 +206,32 @@ export default function IntentPage() {
       console.log('[intent-page] gasless_resolved:', { intentId, contractOrderId, currentTracked: trackedIntentIdRef.current });
       if (trackedIntentIdRef.current === intentId) {
         console.log('[intent-page] Updating trackedId from', intentId, 'to', contractOrderId);
+        previousIntentIdRef.current = intentId; // Store old ID
         trackedIntentIdRef.current = contractOrderId;
+      } else if (trackedIntentIdRef.current === contractOrderId) {
+        console.log('[intent-page] trackedId already set to contractOrderId');
       } else {
-        console.log('[intent-page] gasless_resolved ignored - intentId mismatch');
+        console.log('[intent-page] gasless_resolved ignored - intentId mismatch. Expected:', trackedIntentIdRef.current, 'Got:', intentId);
       }
     }, []),
     onProgress: useCallback((evt) => {
-      if (evt.orderId !== trackedIntentIdRef.current) return;
+      const currentId = trackedIntentIdRef.current;
+      const previousId = previousIntentIdRef.current;
+      const matchesCurrent = evt.orderId === currentId;
+      const matchesPrevious = previousId && evt.orderId === previousId;
+      console.log('[intent-page] onProgress received:', { 
+        type: evt.type, 
+        orderId: evt.orderId, 
+        currentId, 
+        previousId,
+        matchesCurrent, 
+        matchesPrevious 
+      });
+      // Accept events matching current OR previous ID (during gasless transition)
+      if (!matchesCurrent && !matchesPrevious) {
+        console.log('[intent-page] onProgress skipped - orderId mismatch');
+        return;
+      }
       if (evt.type === 'rfq_broadcast') {
         const count = (evt.data['solverCount'] as number | undefined) ?? 1;
         setIntentProgress(prev => prev ? prev.map(s =>
@@ -542,6 +570,7 @@ export default function IntentPage() {
             setIsGaslessSuccess(false);
             setIntentProgress(null);
             trackedIntentIdRef.current = null;
+            previousIntentIdRef.current = null;
           }}
         />
 
