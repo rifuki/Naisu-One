@@ -140,8 +140,13 @@ export default function IntentPage() {
     user:    address,
     enabled: !!address && intentProgress !== null,
     onOrderUpdate: useCallback((event) => {
-      if (event.orderId !== trackedIntentIdRef.current) return;
+      console.log('[intent-page] onOrderUpdate received:', { eventOrderId: event.orderId, trackedId: trackedIntentIdRef.current, status: event.status });
+      if (event.orderId !== trackedIntentIdRef.current) {
+        console.log('[intent-page] orderId mismatch, skipping');
+        return;
+      }
       if (event.status === 'FULFILLED') {
+        console.log('[intent-page] Order FULFILLED, updating UI');
         // Clear persisted signed intent — it has been fulfilled on-chain
         try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
         

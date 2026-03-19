@@ -484,7 +484,7 @@ export function getSolverSelection(orderId: string): RFQResult | null {
 // Stat updates (called by indexer when OrderFulfilled is observed)
 // ============================================================================
 
-export function recordFill(solverEvmAddress: string, fillTimeMs?: number): void {
+export function recordFill(solverEvmAddress: string, fillTimeMs?: number, orderId?: string): void {
   const solver = Array.from(registry.values()).find(
     s => s.evmAddress.toLowerCase() === solverEvmAddress.toLowerCase()
   )
@@ -507,9 +507,10 @@ export function recordFill(solverEvmAddress: string, fillTimeMs?: number): void 
   solver.tier = computeTier(solver)
 
   // Emit real-time fulfilled event for SSE streaming
+  // NOTE: orderId must be provided for frontend to match the event to the correct order
   solverEvents.emit('order_fulfilled', {
     type: 'order_fulfilled',
-    orderId: '-', // caller should provide orderId; set from context
+    orderId: orderId ?? '-',
     data: {
       solverName: solver.name,
       solverAddress: solver.evmAddress,

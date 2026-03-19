@@ -63,7 +63,7 @@ export function startCronJobs(): void {
         const solver = getSolverById(selection.winnerId)
         if (solver) {
           const fillTimeMs = Date.now() - selection.rfqSentAt
-          recordFill(solver.evmAddress, fillTimeMs)
+          recordFill(solver.evmAddress, fillTimeMs, order.orderId)
         }
       }
       clearPendingExclusive(order.orderId)

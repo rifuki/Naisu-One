@@ -67,9 +67,30 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
       es.addEventListener('order_update', (e: MessageEvent) => {
         try {
           const data: OrderUpdateEvent = JSON.parse(e.data)
+          console.log('[useOrderWatch] order_update received:', data)
           onUpdateRef.current(data)
         } catch (err) {
           console.error(`[useOrderWatch] malformed order_update event`, { raw: e.data, error: err })
+        }
+      })
+
+      // Also listen for order_fulfilled from solver service
+      es.addEventListener('order_fulfilled', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as { orderId: string; data: { solverName?: string; fillTimeMs?: number } }
+          console.log('[useOrderWatch] order_fulfilled received:', data)
+          // Convert to OrderUpdateEvent format
+          onUpdateRef.current({
+            orderId: data.orderId,
+            status: 'FULFILLED',
+            chain: 'evm-base',
+            amount: '0',
+            explorerUrl: '',
+            destinationChain: 1,
+            prevStatus: 'OPEN',
+          })
+        } catch (err) {
+          console.error(`[useOrderWatch] malformed order_fulfilled event`, { raw: e.data, error: err })
         }
       })
 
@@ -81,6 +102,7 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
         es.addEventListener(evtType, (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data) as Record<string, unknown>
+            console.log(`[useOrderWatch] ${evtType} received:`, data)
             onProgressRef.current?.({ type: evtType, orderId: data['orderId'] as string, data })
           } catch (err) {
             console.error(`[useOrderWatch] malformed ${evtType} event`, { raw: e.data, error: err })
