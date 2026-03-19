@@ -18,10 +18,10 @@ export interface LLMConfig {
   maxTokens?: number;
 }
 
-// Timeout for LLM requests (30 seconds)
-const LLM_TIMEOUT = 30000;
-// Maximum tokens to generate (keep responses concise and fast)
-const MAX_TOKENS = 500;
+// Timeout for LLM requests (60 seconds — widget flow needs multi-step tool calls)
+const LLM_TIMEOUT = 60000;
+// Maximum tokens to generate — needs to be enough for full quote_review widget JSON + text
+const MAX_TOKENS = 2000;
 
 export function createLLM(provider?: LLMProvider): AnyLLM {
   const selectedProvider = provider ?? env.LLM_PROVIDER;

@@ -13,16 +13,47 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as intentService from '@services/intent.service'
 import type { SupportedChain } from '@services/intent.service'
-import { getOrdersByCreator, getIndexerStatus, indexerEvents, injectGaslessOrder } from '@services/indexer'
+import { getOrdersByCreator, getIndexerStatus, indexerEvents, injectGaslessOrder, cancelIndexedOrder } from '@services/indexer'
 import { getActiveSolverCount, solverEvents } from '@services/solver.service'
 import type { SolverProgressEvent } from '@services/solver.service'
 import type { OrderUpdateEvent } from '@services/indexer'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
+import { config } from '@config/env'
 import { verifyIntentSignature } from '@lib/signature-verifier'
-import { addIntent, updateIntentStatus, getOrderbookStats, getUserNonce } from '@services/intent-orderbook.service'
-import { formatEther } from 'viem'
+import { addIntent, updateIntentStatus, getOrderbookStats, cancelIntent } from '@services/intent-orderbook.service'
+import { createPublicClient, http, formatEther } from 'viem'
+import { baseSepolia } from 'viem/chains'
 import type { Hex, Address } from 'viem'
+
+// ─── On-chain nonce reader ────────────────────────────────────────────────────
+// Always read from contract so backend restarts never cause "Invalid nonce" reverts.
+const NONCES_ABI = [{
+  name: 'nonces',
+  type: 'function',
+  stateMutability: 'view',
+  inputs:  [{ name: '', type: 'address' }],
+  outputs: [{ name: '', type: 'uint256' }],
+}] as const
+
+async function getOnchainNonce(userAddress: Address): Promise<number> {
+  const client = createPublicClient({
+    chain:     baseSepolia,
+    transport: http(config.intent.evm.baseSepolia.rpcUrl),
+  })
+  try {
+    const nonce = await client.readContract({
+      address:      config.intent.evm.baseSepolia.contract,
+      abi:          NONCES_ABI,
+      functionName: 'nonces',
+      args:         [userAddress],
+    })
+    return Number(nonce)
+  } catch (err) {
+    logger.warn({ err, userAddress }, 'Failed to read on-chain nonce, falling back to 0')
+    return 0
+  }
+}
 
 export const intentRouter = new Hono()
 
@@ -106,12 +137,19 @@ intentRouter.get('/watch', async (c) => {
       indexerEvents.on('order_update', onUpdate)
       indexerEvents.on('order_created', onCreated)
 
+      // Forward gasless merge events so FE can update its tracked orderId
+      const onGaslessResolved = (evt: { intentId: string; contractOrderId: string }) => {
+        send('gasless_resolved', evt)
+      }
+      indexerEvents.on('gasless_resolved', onGaslessResolved)
+
       // Subscribe to solver pipeline events — forward all (not user-scoped, orderId on client)
       const onSolverEvent = (evt: SolverProgressEvent) => {
         send(evt.type, { orderId: evt.orderId, ...evt.data })
       }
       solverEvents.on('rfq_broadcast', onSolverEvent)
       solverEvents.on('rfq_winner', onSolverEvent)
+      solverEvents.on('execute_sent', onSolverEvent)
       solverEvents.on('order_fulfilled', onSolverEvent)
 
       // Heartbeat every 30s to keep connection alive through proxies
@@ -130,8 +168,10 @@ intentRouter.get('/watch', async (c) => {
         clearTimeout(autoClose)
         indexerEvents.off('order_update', onUpdate)
         indexerEvents.off('order_created', onCreated)
+        indexerEvents.off('gasless_resolved', onGaslessResolved)
         solverEvents.off('rfq_broadcast', onSolverEvent)
         solverEvents.off('rfq_winner', onSolverEvent)
+        solverEvents.off('execute_sent', onSolverEvent)
         solverEvents.off('order_fulfilled', onSolverEvent)
       }
 
@@ -216,14 +256,19 @@ intentRouter.get('/quote', zValidator('query', quoteQuery), async (c) => {
 
   logger.info({ fromChain, toChain, token, amount }, 'Intent quote requested')
 
-  const quote = await intentService.getIntentQuote({
-    fromChain: fromChain as SupportedChain,
-    toChain:   toChain   as SupportedChain,
-    token,
-    amount,
-  })
-
-  return c.json({ success: true, data: { ...quote, activeSolvers: getActiveSolverCount() } })
+  try {
+    const quote = await intentService.getIntentQuote({
+      fromChain: fromChain as SupportedChain,
+      toChain:   toChain   as SupportedChain,
+      token,
+      amount,
+    })
+    return c.json({ success: true, data: { ...quote, activeSolvers: getActiveSolverCount() } })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, fromChain, toChain, token, amount }, 'Intent quote failed')
+    return c.json({ success: false, error: 'Failed to get quote', details: msg }, 500)
+  }
 })
 
 // ============================================================================
@@ -252,12 +297,17 @@ intentRouter.get('/orders', zValidator('query', ordersQuery), async (c) => {
   // Fallback: query RPC directly if indexer hasn't seen this user yet
   // (e.g. indexer just started or user has very old orders)
   logger.info({ user, chain }, 'Indexer miss — falling back to direct RPC query')
-  const orders = await intentService.getIntentOrders({
-    user,
-    chain: chain as SupportedChain | undefined,
-  })
-
-  return c.json({ success: true, data: orders, total: orders.length, source: 'rpc' })
+  try {
+    const orders = await intentService.getIntentOrders({
+      user,
+      chain: chain as SupportedChain | undefined,
+    })
+    return c.json({ success: true, data: orders, total: orders.length, source: 'rpc' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, user, chain }, 'Intent orders RPC fallback failed')
+    return c.json({ success: false, error: 'Failed to fetch orders', details: msg }, 500)
+  }
 })
 
 // ============================================================================
@@ -275,12 +325,17 @@ intentRouter.get('/price', zValidator('query', priceQuery), async (c) => {
 
   logger.info({ fromChain, toChain }, 'Cross-chain price requested')
 
-  const price = await intentService.getCrossChainPrice({
-    fromChain: fromChain as SupportedChain,
-    toChain:   toChain   as SupportedChain,
-  })
-
-  return c.json({ success: true, data: price })
+  try {
+    const price = await intentService.getCrossChainPrice({
+      fromChain: fromChain as SupportedChain,
+      toChain:   toChain   as SupportedChain,
+    })
+    return c.json({ success: true, data: price })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, fromChain, toChain }, 'Cross-chain price fetch failed')
+    return c.json({ success: false, error: 'Failed to get price', details: msg }, 500)
+  }
 })
 
 // ============================================================================
@@ -306,38 +361,44 @@ const buildGaslessBody = z.object({
 intentRouter.post('/build-gasless', zValidator('json', buildGaslessBody), async (c) => {
   const body = c.req.valid('json')
 
-  if (getActiveSolverCount() === 0) {
-    return c.json({
-      success: false,
-      error: 'No solver is currently active. Please try again when a solver is online.',
-    }, 503)
-  }
+  const activeSolvers = getActiveSolverCount()
+  const solverWarning = activeSolvers === 0
+    ? 'No solver is currently online. Your intent will be submitted but may not fill before the deadline. You can claim a refund on-chain if it expires unfilled.'
+    : undefined
+
+  logger.info({ sender: body.senderAddress, dest: body.destinationChain, amount: body.amount, activeSolvers }, 'Build gasless intent requested')
 
   const toChain = body.destinationChain === 'solana' ? 'solana' : 'sui'
-  const quote = await intentService.getIntentQuote({
-    fromChain: 'evm-base',
-    toChain:   toChain as SupportedChain,
-    token:     'native',
-    amount:    body.amount,
-  })
+  try {
+    const quote = await intentService.getIntentQuote({
+      fromChain: 'evm-base',
+      toChain:   toChain as SupportedChain,
+      token:     'native',
+      amount:    body.amount,
+    })
+    const nonce = await getOnchainNonce(body.senderAddress as Address)
+    const durationSeconds = body.durationSeconds ?? 300
 
-  const nonce = getUserNonce(body.senderAddress as Address)
-  const durationSeconds = body.durationSeconds ?? 300
-
-  return c.json({
-    success: true,
-    data: {
-      type:             'gasless_intent',
-      recipientAddress: body.recipientAddress,
-      destinationChain: body.destinationChain,
-      amount:           body.amount,
-      outputToken:      body.outputToken,
-      startPrice:       quote.currentAuctionPrice ?? quote.floorPrice,
-      floorPrice:       quote.floorPrice,
-      durationSeconds,
-      nonce,
-    },
-  })
+    return c.json({
+      success: true,
+      data: {
+        type:             'gasless_intent',
+        recipientAddress: body.recipientAddress,
+        destinationChain: body.destinationChain,
+        amount:           body.amount,
+        outputToken:      body.outputToken,
+        startPrice:       quote.currentAuctionPrice ?? quote.floorPrice,
+        floorPrice:       quote.floorPrice,
+        durationSeconds,
+        nonce,
+        ...(solverWarning ? { solverWarning } : {}),
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, sender: body.senderAddress, dest: body.destinationChain, amount: body.amount }, 'Build gasless intent failed')
+    return c.json({ success: false, error: 'Failed to build gasless intent', details: msg }, 500)
+  }
 })
 
 // ============================================================================
@@ -382,20 +443,25 @@ intentRouter.post('/build-tx', zValidator('json', buildTxBody), async (c) => {
     }, 503)
   }
 
-  const result = await intentService.buildIntentTx({
-    chain:            body.chain as SupportedChain,
-    action:           body.action,
-    senderAddress:    body.senderAddress,
-    recipientAddress: body.recipientAddress,
-    destinationChain: body.destinationChain as SupportedChain,
-    amount:           body.amount,
-    startPrice:       body.startPrice,
-    floorPrice:       body.floorPrice,
-    durationSeconds:  body.durationSeconds,
-    outputToken:      body.outputToken,
-  })
-
-  return c.json({ success: true, data: result })
+  try {
+    const result = await intentService.buildIntentTx({
+      chain:            body.chain as SupportedChain,
+      action:           body.action,
+      senderAddress:    body.senderAddress,
+      recipientAddress: body.recipientAddress,
+      destinationChain: body.destinationChain as SupportedChain,
+      amount:           body.amount,
+      startPrice:       body.startPrice,
+      floorPrice:       body.floorPrice,
+      durationSeconds:  body.durationSeconds,
+      outputToken:      body.outputToken,
+    })
+    return c.json({ success: true, data: result })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, chain: body.chain, action: body.action, amount: body.amount }, 'Build intent tx failed')
+    return c.json({ success: false, error: 'Failed to build transaction', details: msg }, 500)
+  }
 })
 
 // ============================================================================
@@ -461,14 +527,6 @@ intentRouter.post('/submit-signature', zValidator('json', submitSignatureBody), 
     'Gasless intent signature submitted'
   )
 
-  // Block if no solver is available
-  if (getActiveSolverCount() === 0) {
-    return c.json({
-      success: false,
-      error: 'No solver is currently active. Your intent cannot be filled. Please try again when a solver is online.',
-    }, 503)
-  }
-
   // Validate deadline hasn't already passed
   const now = Math.floor(Date.now() / 1000)
   if (body.intent.deadline <= now) {
@@ -491,21 +549,39 @@ intentRouter.post('/submit-signature', zValidator('json', submitSignatureBody), 
     nonce: BigInt(body.intent.nonce),
   }
 
-  // Verify EIP-712 signature
-  const isValidSignature = await verifyIntentSignature(
-    intentForVerification,
-    body.signature as Hex
-  )
-
-  if (!isValidSignature) {
-    logger.warn({ creator: body.intent.creator, nonce: body.intent.nonce }, 'Invalid signature')
+  // Verify nonce matches on-chain state to prevent stale signed intents
+  let onchainNonce: number
+  try {
+    onchainNonce = await getOnchainNonce(body.intent.creator as Address)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, creator: body.intent.creator }, 'Nonce check failed during signature submission')
+    return c.json({ success: false, error: 'Failed to verify nonce on-chain', details: msg }, 500)
+  }
+  if (body.intent.nonce !== onchainNonce) {
+    logger.warn({ creator: body.intent.creator, intentNonce: body.intent.nonce, onchainNonce }, 'Stale nonce — user must re-sign with current nonce')
     return c.json({
       success: false,
-      error: 'Invalid signature',
+      error: `Stale nonce: intent was signed with nonce ${body.intent.nonce} but contract expects ${onchainNonce}. Please start a new bridge request.`,
     }, 400)
   }
 
-  // Generate unique intent ID
+  // Verify EIP-712 signature
+  let isValidSignature: boolean
+  try {
+    isValidSignature = await verifyIntentSignature(intentForVerification, body.signature as Hex)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error({ err, creator: body.intent.creator }, 'Signature verification threw')
+    return c.json({ success: false, error: 'Signature verification failed', details: msg }, 500)
+  }
+
+  if (!isValidSignature) {
+    logger.warn({ creator: body.intent.creator, nonce: body.intent.nonce }, 'Invalid signature — recovered address mismatch')
+    return c.json({ success: false, error: 'Invalid signature' }, 400)
+  }
+
+  // Generate unique intent ID (include timestamp + nonce for uniqueness)
   const intentId = `0x${Buffer.from(
     `${body.intent.creator}${body.intent.nonce}${Date.now()}`
   ).toString('hex').slice(0, 64)}`
@@ -581,21 +657,22 @@ intentRouter.get(
   zValidator('query', z.object({
     address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address'),
   })),
-  (c) => {
+  async (c) => {
     const { address } = c.req.valid('query')
 
     logger.info({ address }, 'Nonce requested')
 
-    const nonce = getUserNonce(address as Address)
-
-    return c.json({ 
-      success: true, 
-      data: { 
-        address,
-        nonce,
-        message: 'Include this nonce in your next signed intent'
-      } 
-    })
+    try {
+      const nonce = await getOnchainNonce(address as Address)
+      return c.json({
+        success: true,
+        data: { address, nonce, message: 'Include this nonce in your next signed intent' }
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.error({ err, address }, 'Nonce fetch failed')
+      return c.json({ success: false, error: 'Failed to fetch nonce', details: msg }, 500)
+    }
   }
 )
 
@@ -620,11 +697,43 @@ intentRouter.get(
 
     logger.info({ chain, address }, 'EVM balance requested')
 
-    const balance = await intentService.getEvmNativeBalance({
-      chain,
-      address,
-    })
-
-    return c.json({ success: true, data: balance })
+    try {
+      const balance = await intentService.getEvmNativeBalance({ chain, address })
+      return c.json({ success: true, data: balance })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.error({ err, chain, address }, 'EVM balance fetch failed')
+      return c.json({ success: false, error: 'Failed to fetch EVM balance', details: msg }, 500)
+    }
   }
 )
+
+// ============================================================================
+// PATCH /orders/:intentId/cancel — Off-chain cancel for gasless intents
+// ============================================================================
+
+/**
+ * Cancel a pending gasless intent (off-chain, no gas needed).
+ * Only works if solver has NOT yet called executeIntent().
+ * Once on-chain, user must call cancelOrder() on the contract.
+ *
+ * Example:
+ *   PATCH /api/v1/intent/orders/0xabc.../cancel
+ */
+intentRouter.patch('/orders/:intentId/cancel', async (c) => {
+  const { intentId } = c.req.param()
+
+  logger.info({ intentId }, 'Off-chain intent cancel requested')
+
+  // Try to cancel in orderbook (gasless pre-execute)
+  const orderbookCancelled = cancelIntent(intentId)
+
+  // Also mark as cancelled in indexer store (so Active Intents widget updates)
+  const indexerCancelled = cancelIndexedOrder(intentId)
+
+  if (!orderbookCancelled && !indexerCancelled) {
+    return c.json({ success: false, error: 'Intent not found or cannot be cancelled' }, 404)
+  }
+
+  return c.json({ success: true, data: { intentId, status: 'cancelled' } })
+})

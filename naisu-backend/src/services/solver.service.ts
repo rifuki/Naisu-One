@@ -31,7 +31,7 @@ const EXECUTE_TIMEOUT_MS       = 10_000
 export const solverEvents = new EventEmitter()
 
 export interface SolverProgressEvent {
-  type: 'rfq_broadcast' | 'rfq_winner' | 'order_fulfilled'
+  type: 'rfq_broadcast' | 'rfq_winner' | 'execute_sent' | 'order_fulfilled'
   orderId: string
   data: Record<string, unknown>
 }
@@ -437,6 +437,13 @@ export async function broadcastRFQ(order: IntentOrder): Promise<RFQResult | null
             const body = await r.json().catch(() => ({}))
             if (r.ok) {
               logger.info({ orderId: order.orderId, winner, txHash: (body as Record<string, unknown>)['tx_hash'] }, '[RFQ] Execute signal sent — solver is executing intent')
+              // Clear exclusive window so checkFades() does not penalise an actively executing solver
+              clearPendingExclusive(order.orderId)
+              solverEvents.emit('execute_sent', {
+                type: 'execute_sent',
+                orderId: order.orderId,
+                data: { winner, txHash: (body as Record<string, unknown>)['tx_hash'] ?? null },
+              } satisfies SolverProgressEvent)
             } else {
               logger.warn({ orderId: order.orderId, status: r.status, body }, '[RFQ] Solver /execute returned error')
             }
@@ -527,12 +534,14 @@ export function checkFades(): void {
     if (now < pending.deadline + 5_000) continue  // give 5s grace after deadline
 
     const rfq = rfqResults.get(orderId)
-    // If order was fulfilled, no fade
-    if (rfq && rfq.winner) {
-      // check via indexer — we just clean up the map; real check via recordFill
+    // Skip fade if a winner executed — clearPendingExclusive should have fired,
+    // but guard here in case of race conditions or orderId mismatches.
+    if (rfq?.winner) {
+      pendingExclusive.delete(orderId)
+      continue
     }
 
-    // Mark as fade if exclusive window expired and we haven't cleaned it up
+    // Mark as fade: exclusive window expired with no winner executing
     const solver = registry.get(pending.winnerId)
     if (solver) {
       solver.fadePenalty++

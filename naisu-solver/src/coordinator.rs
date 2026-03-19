@@ -172,6 +172,21 @@ pub async fn start(config: Arc<Config>) {
     let rfq_port    = config.solver_rfq_port;
     let callback_url = format!("http://127.0.0.1:{rfq_port}");
 
+    // Guard: claim the port before registering — fail fast if already in use
+    let addr = format!("0.0.0.0:{rfq_port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(
+                "Cannot bind RFQ port {rfq_port}: {e}\n\
+                Another solver instance may already be running. \
+                Kill it first (lsof -i :{rfq_port}) then retry."
+            );
+            std::process::exit(1);
+        }
+    };
+    tracing::info!(%addr, "RFQ port reserved");
+
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -229,9 +244,14 @@ pub async fn start(config: Arc<Config>) {
         let evm_rpc_url  = config.base_rpc_url.clone();
         let sol_addr     = sol_address.clone();
         let evm_addr     = evm_address.clone();
+        let name2        = name.clone();
+        let callback_url2 = format!("http://127.0.0.1:{rfq_port}");
 
         tokio::spawn(async move {
-            heartbeat_loop(client2, token2, backend_url2, rpc_url, evm_rpc_url, sol_addr, evm_addr).await
+            heartbeat_loop(
+                client2, token2, backend_url2, rpc_url, evm_rpc_url, sol_addr, evm_addr,
+                name2, callback_url2,
+            ).await
         });
     }
 
@@ -249,16 +269,9 @@ pub async fn start(config: Arc<Config>) {
         .route("/execute", post(handle_execute))
         .with_state(solver_state);
 
-    let addr = format!("0.0.0.0:{rfq_port}");
     tracing::info!(%addr, "RFQ server listening");
-
-    match tokio::net::TcpListener::bind(&addr).await {
-        Ok(listener) => {
-            if let Err(e) = axum::serve(listener, app).await {
-                tracing::error!("RFQ server error: {e}");
-            }
-        }
-        Err(e) => tracing::error!("Cannot bind RFQ port {rfq_port}: {e}"),
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("RFQ server error: {e}");
     }
 }
 
@@ -267,15 +280,19 @@ pub async fn start(config: Arc<Config>) {
 // ============================================================================
 
 async fn heartbeat_loop(
-    client:      reqwest::Client,
-    token:       String,
-    backend_url: String,
-    sol_rpc:     String,
-    evm_rpc:     String,
-    sol_address: String,
-    evm_address: String,
+    client:       reqwest::Client,
+    initial_token: String,
+    backend_url:  String,
+    sol_rpc:      String,
+    evm_rpc:      String,
+    sol_address:  String,
+    evm_address:  String,
+    solver_name:  String,
+    callback_url: String,
 ) {
-    let url = format!("{backend_url}/api/v1/solver/heartbeat");
+    let hb_url       = format!("{backend_url}/api/v1/solver/heartbeat");
+    let register_url = format!("{backend_url}/api/v1/solver/register");
+    let mut token    = initial_token;
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
     interval.tick().await; // discard first instant tick
 
@@ -296,8 +313,32 @@ async fn heartbeat_loop(
             status: "ready".to_string(),
         };
 
-        match client.post(&url).bearer_auth(&token).json(&body).send().await {
+        match client.post(&hb_url).bearer_auth(&token).json(&body).send().await {
             Ok(r) if r.status().is_success() => tracing::debug!("Heartbeat OK"),
+            Ok(r) if r.status() == 401 => {
+                tracing::warn!("Heartbeat 401 — backend restarted, re-registering...");
+                // Re-register to get a fresh token
+                let reg_body = RegisterBody {
+                    name:             solver_name.clone(),
+                    evm_address:      evm_address.clone(),
+                    solana_address:   sol_address.clone(),
+                    callback_url:     callback_url.clone(),
+                    supported_routes: vec!["evm-base→solana".to_string()],
+                };
+                match client.post(&register_url).json(&reg_body).send().await {
+                    Ok(r) if r.status().is_success() => {
+                        match r.json::<RegisterResponse>().await {
+                            Ok(data) => {
+                                tracing::info!(solver_id = %data.data.solver_id, "Re-registered with naisu-backend");
+                                token = data.data.token;
+                            }
+                            Err(e) => tracing::warn!(err = %e, "Re-register parse error"),
+                        }
+                    }
+                    Ok(r) => tracing::warn!(status = %r.status(), "Re-register failed"),
+                    Err(e) => tracing::warn!(err = %e, "Re-register request error"),
+                }
+            }
             Ok(r) => tracing::warn!(status = %r.status(), "Heartbeat failed"),
             Err(e) => tracing::warn!(err = %e, "Heartbeat error"),
         }
@@ -465,22 +506,77 @@ async fn handle_execute(
         "Sending executeIntent() tx — solver pays gas, order ETH locked in contract"
     );
 
-    match client.send_transaction(tx, None).await {
-        Ok(pending) => match pending.await {
-            Ok(Some(receipt)) => {
-                let tx_hash = format!("{:?}", receipt.transaction_hash);
-                tracing::info!(
-                    intent_id = %req.intent_id,
-                    tx_hash   = %tx_hash,
-                    "executeIntent() mined — EVM listener will now detect OrderCreated and execute cross-chain"
-                );
-                Json(ExecuteResponse { success: true, tx_hash: Some(tx_hash), error: None })
+    // Submit tx — do NOT await the receipt here.
+    // Backend HTTP timeout (10s) kills the connection before Base Sepolia mines the block (~15-30s).
+    // Solution: submit → copy tx hash → drop client → poll receipt in background task.
+    let pending = match client.send_transaction(tx, None).await {
+        Ok(p)  => p,
+        Err(e) => {
+            tracing::error!(intent_id = %req.intent_id, err = %e, "send_transaction failed");
+            err!(format!("send_transaction failed: {e}"))
+        }
+    };
+
+    // Copy the H256 tx hash before dropping pending (which borrows client)
+    let tx_hash_h256 = pending.tx_hash();
+    let submitted_hash = format!("{:?}", tx_hash_h256);
+
+    tracing::info!(
+        intent_id = %req.intent_id,
+        tx_hash   = %submitted_hash,
+        "executeIntent() submitted — polling confirmation in background"
+    );
+
+    // Drop pending + client so background task can own rpc_url without borrow issues
+    drop(pending);
+    drop(client);
+
+    // Background task: create fresh provider, poll for receipt
+    let rpc_url_bg  = req.rpc_url.clone();
+    let intent_id_bg = req.intent_id.clone();
+    tokio::spawn(async move {
+        use ethers::providers::Middleware as _;
+        let provider = match Provider::<Http>::try_from(rpc_url_bg.as_str()) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(intent_id = %intent_id_bg, err = %e, "Background: invalid RPC URL");
+                return;
             }
-            Ok(None) => err!("No receipt received".to_string()),
-            Err(e)   => err!(format!("Wait for receipt failed: {e}")),
-        },
-        Err(e) => err!(format!("send_transaction failed: {e}")),
-    }
+        };
+
+        // Poll every 3s for up to ~5 minutes (100 attempts)
+        for attempt in 0u32..100 {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            match provider.get_transaction_receipt(tx_hash_h256).await {
+                Ok(Some(receipt)) => {
+                    let tx_hash_str = format!("{:?}", receipt.transaction_hash);
+                    if receipt.status == Some(ethers::types::U64::from(1)) {
+                        tracing::info!(
+                            intent_id = %intent_id_bg,
+                            tx_hash   = %tx_hash_str,
+                            "executeIntent() mined ✓ — EVM listener will detect OrderCreated and execute cross-chain"
+                        );
+                    } else {
+                        tracing::error!(
+                            intent_id = %intent_id_bg,
+                            tx_hash   = %tx_hash_str,
+                            "executeIntent() REVERTED — check msg.value / signature / nonce"
+                        );
+                    }
+                    return;
+                }
+                Ok(None) => {
+                    if attempt % 10 == 9 {
+                        tracing::debug!(intent_id = %intent_id_bg, attempt, "Still waiting for executeIntent() receipt...");
+                    }
+                }
+                Err(e) => tracing::warn!(intent_id = %intent_id_bg, err = %e, "Receipt poll error — retrying"),
+            }
+        }
+        tracing::warn!(intent_id = %intent_id_bg, "executeIntent() receipt poll timed out after 5 min");
+    });
+
+    Json(ExecuteResponse { success: true, tx_hash: Some(submitted_hash), error: None })
 }
 
 // ============================================================================

@@ -298,6 +298,7 @@ export function useAgent(
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
+        console.error(`[useAgent] request timed out (60s)`, { url: `${AGENT_URL}/v1/chat`, projectId: PROJECT_ID, userId: walletAddress, messagePrev: userMessage.slice(0, 80) });
         const timeoutMsg = "The agent is taking too long to respond (timeout). It might be stuck waiting for a solver or processing a long request. Please try again later.";
         setError(timeoutMsg);
         appendMessages(prev => [...prev, {
@@ -306,6 +307,7 @@ export function useAgent(
         }]);
       } else {
         const msg = err instanceof Error ? err.message : 'Network error';
+        console.error(`[useAgent] chat request failed`, { url: `${AGENT_URL}/v1/chat`, projectId: PROJECT_ID, userId: walletAddress, error: msg, messagePrev: userMessage.slice(0, 80) });
         setError(msg);
         appendMessages(prev => [...prev, {
           role: 'assistant' as const,

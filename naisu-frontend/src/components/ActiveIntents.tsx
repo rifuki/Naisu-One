@@ -19,6 +19,8 @@ import {
   EXPLORERS,
 } from '@/lib/constants';
 
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IntentStatus = 'Open' | 'Fulfilled' | 'Cancelled';
@@ -63,6 +65,14 @@ function destChainLabel(wormholeId: number): string {
 // ─── Detail Dialog ────────────────────────────────────────────────────────────
 
 function TxLink({ label, hash, href }: { label: string; hash: string; href: string }) {
+  if (!hash) {
+    return (
+      <div>
+        {label && <div className="text-[10px] text-slate-500 mb-0.5">{label}</div>}
+        <span className="text-xs font-mono text-slate-600 italic">Gasless — no on-chain tx from user</span>
+      </div>
+    );
+  }
   return (
     <div>
       {label && <div className="text-[10px] text-slate-500 mb-0.5">{label}</div>}
@@ -149,9 +159,11 @@ function IntentDetailDialog({
             <p className="text-xs font-mono break-all text-slate-300">{intent.id}</p>
           </div>
 
-          {/* Create TX */}
+          {/* Create / Execute TX */}
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.07] p-3">
-            <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">Create Intent TX</div>
+            <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">
+              {intent.isGasless ? 'Execute TX (by Solver)' : 'Create Intent TX'}
+            </div>
             {intent.chain === 'evm' ? (
               <TxLink label="" hash={intent.txDigest} href={`${evmExp}/tx/${intent.txDigest}`} />
             ) : (
@@ -307,16 +319,23 @@ function OrderCard({
         {/* Header */}
         <div className="flex items-start justify-between mb-2.5">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <a
-              href={intent.chain === 'evm'
-                ? `${evmExp}/tx/${intent.txDigest}`
-                : `${EXPLORERS.solana}/tx/${intent.txDigest}?cluster=devnet`}
-              target="_blank" rel="noopener noreferrer"
-              className="text-[10px] font-mono text-slate-500 hover:text-primary transition-colors flex items-center gap-0.5"
-            >
-              {shortHash(intent.txDigest, 6, 4)}
-              <span className="material-symbols-outlined text-[10px]">open_in_new</span>
-            </a>
+            {intent.txDigest ? (
+              <a
+                href={intent.chain === 'evm'
+                  ? `${evmExp}/tx/${intent.txDigest}`
+                  : `${EXPLORERS.solana}/tx/${intent.txDigest}?cluster=devnet`}
+                target="_blank" rel="noopener noreferrer"
+                className="text-[10px] font-mono text-slate-500 hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                {shortHash(intent.txDigest, 6, 4)}
+                <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+              </a>
+            ) : (
+              <span className="text-[10px] font-mono text-slate-600 flex items-center gap-0.5">
+                <span className="material-symbols-outlined text-[10px]">lock_open</span>
+                Gasless
+              </span>
+            )}
             {intent.sourceChain && (
               <span className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-slate-400 border border-white/[0.07]">
                 {intent.sourceChain}
@@ -503,18 +522,28 @@ export default function ActiveIntents() {
     }
     if (!evmAddress) { showToast('Connect EVM wallet first', 'error'); return; }
 
-    const contractAddress = BASE_SEPOLIA_CONTRACT;
     setCancellingId(intent.id);
     try {
+      // Gasless pre-execute: cancel off-chain (no gas needed, no on-chain order yet)
+      if (intent.isGasless && !intent.txDigest) {
+        const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders/${intent.id}/cancel`, { method: 'PATCH' });
+        const json = await res.json() as { success: boolean; error?: string };
+        if (!json.success) throw new Error(json.error ?? 'Cancel failed');
+        showToast('Intent cancelled!', 'success');
+        setTimeout(refresh, 1000);
+        return;
+      }
+
+      // On-chain cancel (old-style lock-funds, or gasless already executed)
+      const contractAddress = BASE_SEPOLIA_CONTRACT;
       const data = encodeFunctionData({
         abi: INTENT_BRIDGE_ABI,
         functionName: 'cancelOrder',
         args: [intent.id as `0x${string}`],
       });
-      const chainId = BASE_SEPOLIA_CHAIN_ID;
-      await sendTransactionAsync({ to: contractAddress, data, chainId });
+      await sendTransactionAsync({ to: contractAddress, data, chainId: BASE_SEPOLIA_CHAIN_ID });
       showToast('Order cancelled — ETH refunded!', 'success');
-      setTimeout(refresh, 2000); // re-fetch after cancel
+      setTimeout(refresh, 2000);
     } catch (e: any) {
       showToast(e.shortMessage ?? e.message ?? 'Cancel failed', 'error');
     } finally {

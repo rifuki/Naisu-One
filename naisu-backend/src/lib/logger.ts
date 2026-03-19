@@ -1,7 +1,9 @@
 /**
- * Logger
- * Simple structured logging
+ * Logger — console (pretty in dev, JSON in prod) + daily file output
+ * Files written to: logs/backend.log.YYYY-MM-DD
  */
+import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
+import { resolve, join } from 'node:path'
 import { config } from '@config/env'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -12,6 +14,33 @@ interface LogEntry {
   timestamp: string
   data?: Record<string, unknown>
 }
+
+// ─── File logging ─────────────────────────────────────────────────────────────
+
+const LOGS_DIR = resolve('logs')
+
+function ensureLogsDir(): void {
+  try {
+    if (!existsSync(LOGS_DIR)) mkdirSync(LOGS_DIR, { recursive: true })
+  } catch { /* ignore */ }
+}
+
+function writeToFile(level: LogLevel, message: string, data?: Record<string, unknown>): void {
+  try {
+    ensureLogsDir()
+    const date = new Date().toISOString().slice(0, 10)
+    const filePath = join(LOGS_DIR, `backend.log.${date}`)
+    const entry: Record<string, unknown> = {
+      t: new Date().toISOString(),
+      l: level,
+      msg: message,
+    }
+    if (data && Object.keys(data).length > 0) entry.data = data
+    appendFileSync(filePath, JSON.stringify(entry) + '\n')
+  } catch { /* file logging must never crash the app */ }
+}
+
+// ─── Logger class ─────────────────────────────────────────────────────────────
 
 class Logger {
   private safeStringify(value: unknown, space?: number): string {
@@ -61,19 +90,22 @@ class Logger {
       ...(data && { data }),
     }
 
+    // Write to file (all levels)
+    writeToFile(level, message, data)
+
     // In development, pretty print
     if (config.server.isDev) {
       const colorCode = {
         debug: '\x1b[36m', // Cyan
-        info: '\x1b[32m', // Green
-        warn: '\x1b[33m', // Yellow
+        info:  '\x1b[32m', // Green
+        warn:  '\x1b[33m', // Yellow
         error: '\x1b[31m', // Red
       }[level]
 
       const reset = '\x1b[0m'
+      const dataStr = data ? ' ' + this.safeStringify(data, 2) : ''
       console.log(
-        `${colorCode}[${entry.level.toUpperCase()}]${reset} ${entry.timestamp} - ${entry.message}`,
-        data ? this.safeStringify(data, 2) : ''
+        `${colorCode}[${entry.level.toUpperCase()}]${reset} ${entry.timestamp} - ${entry.message}${dataStr}`
       )
     } else {
       // In production, structured JSON

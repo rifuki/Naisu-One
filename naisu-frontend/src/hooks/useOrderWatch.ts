@@ -23,19 +23,31 @@ export interface OrderUpdateEvent {
   prevStatus:       string
 }
 
-interface UseOrderWatchOptions {
-  user:           string | undefined
-  chain?:         string
-  enabled?:       boolean
-  onOrderUpdate:  (event: OrderUpdateEvent) => void
-  onOrderCreated?: () => void
+export interface IntentProgressEvent {
+  type:    'rfq_broadcast' | 'rfq_winner' | 'execute_sent'
+  orderId: string
+  data:    Record<string, unknown>
 }
 
-export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOrderCreated }: UseOrderWatchOptions) {
-  const onUpdateRef  = useRef(onOrderUpdate)
-  const onCreatedRef = useRef(onOrderCreated)
-  onUpdateRef.current  = onOrderUpdate
-  onCreatedRef.current = onOrderCreated
+interface UseOrderWatchOptions {
+  user:                 string | undefined
+  chain?:               string
+  enabled?:             boolean
+  onOrderUpdate:        (event: OrderUpdateEvent) => void
+  onOrderCreated?:      () => void
+  onProgress?:          (event: IntentProgressEvent) => void
+  onGaslessResolved?:   (intentId: string, contractOrderId: string) => void
+}
+
+export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOrderCreated, onProgress, onGaslessResolved }: UseOrderWatchOptions) {
+  const onUpdateRef           = useRef(onOrderUpdate)
+  const onCreatedRef          = useRef(onOrderCreated)
+  const onProgressRef         = useRef(onProgress)
+  const onGaslessResolvedRef  = useRef(onGaslessResolved)
+  onUpdateRef.current          = onOrderUpdate
+  onCreatedRef.current         = onOrderCreated
+  onProgressRef.current        = onProgress
+  onGaslessResolvedRef.current = onGaslessResolved
 
   useEffect(() => {
     if (!user || !enabled) return
@@ -56,11 +68,33 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
         try {
           const data: OrderUpdateEvent = JSON.parse(e.data)
           onUpdateRef.current(data)
-        } catch { /* ignore malformed */ }
+        } catch (err) {
+          console.error(`[useOrderWatch] malformed order_update event`, { raw: e.data, error: err })
+        }
       })
 
       es.addEventListener('order_created', () => {
         onCreatedRef.current?.()
+      })
+
+      for (const evtType of ['rfq_broadcast', 'rfq_winner', 'execute_sent'] as const) {
+        es.addEventListener(evtType, (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data) as Record<string, unknown>
+            onProgressRef.current?.({ type: evtType, orderId: data['orderId'] as string, data })
+          } catch (err) {
+            console.error(`[useOrderWatch] malformed ${evtType} event`, { raw: e.data, error: err })
+          }
+        })
+      }
+
+      es.addEventListener('gasless_resolved', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as { intentId: string; contractOrderId: string }
+          onGaslessResolvedRef.current?.(data.intentId, data.contractOrderId)
+        } catch (err) {
+          console.error(`[useOrderWatch] malformed gasless_resolved event`, { raw: e.data, error: err })
+        }
       })
 
       es.addEventListener('close', () => {
@@ -71,10 +105,12 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
         }
       })
 
-      es.onerror = () => {
+      es.onerror = (event) => {
+        const readyState = es?.readyState
+        console.error(`[useOrderWatch] SSE error — readyState=${readyState} user=${user}`, event)
         es?.close()
-        // Reconnect with exponential-ish backoff (5 s)
         if (!destroyed) {
+          console.info(`[useOrderWatch] reconnecting in 5s (user=${user})`)
           reconnectTimer = setTimeout(connect, 5_000)
         }
       }

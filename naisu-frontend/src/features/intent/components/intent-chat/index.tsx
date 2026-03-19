@@ -1,7 +1,9 @@
+import { type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
+import type { WidgetConfirmPayload } from '../widgets';
 
 const SUGGESTIONS = [
   'Bridge 0.1 ETH from Base Sepolia to Solana',
@@ -22,6 +24,8 @@ interface IntentChatProps {
   onRetry: () => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  inlineCard?: ReactNode;
+  onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
 }
 
 function renderMarkdown(content: string) {
@@ -55,6 +59,8 @@ export function IntentChat({
   onRetry,
   onNewChat,
   onOpenSettings,
+  inlineCard,
+  onWidgetConfirm,
 }: IntentChatProps) {
   const isEmpty = messages.length === 0 && !isLoading;
 
@@ -73,6 +79,8 @@ export function IntentChat({
         error={error}
         onRetry={onRetry}
         renderContent={renderMarkdown}
+        inlineCard={inlineCard}
+        onWidgetConfirm={onWidgetConfirm}
       />
 
       {/* Input area */}

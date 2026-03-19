@@ -73,6 +73,8 @@ export interface IntentOrder {
   status: 'OPEN' | 'FULFILLED' | 'CANCELLED'
   intentType: number  // 0=SOL, 1=mSOL (Marinade)
   explorerUrl: string
+  fulfillTxHash?: string   // EVM tx hash of OrderFulfilled event
+  isGasless?: boolean      // true if created via EIP-712 off-chain signature
 }
 
 export interface CrossChainPrice {

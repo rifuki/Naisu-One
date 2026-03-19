@@ -1,5 +1,13 @@
 import type { SignIntentParams } from '../hooks/use-sign-intent';
 
+interface ProgressStep {
+  key: string
+  label: string
+  detail?: string
+  done: boolean
+  active: boolean
+}
+
 interface GaslessIntentReviewCardProps {
   intent: SignIntentParams;
   status: string | null;
@@ -7,6 +15,11 @@ interface GaslessIntentReviewCardProps {
   onDismiss: () => void;
   isFailed?: boolean;
   isSuccess?: boolean;
+  progress?: ProgressStep[] | null;
+  /** When true, renders without outer px padding (for embedding in chat message list) */
+  embedded?: boolean;
+  /** When true, shows permanent FULFILLED receipt state — card never disappears */
+  fulfilled?: boolean;
 }
 
 const DEST_LABELS: Record<string, string> = {
@@ -27,6 +40,9 @@ export function GaslessIntentReviewCard({
   onDismiss,
   isFailed,
   isSuccess,
+  progress,
+  embedded,
+  fulfilled,
 }: GaslessIntentReviewCardProps) {
   // Format prices from lamports/gwei to human-readable
   const formatPrice = (lamports: string) => {
@@ -44,8 +60,8 @@ export function GaslessIntentReviewCard({
       : intent.recipientAddress;
 
   return (
-    <div className="w-full px-4 sm:px-8 relative z-30">
-      <div className="max-w-3xl mx-auto">
+    <div className={embedded ? 'w-full' : 'w-full px-4 sm:px-8 relative z-30'}>
+      <div className={embedded ? 'w-full' : 'max-w-3xl mx-auto'}>
         <div
           className={`relative rounded-2xl overflow-hidden transition-colors border ${
             isFailed
@@ -62,21 +78,29 @@ export function GaslessIntentReviewCard({
           />
 
           <div className="flex flex-col">
+            {/* Fulfilled receipt banner */}
+            {fulfilled && (
+              <div className="px-5 py-2 flex items-center gap-2 bg-green-500/10 border-b border-green-500/20">
+                <span className="material-symbols-outlined text-green-400 text-[16px]">verified</span>
+                <span className="text-[11px] font-bold text-green-400 uppercase tracking-[0.1em]">Fulfilled — Receipt</span>
+                <span className="ml-auto text-[10px] text-green-500/60">Permanent record</span>
+              </div>
+            )}
             {/* Header with FREE badge */}
             <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-white/5">
-              <div className="size-6 rounded-lg bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+              <div className={`size-6 rounded-lg flex items-center justify-center shrink-0 ${fulfilled ? 'bg-green-500/15 border border-green-500/20' : 'bg-primary/15 border border-primary/20'}`}>
                 <span
-                  className="material-symbols-outlined text-primary"
+                  className={`material-symbols-outlined text-[14px] ${fulfilled ? 'text-green-400' : 'text-primary'}`}
                   style={{ fontSize: '14px' }}
                 >
-                  signature
+                  {fulfilled ? 'check_circle' : 'signature'}
                 </span>
               </div>
-              <span className="text-[11px] font-bold text-primary uppercase tracking-[0.12em]">
-                Sign Intent
+              <span className={`text-[11px] font-bold uppercase tracking-[0.12em] ${fulfilled ? 'text-green-400' : 'text-primary'}`}>
+                {fulfilled ? 'Intent Fulfilled' : 'Sign Intent'}
               </span>
               {/* FREE Badge */}
-              <span className="ml-2 px-2 py-0.5 rounded-full bg-green-500/20 border border-green-500/30 text-green-400 text-[9px] font-bold uppercase tracking-wider animate-pulse">
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-green-400 text-[9px] font-bold uppercase tracking-wider ${fulfilled ? 'bg-green-500/20 border border-green-500/30' : 'bg-green-500/20 border border-green-500/30 animate-pulse'}`}>
                 FREE - No Gas
               </span>
               <span className="ml-auto text-[10px] font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
@@ -136,11 +160,12 @@ export function GaslessIntentReviewCard({
                       {formatPrice(intent.startPrice)} SOL
                     </span>
                   </div>
-                  <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
-                    <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">
-                      Floor price
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-300">
+                  <div className="flex flex-col px-2.5 py-2 rounded-lg bg-green-500/5 border border-green-500/20">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="material-symbols-outlined text-green-500 text-[10px]">verified_user</span>
+                      <span className="text-[9px] text-green-600 uppercase tracking-wider">Min. receive</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-green-400 font-semibold">
                       {formatPrice(intent.floorPrice)} SOL
                     </span>
                   </div>
@@ -174,52 +199,78 @@ export function GaslessIntentReviewCard({
               {/* Divider */}
               <div className="w-px bg-white/5 self-stretch" />
 
-              {/* Right: actions */}
-              <div className="flex flex-col justify-center gap-2 px-4 py-4 shrink-0 w-[148px]">
-                {status ? (
-                  <div className="flex flex-col items-center gap-2 py-2">
-                    {!isFailed && !isSuccess && (
-                      <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    )}
-                    {isFailed && (
-                      <span className="material-symbols-outlined text-red-500 text-lg">error</span>
-                    )}
-                    {isSuccess && (
-                      <span className="material-symbols-outlined text-green-500 text-lg">
-                        check_circle
+              {/* Right: progress stepper or actions */}
+              {progress ? (
+                <div className="flex flex-col gap-1.5 px-4 py-4 shrink-0 w-[160px]">
+                  {progress.map((step) => (
+                    <div key={step.key} className="flex items-start gap-2">
+                      <div className="mt-0.5 shrink-0">
+                        {step.done ? (
+                          <span className="material-symbols-outlined text-green-400 text-[14px]">check_circle</span>
+                        ) : step.active ? (
+                          <div className="size-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-0.5" />
+                        ) : (
+                          <div className="size-3.5 rounded-full border border-white/15 mt-0.5" />
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className={`text-[10px] leading-tight ${step.done ? 'text-green-400' : step.active ? 'text-primary' : 'text-slate-600'}`}>
+                          {step.label}
+                        </span>
+                        {step.detail && (
+                          <span className="text-[9px] text-slate-500 truncate">{step.detail}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col justify-center gap-2 px-4 py-4 shrink-0 w-[148px]">
+                  {status ? (
+                    <div className="flex flex-col items-center gap-2 py-2">
+                      {!isFailed && !isSuccess && (
+                        <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      )}
+                      {isFailed && (
+                        <span className="material-symbols-outlined text-red-500 text-lg">error</span>
+                      )}
+                      {isSuccess && (
+                        <span className="material-symbols-outlined text-green-500 text-lg">
+                          check_circle
+                        </span>
+                      )}
+                      <span
+                        className={`text-[11px] text-center leading-tight ${
+                          isFailed
+                            ? 'text-red-400 font-medium'
+                            : isSuccess
+                            ? 'text-green-400 font-medium'
+                            : 'text-primary/80'
+                        }`}
+                      >
+                        {status}
                       </span>
-                    )}
-                    <span
-                      className={`text-[11px] text-center leading-tight ${
-                        isFailed
-                          ? 'text-red-400 font-medium'
-                          : isSuccess
-                          ? 'text-green-400 font-medium'
-                          : 'text-primary/80'
-                      }`}
-                    >
-                      {status}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={onConfirm}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">signature</span>
-                      Sign (Free)
-                    </button>
-                    <button
-                      onClick={onDismiss}
-                      className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
-                    >
-                      <span className="material-symbols-outlined text-[13px]">close</span>
-                      Dismiss
-                    </button>
-                  </>
-                )}
-              </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={onConfirm}
+                        className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">signature</span>
+                        Sign (Free)
+                      </button>
+                      <button
+                        onClick={onDismiss}
+                        className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">close</span>
+                        Dismiss
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

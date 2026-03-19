@@ -8,8 +8,20 @@ import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
 import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
-import { useSignIntent } from '@/features/intent/hooks/use-sign-intent';
-import type { TxData } from '@/hooks/useAgent';
+import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
+import { useOrderWatch } from '@/hooks/useOrderWatch';
+import type { WidgetConfirmPayload } from '@/features/intent/components/widgets';
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+const PENDING_INTENT_KEY = 'naisu_pending_signed_intent';
+
+interface ProgressStep {
+  key: string
+  label: string
+  detail?: string
+  done: boolean
+  active: boolean
+}
 
 export default function IntentPage() {
   const [inputValue, setInputValue] = useState('');
@@ -28,6 +40,13 @@ export default function IntentPage() {
   const [isGaslessFailed, setIsGaslessFailed] = useState(false);
   const [isGaslessSuccess, setIsGaslessSuccess] = useState(false);
 
+  // Progress tracking state (shown after successful sign)
+  const [intentProgress, setIntentProgress] = useState<ProgressStep[] | null>(null);
+  const [intentFulfilled, setIntentFulfilled] = useState(false);
+  const trackedIntentIdRef = useRef<string | null>(null);
+  // Snapshot of the signed intent — used to render the inline card in chat (stays permanently as receipt)
+  const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
+
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const publicClient = usePublicClient();
@@ -36,6 +55,7 @@ export default function IntentPage() {
   const signIntent = useSignIntent();
 
   // ── Global Agent State ────────────────────────────────────
+
   const { 
     sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
     messages, isLoading, error, sendMessage, pendingTx, setPendingTx,
@@ -43,6 +63,71 @@ export default function IntentPage() {
   } = useGlobalAgent();
 
   const currentMsgIdxRef = useRef(0);
+
+  // SSE progress tracking for the active gasless intent
+  useOrderWatch({
+    user:    address,
+    enabled: !!address && intentProgress !== null,
+    onOrderUpdate: useCallback((event) => {
+      if (event.orderId !== trackedIntentIdRef.current) return;
+      if (event.status === 'FULFILLED') {
+        // Clear persisted signed intent — it has been fulfilled on-chain
+        try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
+        // Mark all steps done and set fulfilled flag — card stays permanently as receipt
+        setIntentProgress(prev => prev
+          ? prev.map(s => ({ ...s, done: true, active: false }))
+          : prev
+        );
+        setIntentFulfilled(true);
+        trackedIntentIdRef.current = null;
+        setPendingGaslessIntent(undefined);
+        setGaslessStatus(null);
+        window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
+        sendMessage(`[System] Intent signed and submitted. ID: ${event.orderId}\nPlease provide a polite, concise confirmation that the intent was submitted gaslessly (FREE!) and solvers are now bidding to fill it.`);
+      }
+    }, [setPendingGaslessIntent, sendMessage]),
+    onGaslessResolved: useCallback((intentId: string, contractOrderId: string) => {
+      if (trackedIntentIdRef.current === intentId) {
+        trackedIntentIdRef.current = contractOrderId;
+      }
+    }, []),
+    onProgress: useCallback((evt) => {
+      if (evt.orderId !== trackedIntentIdRef.current) return;
+      if (evt.type === 'rfq_broadcast') {
+        const count = (evt.data['solverCount'] as number | undefined) ?? 1;
+        setIntentProgress(prev => prev ? prev.map(s =>
+          s.key === 'rfq'
+            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
+            : s
+        ) : prev);
+      } else if (evt.type === 'rfq_winner') {
+        const winner  = evt.data['winner']      as string | undefined;
+        const priceRaw = evt.data['quotedPrice'] as string | undefined;
+        const eta      = evt.data['estimatedETA'] as number | undefined;
+        const priceSol = priceRaw
+          ? (Number(BigInt(priceRaw)) / 1e9).toFixed(4)
+          : undefined;
+        const detail = winner
+          ? `${winner}${priceSol ? ` — ${priceSol} SOL` : ''}${eta ? ` (ETA ~${eta}s)` : ''}`
+          : undefined;
+        // Mark all steps up to and including winner as done; set executing active
+        setIntentProgress(prev => prev ? prev.map(s => {
+          if (s.key === 'rfq')       return { ...s, done: true, active: false };
+          if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
+          if (s.key === 'executing') return { ...s, active: true };
+          return s;
+        }) : prev);
+      } else if (evt.type === 'execute_sent') {
+        // Mark all steps up to and including executing as done; set fulfilled active
+        setIntentProgress(prev => prev ? prev.map(s => {
+          if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
+          if (s.key === 'executing') return { ...s, done: true, active: false };
+          if (s.key === 'fulfilled') return { ...s, active: true };
+          return s;
+        }) : prev);
+      }
+    }, []),
+  });
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
     const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim();
@@ -139,17 +224,47 @@ export default function IntentPage() {
     setGaslessStatus(null);
     setIsGaslessFailed(false);
     setIsGaslessSuccess(false);
+    setIntentProgress(null);
+    setIntentFulfilled(false);
+    setSignedIntentSnapshot(undefined);
+    trackedIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
     createSession();
   }, [createSession, setPendingTx, setPendingGaslessIntent]);
 
+  /** Handle widget confirm — agent sent a quote_review widget, user confirmed selections */
+  const handleWidgetConfirm = useCallback((payload: WidgetConfirmPayload) => {
+    if (payload.widgetType === 'quote_review') {
+      const { outputToken, durationSeconds } = payload.selection as { outputToken: string; durationSeconds: number };
+      sendMessage(`[Widget confirm] outputToken=${outputToken} duration=${durationSeconds}`);
+    }
+  }, [sendMessage]);
+
   /** Handle gasless intent signing */
   const handleSignGaslessIntent = useCallback(async () => {
-    if (!pendingGaslessIntent) return;
+    if (!pendingGaslessIntent || !address) return;
 
-    setGaslessStatus('Sign message in wallet...');
+    setGaslessStatus('Connecting to backend...');
 
     try {
+      // Verify backend is reachable and fetch fresh nonce before asking user to sign.
+      // If backend is unreachable, signing is blocked — user cannot submit an intent that won't be processed.
+      let nonce = pendingGaslessIntent.nonce;
+      try {
+        const nonceRes = await fetch(`${BACKEND_URL}/api/v1/intent/nonce?address=${address}`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!nonceRes.ok) throw new Error('fetch failed');
+        const nonceJson = await nonceRes.json() as { success: boolean; data?: { nonce: number } };
+        if (nonceJson.success && nonceJson.data?.nonce !== undefined) {
+          nonce = nonceJson.data.nonce;
+        }
+      } catch {
+        throw new Error('fetch failed — backend unreachable');
+      }
+
+      setGaslessStatus('Sign message in wallet...');
+
       const result = await signIntent.mutateAsync({
         recipientAddress: pendingGaslessIntent.recipientAddress,
         destinationChain: pendingGaslessIntent.destinationChain,
@@ -158,29 +273,63 @@ export default function IntentPage() {
         startPrice: pendingGaslessIntent.startPrice,
         floorPrice: pendingGaslessIntent.floorPrice,
         durationSeconds: pendingGaslessIntent.durationSeconds,
-        nonce: pendingGaslessIntent.nonce,
+        nonce,
       });
 
-      setGaslessStatus('Intent submitted!');
-      setIsGaslessSuccess(true);
-      
-      setTimeout(() => {
-        setPendingGaslessIntent(undefined);
-        setGaslessStatus(null);
-        setIsGaslessSuccess(false);
-        window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
-        sendMessage(`[System] Intent signed and submitted. ID: ${result.submissionResult.intentId}\nPlease provide a polite, concise confirmation that the intent was submitted gaslessly (FREE!) and solvers are now bidding to fill it.`);
-      }, 1200);
+      // Persist signed intent to localStorage — recoverable if backend goes down post-sign
+      try {
+        localStorage.setItem(PENDING_INTENT_KEY, JSON.stringify({
+          intent: result.intent,
+          signature: result.signature,
+          submittedAt: Date.now(),
+          intentId: result.submissionResult.intentId,
+        }));
+      } catch { /* storage unavailable — non-critical */ }
+
+      // Sign succeeded — move card from floating into chat as inline progress tracker
+      trackedIntentIdRef.current = result.submissionResult.intentId;
+      setSignedIntentSnapshot(pendingGaslessIntent);
+      setPendingGaslessIntent(undefined);
+      setGaslessStatus(null);
+      setIsGaslessSuccess(false);
+      setIntentProgress([
+        { key: 'signed',    label: 'Signed & submitted',           detail: undefined, done: true,  active: false },
+        { key: 'rfq',       label: 'Broadcasting RFQ to solvers…', detail: undefined, done: false, active: true  },
+        { key: 'winner',    label: 'Waiting for winner…',          detail: undefined, done: false, active: false },
+        { key: 'executing', label: 'Executing on-chain…',          detail: undefined, done: false, active: false },
+        { key: 'fulfilled', label: 'Awaiting fulfillment…',        detail: undefined, done: false, active: false },
+      ]);
+      window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Signing failed';
+      const raw = err instanceof Error ? err.message : 'Signing failed';
+      console.error(`[intent-page] signing/submission failed`, {
+        error: raw,
+        stack: err instanceof Error ? err.stack : undefined,
+        intent: pendingGaslessIntent ? {
+          recipient: pendingGaslessIntent.recipientAddress,
+          dest: pendingGaslessIntent.destinationChain,
+          amount: pendingGaslessIntent.amount,
+          outputToken: pendingGaslessIntent.outputToken,
+        } : null,
+        walletAddress: address,
+      });
+      const errorMsg = raw.includes('No solver') || raw.includes('503') || raw.includes('Service Unavailable')
+        ? 'No solver online — intent submitted but may expire unfilled. Check Active Intents to claim a refund if needed.'
+        : raw.includes('nonce') || raw.includes('Stale') || raw.includes('400')
+        ? 'Session expired — start a new chat.'
+        : raw.includes('fetch') || raw.includes('refused') || raw.includes('network') || raw.includes('Failed to fetch') || raw.includes('unreachable')
+        ? 'Backend unreachable — intent NOT submitted. Check if backend is running.'
+        : raw.includes('User rejected') || raw.includes('denied')
+        ? 'Signature cancelled.'
+        : raw;
       setGaslessStatus(errorMsg);
       setIsGaslessFailed(true);
       setTimeout(() => {
         setIsGaslessFailed(false);
         setGaslessStatus(null);
-      }, 3000);
+      }, 5000);
     }
-  }, [pendingGaslessIntent, signIntent, setPendingGaslessIntent, sendMessage]);
+  }, [pendingGaslessIntent, address, signIntent, setPendingGaslessIntent]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
@@ -214,6 +363,20 @@ export default function IntentPage() {
           onRetry={handleRetry}
           onNewChat={handleNewChat}
           onOpenSettings={() => setShowSettings(true)}
+          onWidgetConfirm={handleWidgetConfirm}
+          inlineCard={signedIntentSnapshot && intentProgress ? (
+            <GaslessIntentReviewCard
+              intent={signedIntentSnapshot}
+              status={null}
+              isFailed={false}
+              isSuccess={intentFulfilled}
+              progress={intentProgress}
+              fulfilled={intentFulfilled}
+              embedded
+              onConfirm={() => {}}
+              onDismiss={() => {}}
+            />
+          ) : undefined}
         />
 
         {pendingTx && !isLoading && (
@@ -232,9 +395,9 @@ export default function IntentPage() {
           </div>
         )}
 
-        {/* Gasless Intent Review Card */}
-        {pendingGaslessIntent && !isLoading && (
-          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isGaslessSuccess ? 'animate-magic-lamp pointer-events-none' : ''} ${isGaslessFailed ? 'animate-shake' : ''}`}>
+        {/* Gasless Intent Review Card — floating, pre-sign only */}
+        {pendingGaslessIntent && !isLoading && !intentProgress && (
+          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isGaslessFailed ? 'animate-shake' : ''}`}>
             <GaslessIntentReviewCard
               intent={pendingGaslessIntent}
               status={gaslessStatus}
@@ -246,6 +409,8 @@ export default function IntentPage() {
                 setGaslessStatus(null);
                 setIsGaslessFailed(false);
                 setIsGaslessSuccess(false);
+                setIntentProgress(null);
+                trackedIntentIdRef.current = null;
               }}
             />
           </div>

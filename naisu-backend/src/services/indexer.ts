@@ -166,8 +166,19 @@ export function injectGaslessOrder(params: {
     status:           'OPEN',
     intentType:       params.intentType,
     explorerUrl:      '',  // no on-chain tx yet — solver will submit
+    isGasless:        true,
   }
   upsert(order)
+}
+
+/**
+ * Cancel a gasless order in the indexer store (off-chain cancel, no on-chain tx)
+ */
+export function cancelIndexedOrder(orderId: string): boolean {
+  const order = store.get(orderId)
+  if (!order) return false
+  upsert({ ...order, status: 'CANCELLED' })
+  return true
 }
 
 // ── Public read API ───────────────────────────────────────────────────────────
@@ -243,7 +254,7 @@ async function processEvmOrder(
       }).then((p: unknown) => (p as bigint).toString()).catch(() => null)
     }
 
-    upsert({
+    const onchainOrder: IntentOrder = {
       orderId,
       chain:            'evm-base',
       creator:          creator.toLowerCase(),
@@ -259,7 +270,27 @@ async function processEvmOrder(
       status:           statusLabel(statusNum),
       intentType:       intentType ?? 0,
       explorerUrl:      `https://sepolia.basescan.org/tx/${txHash}`,
-    })
+    }
+
+    // Remove matching injected gasless order to prevent double entries in the widget.
+    // The contract orderId (keccak256) never matches the backend intentId (hex timestamp),
+    // so we match by creator + amountRaw + deadline instead.
+    const creatorKey = creator.toLowerCase()
+    const creatorIds = byCreator.get(creatorKey)
+    if (creatorIds) {
+      for (const id of creatorIds) {
+        const existing = store.get(id)
+        if (existing?.isGasless && existing.amountRaw === amount.toString() && existing.deadline === Number(deadline) * 1000) {
+          store.delete(id)
+          creatorIds.delete(id)
+          logger.info({ gaslessId: id, onchainOrderId: orderId }, '[EVM] Merged gasless injected order → on-chain order')
+          indexerEvents.emit('gasless_resolved', { intentId: id, contractOrderId: orderId })
+          break
+        }
+      }
+    }
+
+    upsert(onchainOrder)
   } catch (err) {
     logger.warn({ err, orderId }, '[EVM] Failed to process order')
   }
@@ -318,7 +349,7 @@ async function initialEvmBackfill(client: AnyClient, contract: `0x${string}`): P
     const fulfillTx = fulfillMap.get(orderId.toLowerCase())
     if (fulfillTx) {
       const existing = store.get(orderId)
-      if (existing) upsert({ ...existing, status: 'FULFILLED', currentPrice: null })
+      if (existing) upsert({ ...existing, status: 'FULFILLED', currentPrice: null, fulfillTxHash: fulfillTx || undefined })
     }
   }))
 
@@ -378,7 +409,7 @@ function startEvmWsSubscription(
         logger.info({ orderId }, '[EVM WS] OrderFulfilled — updating status')
         const existing = store.get(orderId)
         if (existing) {
-          upsert({ ...existing, status: 'FULFILLED', currentPrice: null })
+          upsert({ ...existing, status: 'FULFILLED', currentPrice: null, fulfillTxHash: log.transactionHash ?? undefined })
         } else {
           // Edge case: fulfilled before we indexed the created event
           // Re-run backfill to pick it up

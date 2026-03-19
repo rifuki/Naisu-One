@@ -1,5 +1,6 @@
 import { ReactNode, useRef, useEffect } from 'react';
 import { ChatMessage, MessageBubble } from './message-bubble';
+import type { WidgetConfirmPayload } from '../widgets';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -9,6 +10,8 @@ interface MessageListProps {
   error?: string | null;
   onRetry?: () => void;
   renderContent: (content: string) => ReactNode;
+  inlineCard?: ReactNode;
+  onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
 }
 
 export function MessageList({
@@ -19,6 +22,8 @@ export function MessageList({
   error,
   onRetry,
   renderContent,
+  inlineCard,
+  onWidgetConfirm,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -27,7 +32,7 @@ export function MessageList({
       top: scrollRef.current.scrollHeight,
       behavior: 'smooth',
     });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, inlineCard]);
 
   return (
     <div
@@ -36,7 +41,7 @@ export function MessageList({
     >
       <div className="w-full max-w-3xl space-y-6">
         {messages.map((msg, idx) => {
-          if (msg.role === 'user' && msg.content.startsWith('[System]')) return null;
+          if (msg.role === 'user' && (msg.content.startsWith('[System]') || msg.content.startsWith('[Widget confirm]'))) return null;
 
           let monitorTx: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null = null;
 
@@ -58,9 +63,13 @@ export function MessageList({
               message={msg}
               renderContent={renderContent}
               monitorTx={monitorTx}
+              onWidgetConfirm={onWidgetConfirm}
             />
           );
         })}
+
+        {/* Inline intent progress card — appears after sign, replaces floating card */}
+        {inlineCard}
 
         {/* Loading indicator */}
         {isLoading && (

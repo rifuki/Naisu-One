@@ -169,6 +169,29 @@ export function selectWinner(intentId: string, solver: Address): boolean {
 }
 
 /**
+ * Cancel a pending intent (user requested off-chain cancel)
+ */
+export function cancelIntent(intentId: string): boolean {
+  const intent = pendingIntents.get(intentId)
+  if (!intent) {
+    logger.warn({ intentId }, 'Cannot cancel: intent not found')
+    return false
+  }
+  if (intent.status === 'fulfilled' || intent.status === 'executing') {
+    logger.warn({ intentId, status: intent.status }, 'Cannot cancel: intent already executing or fulfilled')
+    return false
+  }
+
+  const prevStatus = intent.status
+  intent.status = 'cancelled'
+  logger.info({ intentId }, 'Intent cancelled by user')
+  orderbookEvents.emit('status_changed', { intentId, status: 'cancelled', prevStatus })
+
+  setTimeout(() => pendingIntents.delete(intentId), 5000)
+  return true
+}
+
+/**
  * Mark intent as fulfilled (executed on-chain)
  */
 export function markFulfilled(intentId: string): boolean {

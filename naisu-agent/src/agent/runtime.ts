@@ -63,9 +63,11 @@ function loadProjectCharacter(projectId: string): string {
   }
 }
 
-// Max iterations: needs to be enough for full bridge flow:
-// evm_balance → intent_quote → intent_build_tx → final response = 4 tool rounds
-const MAX_ITERATIONS = 5;
+// Max iterations for full widget flow:
+// evm_balance → intent_quote → emit quote_review (1)
+// [Widget confirm] → intent_build_gasless → emit gasless_intent (2)
+// = up to 6 rounds total
+const MAX_ITERATIONS = 8;
 
 export class AgentRuntime {
   private model = createLLM();
@@ -137,6 +139,17 @@ export class AgentRuntime {
         ai = await model.invoke(messages);
       } catch (error) {
         log.error("LLM invocation failed", error instanceof Error ? error : new Error(String(error)));
+        const msg = error instanceof Error ? error.message : String(error);
+        // Surface LLM provider errors as chat messages instead of 500s
+        if (msg.includes("403") || msg.includes("quota") || msg.includes("usage limit") || msg.includes("permission_error")) {
+          return { sessionId: session.id, message: "⚠️ **AI provider quota exceeded.** The LLM API key has hit its billing limit. Please top up or switch the provider in the agent `.env`." };
+        }
+        if (msg.includes("401") || msg.includes("authentication") || msg.includes("invalid_api_key") || msg.includes("Unauthorized")) {
+          return { sessionId: session.id, message: "⚠️ **AI provider authentication failed.** Check that `OPENAI_API_KEY` / `KIMI_API_KEY` in the agent `.env` is correct." };
+        }
+        if (msg.includes("429") || msg.includes("rate_limit") || msg.includes("Too Many Requests")) {
+          return { sessionId: session.id, message: "⚠️ **AI provider rate limited.** Too many requests — please wait a moment and retry." };
+        }
         throw error;
       }
       

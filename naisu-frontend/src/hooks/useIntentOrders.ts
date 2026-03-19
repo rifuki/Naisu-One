@@ -12,6 +12,7 @@ import { useAccount } from 'wagmi'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { useSolanaAddress } from './useSolanaAddress'
 import { useOrderWatch } from './useOrderWatch'
+import type { IntentProgressEvent } from './useOrderWatch'
 import {
   BASE_SEPOLIA_CONTRACT,
   BASE_SEPOLIA_RPC,
@@ -29,7 +30,8 @@ const POLL_INTERVAL_MS   = 12_000
 // ─── Shared type (matches backend IntentOrder shape) ──────────────────────────
 export interface IntentRow {
   id:               string
-  txDigest:         string
+  txDigest:         string   // tx hash only (not full URL) — empty for gasless pre-execute
+  explorerUrl?:     string   // full block explorer URL
   amount:           number
   startPrice:       number
   floorPrice:       number
@@ -43,6 +45,7 @@ export interface IntentRow {
   recipient?:       string
   solanaPaymentTxHash?: string
   solverAddress?:   string
+  isGasless?:       boolean  // true if created via EIP-712 off-chain signature
 }
 
 // ─── Backend response → IntentRow ────────────────────────────────────────────
@@ -53,11 +56,17 @@ function fromBackend(o: Record<string, unknown>): IntentRow {
     FULFILLED: 'Fulfilled',
     CANCELLED: 'Cancelled',
   }
-  const chain     = (o['chain'] as string) === 'solana' ? 'solana' : 'evm'
-  const srcChain  = (o['chain'] as string) === 'evm-base' ? 'Base' : undefined
+  const chain      = (o['chain'] as string) === 'solana' ? 'solana' : 'evm'
+  const srcChain   = (o['chain'] as string) === 'evm-base' ? 'Base' : undefined
+  const explorerUrl = (o['explorerUrl'] as string) ?? ''
+  // Extract tx hash from full URL (e.g. "https://sepolia.basescan.org/tx/0xabc" → "0xabc")
+  const txDigest = explorerUrl.includes('/tx/')
+    ? (explorerUrl.split('/tx/').pop() ?? '')
+    : explorerUrl
   return {
     id:               o['orderId']  as string,
-    txDigest:         o['explorerUrl'] as string,
+    txDigest,
+    explorerUrl:      explorerUrl || undefined,
     amount:           parseFloat(o['amount'] as string),
     startPrice:       parseFloat(o['startPrice'] as string),
     floorPrice:       parseFloat(o['floorPrice'] as string),
@@ -66,25 +75,39 @@ function fromBackend(o: Record<string, unknown>): IntentRow {
     destinationChain: o['destinationChain'] as number,
     status:           statusMap[o['status'] as string] ?? 'Open',
     chain,
-    sourceChain: srcChain,
-    recipient:   o['recipient'] as string | undefined,
+    sourceChain:     srcChain,
+    recipient:       o['recipient'] as string | undefined,
+    fulfillTxHash:   o['fulfillTxHash'] as string | undefined,
+    isGasless:       (o['isGasless'] as boolean | undefined) ?? false,
   }
 }
 
 // ─── Backend fetch ────────────────────────────────────────────────────────────
 
 async function fetchFromBackend(user: string, chain?: string): Promise<IntentRow[] | null> {
+  const url = `${BACKEND_URL}/api/v1/intent/orders`
   try {
     const params = new URLSearchParams({ user, t: Date.now().toString() })
     if (chain) params.set('chain', chain)
-    const res = await fetch(`${BACKEND_URL}/api/v1/intent/orders?${params}`, {
+    const res = await fetch(`${url}?${params}`, {
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     })
-    if (!res.ok) return null
-    const json = await res.json() as { success: boolean; data?: unknown[] }
-    if (!json.success || !Array.isArray(json.data)) return null
+    if (!res.ok) {
+      console.warn(`[useIntentOrders] backend ${res.status} for user=${user} chain=${chain ?? 'all'} — falling back to RPC`)
+      return null
+    }
+    const json = await res.json() as { success: boolean; data?: unknown[]; error?: string }
+    if (!json.success || !Array.isArray(json.data)) {
+      console.warn(`[useIntentOrders] backend returned success=false`, { user, chain, error: json.error })
+      return null
+    }
     return json.data.map(o => fromBackend(o as Record<string, unknown>))
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      console.warn(`[useIntentOrders] backend timeout (${BACKEND_TIMEOUT_MS}ms) for user=${user} — falling back to RPC`)
+    } else {
+      console.error(`[useIntentOrders] fetchFromBackend error`, { url, user, chain, error: err })
+    }
     return null
   }
 }
@@ -163,7 +186,9 @@ async function fetchEvmFromRpc(evmAddress: string): Promise<IntentRow[]> {
         } satisfies IntentRow
       }))
       allRows.push(...rows.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<IntentRow>).value))
-    } catch { /* silent */ }
+    } catch (err) {
+      console.error(`[useIntentOrders] EVM RPC fetch failed for chain=${label} address=${evmAddress}`, err)
+    }
   }))
 
   return allRows.sort((a, b) => b.createdAt - a.createdAt)
@@ -216,12 +241,21 @@ async function fetchSolanaFromRpc(
       }
     }))
     return rows.sort((a, b) => b.createdAt - a.createdAt)
-  } catch { return [] }
+  } catch (err) {
+    console.error(`[useIntentOrders] Solana RPC fetch failed for address=${solPubkey.toBase58()}`, err)
+    return []
+  }
 }
 
 // ─── Main hook ────────────────────────────────────────────────────────────────
 
-export function useIntentOrders() {
+export type { IntentProgressEvent }
+
+interface UseIntentOrdersOptions {
+  onProgress?: (event: IntentProgressEvent) => void
+}
+
+export function useIntentOrders({ onProgress }: UseIntentOrdersOptions = {}) {
   const [evmOrders,    setEvmOrders]    = useState<IntentRow[]>([])
   const [solanaOrders, setSolanaOrders] = useState<IntentRow[]>([])
   const [evmLoading,   setEvmLoading]   = useState(false)
@@ -296,6 +330,7 @@ export function useIntentOrders() {
       ))
     }, []),
     onOrderCreated: refresh,
+    onProgress,
   })
 
   // Initial fetch + polling
