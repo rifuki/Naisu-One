@@ -85,57 +85,39 @@ export default function IntentPage() {
     pendingGaslessIntent, setPendingGaslessIntent
   } = useGlobalAgent();
 
-  // Load persisted fulfilled state when session changes
+  // Load persisted fulfilled state when session changes (legacy migration)
   useEffect(() => {
     if (!activeSessionId) return;
     try {
       const saved = localStorage.getItem(FULFILLED_STATE_KEY(activeSessionId));
       if (saved) {
         const state: FulfilledState = JSON.parse(saved);
-        setIntentFulfilled(state.intentFulfilled);
-        setFillPrice(state.fillPrice);
-        setWinnerSolver(state.winnerSolver);
-        setSignedAt(state.signedAt);
-        setFulfilledAt(state.fulfilledAt);
-        setSignedIntentSnapshot(state.signedIntentSnapshot);
-        // Restore progress steps if available
+        // Migrate to Zustand store
         if (state.intentProgress) {
-          setIntentProgress(state.intentProgress);
+          setActiveIntent({
+            intentId: 'migrated',
+            progress: state.intentProgress,
+            isFulfilled: state.intentFulfilled,
+            fillPrice: state.fillPrice,
+            winnerSolver: state.winnerSolver,
+            signedAt: state.signedAt,
+            fulfilledAt: state.fulfilledAt,
+          });
         }
+        setSignedIntentSnapshot(state.signedIntentSnapshot);
+        setSignedAt(state.signedAt);
+        // Clean up old format
+        localStorage.removeItem(FULFILLED_STATE_KEY(activeSessionId));
       } else {
         // Reset state if no persisted data for this session
-        setIntentFulfilled(false);
-        setFillPrice(undefined);
-        setWinnerSolver(undefined);
-        setSignedAt(undefined);
-        setFulfilledAt(undefined);
-        setSignedIntentSnapshot(undefined);
         clearActiveIntent();
+        setSignedIntentSnapshot(undefined);
+        setSignedAt(undefined);
       }
     } catch {
       // Ignore parse errors
     }
-  }, [activeSessionId]);
-
-  // Persist fulfilled state whenever it changes
-  useEffect(() => {
-    if (!activeSessionId) return;
-    if (!intentFulfilled && !signedIntentSnapshot) {
-      // Clean up storage if no state to save
-      try { localStorage.removeItem(FULFILLED_STATE_KEY(activeSessionId)); } catch { /* ignore */ }
-      return;
-    }
-    const state: FulfilledState = {
-      intentFulfilled,
-      fillPrice,
-      winnerSolver,
-      signedAt,
-      fulfilledAt,
-      signedIntentSnapshot,
-      intentProgress,
-    };
-    try { localStorage.setItem(FULFILLED_STATE_KEY(activeSessionId), JSON.stringify(state)); } catch { /* quota */ }
-  }, [activeSessionId, intentFulfilled, fillPrice, winnerSolver, signedAt, fulfilledAt, signedIntentSnapshot, intentProgress]);
+  }, [activeSessionId, clearActiveIntent, setActiveIntent]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -156,8 +138,15 @@ export default function IntentPage() {
         console.log('[intent-page] Already fulfilled, skipping');
         return;
       }
-      // Set winner solver from fulfillment event (quotedPrice comes from RFQ winner event)
-      setWinnerSolver(data.data?.solverName);
+      // Set winner solver in Zustand store
+      if (data.data?.solverName) {
+        useIntentStore.setState((state) => ({
+          activeIntent: state.activeIntent ? {
+            ...state.activeIntent,
+            winnerSolver: data.data!.solverName
+          } : null
+        }));
+      }
       // Trigger fulfillment via order_update handler which will set intentFulfilled=true
     }, [intentFulfilled]),
     onOrderUpdate: useCallback((event) => {
@@ -190,13 +179,8 @@ export default function IntentPage() {
           updateIntentCount(activeSessionId, true);
         }
         // Mark all steps done and set fulfilled flag — card stays permanently as receipt
-        // Note: useEffect will auto-save to localStorage when these states change
-        setIntentProgress(prev => prev
-          ? prev.map(s => ({ ...s, done: true, active: false }))
-          : prev
-        );
-        setIntentFulfilled(true);
-        setFulfilledAt(Date.now());
+        // Mark as fulfilled in Zustand store
+        markFulfilled(fillPrice, winnerSolver);
         trackedIntentIdRef.current = null;
         previousIntentIdRef.current = null;
         setPendingGaslessIntent(undefined);
@@ -237,14 +221,13 @@ export default function IntentPage() {
       }
       if (evt.type === 'rfq_broadcast') {
         const count = (evt.data['solverCount'] as number | undefined) ?? 1;
-        setIntentProgress(prev => {
-          console.log('[intent-page] rfq_broadcast setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
-          return prev ? prev.map(s =>
+        if (intentProgress) {
+          updateProgress(intentProgress.map(s =>
             s.key === 'rfq'
               ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
               : s
-          ) : prev;
-        });
+          ));
+        }
       } else if (evt.type === 'rfq_winner') {
         const winner  = evt.data['winner']      as string | undefined;
         const priceRaw = evt.data['quotedPrice'] as string | undefined;
@@ -256,31 +239,36 @@ export default function IntentPage() {
           ? `${winner}${priceSol ? ` — ${priceSol} SOL` : ''}${eta ? ` (ETA ~${eta}s)` : ''}`
           : undefined;
         
-        // Store winner and fill price for receipt card
-        if (winner) setWinnerSolver(winner);
-        if (priceSol) setFillPrice(priceSol);
+        // Update Zustand store with winner info and progress
+        if (winner || priceSol) {
+          useIntentStore.setState((state) => ({
+            activeIntent: state.activeIntent ? {
+              ...state.activeIntent,
+              winnerSolver: winner || state.activeIntent.winnerSolver,
+              fillPrice: priceSol || state.activeIntent.fillPrice,
+            } : null
+          }));
+        }
         
         // Mark all steps up to and including winner as done; set executing active
-        setIntentProgress(prev => {
-          console.log('[intent-page] rfq_winner setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
-          return prev ? prev.map(s => {
+        if (intentProgress) {
+          updateProgress(intentProgress.map(s => {
             if (s.key === 'rfq')       return { ...s, done: true, active: false };
             if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
             if (s.key === 'executing') return { ...s, active: true };
             return s;
-          }) : prev;
-        });
+          }));
+        }
       } else if (evt.type === 'execute_sent') {
         // Mark all steps up to and including executing as done; set fulfilled active
-        setIntentProgress(prev => {
-          console.log('[intent-page] execute_sent setIntentProgress, prev is:', prev ? 'array(' + prev.length + ')' : 'null');
-          return prev ? prev.map(s => {
+        if (intentProgress) {
+          updateProgress(intentProgress.map(s => {
             if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
             if (s.key === 'executing') return { ...s, done: true, active: false };
             if (s.key === 'fulfilled') return { ...s, active: true };
             return s;
-          }) : prev;
-        });
+          }));
+        }
       }
     }, []),
   });
@@ -401,12 +389,8 @@ export default function IntentPage() {
     setIsGaslessFailed(false);
     setIsGaslessSuccess(false);
     clearActiveIntent();
-    setIntentFulfilled(false);
     setSignedIntentSnapshot(undefined);
-    setFillPrice(undefined);
-    setWinnerSolver(undefined);
     setSignedAt(undefined);
-    setFulfilledAt(undefined);
     trackedIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
     createSession();
@@ -478,13 +462,21 @@ export default function IntentPage() {
       setPendingGaslessIntent(undefined);
       setGaslessStatus(null);
       setIsGaslessSuccess(false);
-      setIntentProgress([
+      
+      // Set active intent in Zustand store
+      const initialProgress = [
         { key: 'signed',    label: 'Signed & submitted',           detail: undefined, done: true,  active: false },
         { key: 'rfq',       label: 'Broadcasting RFQ to solvers…', detail: undefined, done: false, active: true  },
         { key: 'winner',    label: 'Waiting for winner…',          detail: undefined, done: false, active: false },
         { key: 'executing', label: 'Executing on-chain…',          detail: undefined, done: false, active: false },
         { key: 'fulfilled', label: 'Awaiting fulfillment…',        detail: undefined, done: false, active: false },
-      ]);
+      ];
+      setActiveIntent({
+        intentId: result.submissionResult.intentId,
+        progress: initialProgress,
+        isFulfilled: false,
+        signedAt: Date.now(),
+      });
       
       // Add receipt message to chat history
       const receiptContent = `[INTENT_RECEIPT]${JSON.stringify({
