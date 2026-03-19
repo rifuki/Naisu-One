@@ -2,12 +2,12 @@
  * DutchAuctionPlanWidget - Interactive Dutch auction plan with duration selection
  */
 import { useState } from 'react';
-import { Clock, TrendingDown, Shield, ArrowRight, ChevronDown } from 'lucide-react';
+import { Clock, TrendingDown, Shield, ArrowRight, ChevronDown, Info } from 'lucide-react';
 
 interface DutchAuctionPlanWidgetProps {
   amount: string;
-  startPrice: string;  // Lamports per second decay rate
-  floorPrice: string;  // Minimum price in lamports
+  startPrice: string;
+  floorPrice: string;
   durationSeconds: number;
   destinationChain: string;
   outputToken: string;
@@ -76,10 +76,13 @@ export function DutchAuctionPlanWidget({
   const destLabel = DEST_LABELS[destinationChain] ?? destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[outputToken] ?? outputToken.toUpperCase();
   
-  // Calculate prices based on selected duration
-  // Assume startPrice is the decay rate per second, calculate total start output
+  const startSol = formatLamports(startPrice);
   const floorSol = formatLamports(floorPrice);
-  const calculatedStartSol = (Number(floorSol) * 1.1).toFixed(4); // 10% above floor for demo
+  
+  // Estimate USD values (mock rates)
+  const startUsd = (parseFloat(startSol) * 90).toFixed(2); // ~$90/SOL
+  const floorUsd = (parseFloat(floorSol) * 90).toFixed(2);
+  const ethUsd = (parseFloat(amount) * 2150).toFixed(2); // ~$2150/ETH
   
   const currentOption = DURATION_OPTIONS.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS[1];
 
@@ -87,7 +90,7 @@ export function DutchAuctionPlanWidget({
     if (onConfirm) {
       onConfirm({
         durationSeconds: selectedDuration,
-        startPrice: calculatedStartSol,
+        startPrice,
         floorPrice,
       });
     }
@@ -96,48 +99,51 @@ export function DutchAuctionPlanWidget({
   return (
     <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg max-w-md">
       {/* Header */}
-      <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
-        <div className="size-5 rounded-md bg-primary/20 flex items-center justify-center">
-          <TrendingDown className="text-primary" size={12} />
+      <div className="px-4 py-3 bg-primary/5 border-b border-primary/10">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="size-5 rounded-md bg-primary/20 flex items-center justify-center">
+            <TrendingDown className="text-primary" size={12} />
+          </div>
+          <span className="text-[11px] font-medium text-primary">Dutch Auction Plan</span>
         </div>
-        <span className="text-[11px] font-medium text-primary">Dutch Auction Plan</span>
+        <p className="text-[11px] text-slate-400 leading-relaxed">
+          Your <span className="text-white font-medium">{amount} ETH (~${ethUsd})</span> will get you approximately <span className="text-primary font-medium">{startSol} {tokenLabel} (~${startUsd})</span>. 
+          The Dutch auction starts at <span className="text-primary">{startSol} {tokenLabel}</span> and floors at <span className="text-primary">{floorSol} {tokenLabel}</span> — 
+          this minimum is <span className="text-green-400">enforced on-chain</span>, so you can't receive less than that.
+        </p>
       </div>
 
       {/* Content */}
       <div className="p-4 space-y-4">
-        {/* Amount */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-lg font-bold text-white">{amount}</span>
-          <span className="text-xs text-slate-400">ETH</span>
-          <ArrowRight className="text-slate-600 mx-1" size={14} />
-          <span className="text-lg font-bold text-primary">~{calculatedStartSol}</span>
-          <span className="text-xs text-primary/80">{tokenLabel}</span>
-        </div>
-
-        {/* Price range */}
-        <div className="flex items-center gap-3 text-xs">
-          <div className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Start Price</div>
-            <div className="font-medium text-slate-200">{calculatedStartSol} {tokenLabel}</div>
+        {/* Price info box */}
+        <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 uppercase">You send</span>
+            <span className="text-sm font-bold text-white">{amount} ETH</span>
           </div>
-          <TrendingDown className="text-slate-600" size={14} />
-          <div className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Floor Price</div>
-            <div className="font-medium text-slate-200">{floorSol} {tokenLabel}</div>
+          <div className="flex items-center justify-center">
+            <ArrowRight className="text-slate-600" size={14} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 uppercase">You receive (min)</span>
+            <span className="text-sm font-bold text-primary">{floorSol} {tokenLabel}</span>
+          </div>
+          <div className="text-[10px] text-slate-500 text-right">
+            ~${floorUsd} at current rates
           </div>
         </div>
 
         {/* Duration Selector - INTERACTIVE */}
         {onConfirm && !isConfirmed && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                <Clock size={12} className="text-primary/60" />
+              <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                <Clock size={12} className="text-primary" />
                 Auction Duration
               </span>
               <button
                 onClick={() => setShowDurationPicker(!showDurationPicker)}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-[11px] transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-[11px] font-medium transition-colors"
               >
                 {currentOption.label}
                 <ChevronDown size={12} className={`transition-transform ${showDurationPicker ? 'rotate-180' : ''}`} />
@@ -145,7 +151,7 @@ export function DutchAuctionPlanWidget({
             </div>
             
             {showDurationPicker && (
-              <div className="flex gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
+              <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
                 {DURATION_OPTIONS.map((option) => (
                   <button
                     key={option.seconds}
@@ -153,10 +159,10 @@ export function DutchAuctionPlanWidget({
                       setSelectedDuration(option.seconds);
                       setShowDurationPicker(false);
                     }}
-                    className={`flex-1 py-1.5 px-2 rounded text-[11px] font-medium transition-all ${
+                    className={`py-2 px-3 rounded-lg text-[11px] font-medium transition-all ${
                       selectedDuration === option.seconds
-                        ? 'bg-primary/30 text-primary border border-primary/40'
-                        : 'bg-transparent text-slate-400 hover:bg-white/5 border border-transparent'
+                        ? 'bg-primary text-black'
+                        : 'bg-transparent text-slate-400 hover:bg-white/5'
                     }`}
                   >
                     {option.label}
@@ -164,55 +170,60 @@ export function DutchAuctionPlanWidget({
                 ))}
               </div>
             )}
-            
-            <div className="text-[10px] text-slate-500">
-              Price decays from <span className="text-slate-300">{calculatedStartSol} {tokenLabel}</span> to <span className="text-slate-300">{floorSol} {tokenLabel}</span> over <span className="text-slate-300">{formatDuration(selectedDuration)}</span>
-            </div>
           </div>
         )}
 
-        {/* Static info for confirmed state */}
+        {/* Static duration for confirmed */}
         {(isConfirmed || !onConfirm) && (
-          <div className="space-y-1.5 text-[11px]">
-            <div className="flex items-center gap-2 text-slate-400">
-              <Clock size={12} className="text-primary/60" />
-              <span>Auction duration: <span className="text-slate-200">{formatDuration(selectedDuration)}</span></span>
-            </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <Clock size={12} className="text-primary" />
+            <span>Auction duration: <span className="text-slate-200 font-medium">{formatDuration(selectedDuration)}</span></span>
           </div>
         )}
+
+        {/* Output token selection */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500 uppercase">Output token:</span>
+          <span className="text-[11px] text-slate-300">{tokenLabel}</span>
+          {outputToken === 'msol' && (
+            <span className="text-[10px] text-slate-500">(Marinade liquid staking)</span>
+          )}
+        </div>
 
         {/* Recipient */}
         {recipientAddress && (
-          <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-2 border-t border-white/5">
+          <div className="flex items-center gap-2 text-[11px] pt-2 border-t border-white/5">
             <span className="text-[10px] text-slate-500 uppercase">Recipient:</span>
-            <span className="font-mono text-slate-300">{recipientAddress.slice(0, 8)}...{recipientAddress.slice(-6)}</span>
+            <span className="font-mono text-slate-300 bg-white/5 px-2 py-0.5 rounded">
+              {recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}
+            </span>
           </div>
         )}
       </div>
 
       {/* Footer */}
       {onConfirm && !isConfirmed ? (
-        <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 space-y-2">
-          <div className="flex items-center gap-2 text-[10px] text-slate-500">
-            <Shield size={10} className="text-green-500/60" />
-            <span>Minimum guaranteed: <span className="text-slate-300">{floorSol} {tokenLabel}</span></span>
+        <div className="px-4 py-4 bg-primary/5 border-t border-primary/20 space-y-3">
+          <div className="flex items-start gap-2 text-[10px] text-slate-400">
+            <Info size={12} className="text-primary mt-0.5 shrink-0" />
+            <span>Select your options and click Confirm to proceed. Signing is completely free (no gas cost).</span>
           </div>
           <button
             onClick={handleConfirm}
-            className="w-full py-2 px-4 rounded-lg bg-primary hover:bg-primary/90 text-black text-xs font-semibold transition-all active:scale-[0.98]"
+            className="w-full py-3 px-4 rounded-lg bg-primary hover:bg-primary/90 text-black text-sm font-semibold transition-all active:scale-[0.98]"
           >
-            Confirm Plan & Sign
+            Confirm to proceed
           </button>
         </div>
       ) : isConfirmed ? (
-        <div className="px-4 py-2 bg-green-500/5 border-t border-green-500/20">
+        <div className="px-4 py-3 bg-green-500/5 border-t border-green-500/20">
           <div className="flex items-center gap-2">
-            <div className="size-4 rounded-full bg-green-500/20 flex items-center justify-center">
-              <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="size-5 rounded-full bg-green-500/20 flex items-center justify-center">
+              <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <span className="text-[10px] text-green-400/80">Plan confirmed — signed and submitted</span>
+            <span className="text-[11px] text-green-400 font-medium">Plan confirmed — signed and submitted</span>
           </div>
         </div>
       ) : null}
