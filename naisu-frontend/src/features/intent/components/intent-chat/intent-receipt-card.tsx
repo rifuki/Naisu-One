@@ -190,14 +190,14 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
             <span className="text-[11px] text-slate-500">on {destLabel}</span>
           </div>
 
-          {/* Recipient */}
-          <div className="col-span-2 flex items-center justify-between py-1.5 px-3 rounded-lg bg-white/3 border border-white/6">
-            <div className="flex items-center gap-1.5">
-              <Wallet className="text-slate-500" size={13} />
+          {/* Recipient - full width with dynamic truncate */}
+          <div className="py-2 px-3 rounded-lg bg-white/3 border border-white/6">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Wallet className="text-slate-500" size={12} />
               <span className="text-[10px] text-slate-500 uppercase tracking-wider">Recipient</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-mono text-slate-200">{recipient}</span>
+            <div className="font-mono text-[11px] text-slate-200 truncate" title={intent.recipientAddress}>
+              {intent.recipientAddress}
             </div>
           </div>
 
