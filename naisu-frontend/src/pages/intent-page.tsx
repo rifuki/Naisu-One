@@ -140,9 +140,14 @@ export default function IntentPage() {
     user:    address,
     enabled: !!address && intentProgress !== null,
     onOrderUpdate: useCallback((event) => {
-      console.log('[intent-page] onOrderUpdate received:', { eventOrderId: event.orderId, trackedId: trackedIntentIdRef.current, status: event.status });
+      console.log('[intent-page] onOrderUpdate received:', { 
+        eventOrderId: event.orderId, 
+        trackedId: trackedIntentIdRef.current, 
+        status: event.status,
+        match: event.orderId === trackedIntentIdRef.current 
+      });
       if (event.orderId !== trackedIntentIdRef.current) {
-        console.log('[intent-page] orderId mismatch, skipping');
+        console.log('[intent-page] orderId mismatch, skipping. Expected:', trackedIntentIdRef.current, 'Got:', event.orderId);
         return;
       }
       if (event.status === 'FULFILLED') {
@@ -170,8 +175,12 @@ export default function IntentPage() {
       }
     }, [setPendingGaslessIntent, sendMessage]),
     onGaslessResolved: useCallback((intentId: string, contractOrderId: string) => {
+      console.log('[intent-page] gasless_resolved:', { intentId, contractOrderId, currentTracked: trackedIntentIdRef.current });
       if (trackedIntentIdRef.current === intentId) {
+        console.log('[intent-page] Updating trackedId from', intentId, 'to', contractOrderId);
         trackedIntentIdRef.current = contractOrderId;
+      } else {
+        console.log('[intent-page] gasless_resolved ignored - intentId mismatch');
       }
     }, []),
     onProgress: useCallback((evt) => {
