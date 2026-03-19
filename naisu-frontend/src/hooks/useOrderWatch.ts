@@ -29,6 +29,16 @@ export interface IntentProgressEvent {
   data:    Record<string, unknown>
 }
 
+export interface OrderFulfilledEvent {
+  orderId: string
+  data: {
+    solverName?: string
+    solverAddress?: string
+    fillTimeMs?: number
+    quotedPrice?: string
+  }
+}
+
 interface UseOrderWatchOptions {
   user:                 string | undefined
   chain?:               string
@@ -37,17 +47,20 @@ interface UseOrderWatchOptions {
   onOrderCreated?:      () => void
   onProgress?:          (event: IntentProgressEvent) => void
   onGaslessResolved?:   (intentId: string, contractOrderId: string) => void
+  onOrderFulfilled?:    (event: OrderFulfilledEvent) => void
 }
 
-export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOrderCreated, onProgress, onGaslessResolved }: UseOrderWatchOptions) {
+export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOrderCreated, onProgress, onGaslessResolved, onOrderFulfilled }: UseOrderWatchOptions) {
   const onUpdateRef           = useRef(onOrderUpdate)
   const onCreatedRef          = useRef(onOrderCreated)
   const onProgressRef         = useRef(onProgress)
   const onGaslessResolvedRef  = useRef(onGaslessResolved)
+  const onOrderFulfilledRef   = useRef(onOrderFulfilled)
   onUpdateRef.current          = onOrderUpdate
   onCreatedRef.current         = onOrderCreated
   onProgressRef.current        = onProgress
   onGaslessResolvedRef.current = onGaslessResolved
+  onOrderFulfilledRef.current  = onOrderFulfilled
 
   useEffect(() => {
     if (!user || !enabled) return
@@ -77,9 +90,11 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
       // Also listen for order_fulfilled from solver service
       es.addEventListener('order_fulfilled', (e: MessageEvent) => {
         try {
-          const data = JSON.parse(e.data) as { orderId: string; data: { solverName?: string; fillTimeMs?: number } }
+          const data = JSON.parse(e.data) as OrderFulfilledEvent
           console.log('[useOrderWatch] order_fulfilled received:', data)
-          // Convert to OrderUpdateEvent format
+          // Call dedicated handler if provided
+          onOrderFulfilledRef.current?.(data)
+          // Also convert to OrderUpdateEvent format for backward compatibility
           onUpdateRef.current({
             orderId: data.orderId,
             status: 'FULFILLED',

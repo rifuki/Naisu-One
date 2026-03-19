@@ -9,7 +9,7 @@ import { TransactionReviewCard, type PendingTx } from '@/features/intent/compone
 import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
-import { useOrderWatch } from '@/hooks/useOrderWatch';
+import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
 import type { WidgetConfirmPayload } from '@/features/intent/components/widgets';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
@@ -139,6 +139,20 @@ export default function IntentPage() {
   useOrderWatch({
     user:    address,
     enabled: !!address && intentProgress !== null,
+    onOrderFulfilled: useCallback((data: OrderFulfilledEvent) => {
+      console.log('[intent-page] onOrderFulfilled received:', data);
+      if (data.orderId !== trackedIntentIdRef.current) {
+        console.log('[intent-page] order_fulfilled mismatch, skipping');
+        return;
+      }
+      if (intentFulfilled) {
+        console.log('[intent-page] Already fulfilled, skipping');
+        return;
+      }
+      // Set winner solver from fulfillment event (quotedPrice comes from RFQ winner event)
+      setWinnerSolver(data.data?.solverName);
+      // Trigger fulfillment via order_update handler which will set intentFulfilled=true
+    }, [intentFulfilled]),
     onOrderUpdate: useCallback((event) => {
       console.log('[intent-page] onOrderUpdate received:', { 
         eventOrderId: event.orderId, 
@@ -151,6 +165,11 @@ export default function IntentPage() {
         return;
       }
       if (event.status === 'FULFILLED') {
+        // Guard against duplicate processing
+        if (intentFulfilled) {
+          console.log('[intent-page] Order already fulfilled, skipping duplicate event');
+          return;
+        }
         console.log('[intent-page] Order FULFILLED, updating UI');
         // Clear persisted signed intent — it has been fulfilled on-chain
         try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
@@ -171,9 +190,9 @@ export default function IntentPage() {
         setPendingGaslessIntent(undefined);
         setGaslessStatus(null);
         window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
-        sendMessage(`[System] Intent signed and submitted. ID: ${event.orderId}\nPlease provide a polite, concise confirmation that the intent was submitted gaslessly (FREE!) and solvers are now bidding to fill it.`);
+        sendMessage(`[System] ✅ Intent fulfilled! ID: ${event.orderId}\nThe bridge has completed successfully. The user can verify the transaction on the explorer.`);
       }
-    }, [setPendingGaslessIntent, sendMessage]),
+    }, [intentFulfilled, setPendingGaslessIntent, sendMessage]),
     onGaslessResolved: useCallback((intentId: string, contractOrderId: string) => {
       console.log('[intent-page] gasless_resolved:', { intentId, contractOrderId, currentTracked: trackedIntentIdRef.current });
       if (trackedIntentIdRef.current === intentId) {

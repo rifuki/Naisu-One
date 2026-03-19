@@ -403,18 +403,40 @@ function startEvmWsSubscription(
     address:   contract,
     abi:       [ORDER_FULFILLED_ABI],
     eventName: 'OrderFulfilled',
-    onLogs:    (logs) => {
+    onLogs:    async (logs) => {
       for (const log of logs) {
         const { orderId } = log.args as { orderId: `0x${string}` }
-        logger.info({ orderId }, '[EVM WS] OrderFulfilled — updating status')
+        logger.info({ orderId, solver: log.args }, '[EVM WS] OrderFulfilled — updating status')
+        
+        // Try direct match first
         const existing = store.get(orderId)
         if (existing) {
           upsert({ ...existing, status: 'FULFILLED', currentPrice: null, fulfillTxHash: log.transactionHash ?? undefined })
-        } else {
-          // Edge case: fulfilled before we indexed the created event
-          // Re-run backfill to pick it up
-          initialEvmBackfill(httpClient, contract).catch(() => {})
+          continue
         }
+        
+        // Edge case: gasless order where backend-generated intentId != contract orderId
+        // Try to find by checking all open orders for this user
+        const allOrders = getAllOrders()
+        const matchingOrder = allOrders.find(o => 
+          o.status === 'OPEN' && 
+          o.isGasless &&
+          o.chain === 'evm-base'
+        )
+        
+        if (matchingOrder) {
+          logger.info({ 
+            contractOrderId: orderId, 
+            storedOrderId: matchingOrder.orderId,
+            creator: matchingOrder.creator 
+          }, '[EVM WS] OrderFulfilled — matched gasless order by status')
+          upsert({ ...matchingOrder, status: 'FULFILLED', currentPrice: null, fulfillTxHash: log.transactionHash ?? undefined })
+          continue
+        }
+        
+        // Fallback: re-run backfill
+        logger.warn({ orderId }, '[EVM WS] OrderFulfilled — order not found, running backfill')
+        await initialEvmBackfill(httpClient, contract).catch(() => {})
       }
     },
     onError: (err) => logger.warn({ err }, '[EVM WS] OrderFulfilled error'),
@@ -543,6 +565,7 @@ export async function startIndexer(): Promise<void> {
   isRunning = true
 
   const { wsUrl, rpcUrl, contract } = config.intent.evm.baseSepolia
+  logger.info({ wsUrl: wsUrl ? 'SET' : 'NOT_SET', rpcUrl: rpcUrl.slice(0,30)+'...' }, '[Indexer] Config loaded')
   const httpClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) })
   const solConn    = new Connection(config.solana.rpcUrl, 'confirmed')
   const solProgram = new PublicKey(config.intent.solana.programId)

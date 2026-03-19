@@ -4,6 +4,8 @@
  * Production-ready REST API for Uniswap V4 on-chain queries
  * Built with Hono, Viem, and Bun
  */
+import 'dotenv/config'
+import { serve } from '@hono/node-server'
 import { app } from './routes'
 import { config } from './config/env'
 import { logger } from './lib/logger'
@@ -17,11 +19,11 @@ async function startServer() {
   // Start cron jobs
   startCronJobs()
 
-  // Start server
-  const server = Bun.serve({
+  // Start server (Hono Node adapter)
+  const server = serve({
+    fetch: app.fetch,
     port: config.server.port,
     hostname: config.server.host,
-    fetch: app.fetch,
   })
 
   logger.info(
