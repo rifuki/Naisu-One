@@ -487,37 +487,78 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
             </div>
 
             <div className="p-4 space-y-4">
+              {/* What happens to ETH */}
+              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  <span className="text-[11px] font-medium text-slate-300">Bridge Details</span>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">You send</span>
+                    <span className="text-white font-medium">{intent.amount} ETH</span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">From</span>
+                    <span className="text-slate-300">Base Sepolia</span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">To</span>
+                    <span className="text-slate-300">{destLabel}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing explanation */}
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-[11px] font-medium text-primary">Solver Competition</span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Multiple solvers compete to fill your order. The winning solver offers the best rate. 
+                  Price starts high and decays over time until someone fills it.
+                </p>
+              </div>
+
               {/* Conversion */}
-              <div className="text-center">
+              <div className="text-center p-3 rounded-lg bg-white/5 border border-white/10">
+                <div className="text-[10px] text-slate-500 mb-1">Estimated receive amount</div>
                 <div className="text-2xl font-bold text-white">{startSol} - {floorSol}</div>
                 <div className="text-sm text-primary">{tokenLabel}</div>
-                <div className="text-[10px] text-slate-500 mt-1">Price decays from start to floor</div>
               </div>
 
-              {/* Pricing */}
+              {/* Best/Worst case */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-green-500/5 border border-green-500/20">
-                  <div className="text-[10px] text-green-500/80">Best case</div>
-                  <div className="text-sm font-semibold text-green-400">{startSol}</div>
+                  <div className="text-[10px] text-green-500/80">Best case (if filled early)</div>
+                  <div className="text-sm font-semibold text-green-400">{startSol} {tokenLabel}</div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/5 border border-white/10">
-                  <div className="text-[10px] text-slate-500">Worst case</div>
-                  <div className="text-sm font-semibold text-slate-300">{floorSol}</div>
+                  <div className="text-[10px] text-slate-500">Worst case (floor price)</div>
+                  <div className="text-sm font-semibold text-slate-300">{floorSol} {tokenLabel}</div>
                 </div>
               </div>
 
-              {/* Duration selector */}
+              {/* Duration selector with better label */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                    <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Duration
-                  </span>
+                  <div>
+                    <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                      <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Auction Duration
+                    </span>
+                    <div className="text-[9px] text-slate-500 mt-0.5">Longer = more time for solvers to compete</div>
+                  </div>
                   <button
                     onClick={() => setShowDurationPicker(!showDurationPicker)}
-                    className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors"
                   >
                     {currentOption.label}
                     <svg className={`w-3 h-3 transition-transform ${showDurationPicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -526,13 +567,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                   </button>
                 </div>
                 {showDurationPicker && (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
                     {DURATION_OPTIONS.map((opt) => (
                       <button
                         key={opt.seconds}
                         onClick={() => { setSelectedDuration(opt.seconds); setShowDurationPicker(false); }}
-                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                          selectedDuration === opt.seconds ? 'bg-primary text-black' : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                        className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all ${
+                          selectedDuration === opt.seconds ? 'bg-primary text-black' : 'bg-transparent text-slate-400 hover:bg-white/5'
                         }`}
                       >
                         {opt.label}
@@ -544,7 +585,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
 
               {/* Recipient */}
               <div className="pt-2 border-t border-white/5">
-                <div className="text-[10px] text-slate-500 mb-1">Recipient</div>
+                <div className="text-[10px] text-slate-500 mb-1">Recipient Address ({destLabel})</div>
                 <code className="font-mono text-[11px] text-slate-200 bg-[#1a1a1a] px-2 py-1.5 rounded border border-white/10 block overflow-hidden" style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span className="text-slate-500">`</span>
                   {intent.recipientAddress}
