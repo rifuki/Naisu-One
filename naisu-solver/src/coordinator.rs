@@ -1,12 +1,20 @@
 //! Solver network coordinator:
 //!   1. Register with naisu-backend on startup
 //!   2. Send heartbeat every 30s with current balances
-//!   3. Serve HTTP /rfq endpoint — backend calls this to request a quote
+//!   3. Serve HTTP /rfq   — backend calls this to request a quote
+//!   4. Serve HTTP /execute — backend calls this when solver wins RFQ (gasless flow)
 //!
 //! All three tasks are no-ops if SOLVER_NAME or SOLVER_BACKEND_URL are not set.
 
 use crate::config::Config;
 use axum::{extract::State, routing::post, Json, Router};
+use ethers::{
+    abi::{encode as abi_encode, Token},
+    middleware::SignerMiddleware,
+    providers::{Http, Middleware, Provider},
+    signers::{LocalWallet, Signer},
+    types::{Address, Bytes, TransactionRequest, U256},
+};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -71,13 +79,56 @@ pub struct RfqResponse {
 }
 
 // ============================================================================
-// Internal state for axum handler
+// Internal state for axum handlers
 // ============================================================================
 
-struct RfqState {
+struct SolverState {
     solver_name:        String,
     quote_discount_bps: u64,
     eta_seconds:        u64,
+    config:             Arc<Config>,
+}
+
+// ── Execute endpoint types ───────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ExecuteIntentFields {
+    creator:           String,
+    recipient:         String,   // 0x-prefixed bytes32 hex (64 hex chars)
+    #[serde(rename = "destinationChain")]
+    destination_chain: u64,
+    amount:            String,   // wei as decimal string
+    #[serde(rename = "startPrice")]
+    start_price:       String,
+    #[serde(rename = "floorPrice")]
+    floor_price:       String,
+    deadline:          u64,
+    #[serde(rename = "intentType")]
+    intent_type:       u64,
+    nonce:             u64,
+}
+
+#[derive(Deserialize)]
+struct ExecuteRequest {
+    #[serde(rename = "intentId")]
+    intent_id:        String,
+    intent:           ExecuteIntentFields,
+    signature:        String,         // 0x-prefixed 65-byte hex
+    #[serde(rename = "contractAddress")]
+    contract_address: String,
+    #[serde(rename = "chainId")]
+    chain_id:         u64,
+    #[serde(rename = "rpcUrl")]
+    rpc_url:          String,
+}
+
+#[derive(Serialize)]
+struct ExecuteResponse {
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error:   Option<String>,
 }
 
 // ============================================================================
@@ -184,17 +235,19 @@ pub async fn start(config: Arc<Config>) {
         });
     }
 
-    // ── RFQ HTTP server (blocks task) ─────────────────────────────────────────
+    // ── RFQ + Execute HTTP server (blocks task) ───────────────────────────────
 
-    let rfq_state = Arc::new(RfqState {
+    let solver_state = Arc::new(SolverState {
         solver_name:        name,
         quote_discount_bps: config.solver_quote_discount_bps,
         eta_seconds:        config.solver_eta_seconds,
+        config:             config.clone(),
     });
 
     let app = Router::new()
-        .route("/rfq", post(handle_rfq))
-        .with_state(rfq_state);
+        .route("/rfq",     post(handle_rfq))
+        .route("/execute", post(handle_execute))
+        .with_state(solver_state);
 
     let addr = format!("0.0.0.0:{rfq_port}");
     tracing::info!(%addr, "RFQ server listening");
@@ -256,7 +309,7 @@ async fn heartbeat_loop(
 // ============================================================================
 
 async fn handle_rfq(
-    State(state): State<Arc<RfqState>>,
+    State(state): State<Arc<SolverState>>,
     Json(req): Json<RfqRequest>,
 ) -> Json<RfqResponse> {
     // Reject if order already past deadline
@@ -297,6 +350,137 @@ async fn handle_rfq(
         estimated_eta: state.eta_seconds,
         expires_at,
     })
+}
+
+// ============================================================================
+// Execute handler — gasless flow: call executeIntent() on EVM with the
+// user's EIP-712 signature so the contract emits OrderCreated, then the
+// EVM listener picks it up and does the cross-chain execution.
+// ============================================================================
+
+async fn handle_execute(
+    State(state): State<Arc<SolverState>>,
+    Json(req): Json<ExecuteRequest>,
+) -> Json<ExecuteResponse> {
+    tracing::info!(intent_id = %req.intent_id, "Execute signal received from backend — calling executeIntent()");
+
+    macro_rules! err {
+        ($msg:expr) => {
+            return Json(ExecuteResponse { success: false, tx_hash: None, error: Some($msg) })
+        };
+    }
+
+    // Build ethers client
+    let wallet = match state.config.evm_private_key.parse::<LocalWallet>() {
+        Ok(w) => w.with_chain_id(req.chain_id),
+        Err(e) => err!(format!("Invalid private key: {e}")),
+    };
+    let provider = match Provider::<Http>::try_from(req.rpc_url.as_str()) {
+        Ok(p) => p,
+        Err(e) => err!(format!("Invalid RPC URL: {e}")),
+    };
+    let client = SignerMiddleware::new(provider, wallet);
+
+    // Parse intent fields
+    let contract_addr: Address = match req.contract_address.parse() {
+        Ok(a) => a,
+        Err(e) => err!(format!("Invalid contract address: {e}")),
+    };
+    let creator: Address = match req.intent.creator.parse() {
+        Ok(a) => a,
+        Err(e) => err!(format!("Invalid creator: {e}")),
+    };
+
+    // recipient is bytes32 (0x + 64 hex chars)
+    let recipient_hex = req.intent.recipient.trim_start_matches("0x");
+    if recipient_hex.len() != 64 {
+        err!(format!("recipient must be 64 hex chars, got {}", recipient_hex.len()));
+    }
+    let mut recipient_bytes = [0u8; 32];
+    if hex::decode_to_slice(recipient_hex, &mut recipient_bytes).is_err() {
+        err!("Invalid recipient hex".to_string());
+    }
+
+    let amount = match U256::from_dec_str(&req.intent.amount) {
+        Ok(a) => a,
+        Err(e) => err!(format!("Invalid amount: {e}")),
+    };
+    let start_price = match U256::from_dec_str(&req.intent.start_price) {
+        Ok(a) => a,
+        Err(e) => err!(format!("Invalid startPrice: {e}")),
+    };
+    let floor_price = match U256::from_dec_str(&req.intent.floor_price) {
+        Ok(a) => a,
+        Err(e) => err!(format!("Invalid floorPrice: {e}")),
+    };
+
+    // Parse signature
+    let sig_hex = req.signature.trim_start_matches("0x");
+    let sig_bytes = match hex::decode(sig_hex) {
+        Ok(b) => b,
+        Err(e) => err!(format!("Invalid signature hex: {e}")),
+    };
+
+    // Build ABI calldata for:
+    //   executeIntent((address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8,uint256),bytes)
+    let selector = &ethers::utils::keccak256(
+        b"executeIntent((address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8,uint256),bytes)"
+    )[..4];
+
+    let intent_tuple = Token::Tuple(vec![
+        Token::Address(creator),
+        Token::FixedBytes(recipient_bytes.to_vec()),
+        Token::Uint(U256::from(req.intent.destination_chain)),
+        Token::Uint(amount),
+        Token::Uint(start_price),
+        Token::Uint(floor_price),
+        Token::Uint(U256::from(req.intent.deadline)),
+        Token::Uint(U256::from(req.intent.intent_type)),
+        Token::Uint(U256::from(req.intent.nonce)),
+    ]);
+
+    let mut calldata = selector.to_vec();
+    calldata.extend_from_slice(&abi_encode(&[intent_tuple, Token::Bytes(sig_bytes)]));
+
+    // Get pending nonce
+    let nonce = client
+        .provider()
+        .get_transaction_count(client.address(), Some(ethers::types::BlockNumber::Pending.into()))
+        .await
+        .ok();
+
+    let mut tx = TransactionRequest::new()
+        .to(contract_addr)
+        .data(Bytes::from(calldata))
+        .value(amount);   // msg.value must equal intent.amount
+
+    if let Some(n) = nonce {
+        tx = tx.nonce(n);
+    }
+
+    tracing::info!(
+        intent_id = %req.intent_id,
+        amount    = %amount,
+        contract  = %req.contract_address,
+        "Sending executeIntent() tx — solver pays gas, order ETH locked in contract"
+    );
+
+    match client.send_transaction(tx, None).await {
+        Ok(pending) => match pending.await {
+            Ok(Some(receipt)) => {
+                let tx_hash = format!("{:?}", receipt.transaction_hash);
+                tracing::info!(
+                    intent_id = %req.intent_id,
+                    tx_hash   = %tx_hash,
+                    "executeIntent() mined — EVM listener will now detect OrderCreated and execute cross-chain"
+                );
+                Json(ExecuteResponse { success: true, tx_hash: Some(tx_hash), error: None })
+            }
+            Ok(None) => err!("No receipt received".to_string()),
+            Err(e)   => err!(format!("Wait for receipt failed: {e}")),
+        },
+        Err(e) => err!(format!("send_transaction failed: {e}")),
+    }
 }
 
 // ============================================================================

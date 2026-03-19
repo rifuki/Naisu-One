@@ -15,7 +15,14 @@
 
 import { logger } from '@lib/logger'
 import type { IntentOrder } from '@services/intent.service'
+import { getIntent } from '@services/intent-orderbook.service'
 import { EventEmitter } from 'events'
+
+// ── Gasless execute config (env vars) ────────────────────────────────────────
+const EXECUTE_CONTRACT_ADDRESS = process.env.BASE_SEPOLIA_INTENT_CONTRACT ?? ''
+const EXECUTE_CHAIN_ID         = Number(process.env.BASE_SEPOLIA_CHAIN_ID ?? 84532)
+const EXECUTE_RPC_URL          = process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org'
+const EXECUTE_TIMEOUT_MS       = 10_000
 
 // ============================================================================
 // Shared event bus for real-time progress streaming
@@ -400,6 +407,47 @@ export async function broadcastRFQ(order: IntentOrder): Promise<RFQResult | null
         exclusivityDeadline: Date.now() + EXCLUSIVITY_WINDOW_MS,
       },
     })
+
+    // ── Gasless execute signal: send intent + signature to winning solver ──────
+    // For gasless intents, the solver must call executeIntent() on-chain.
+    // The intent + EIP-712 signature are stored in the orderbook — look them up.
+    if (winnerSolver) {
+      const pendingIntent = getIntent(order.orderId)
+      if (pendingIntent) {
+        const executeUrl = `${winnerSolver.callbackUrl}/execute`
+        const executePayload = {
+          intentId:        order.orderId,
+          intent:          pendingIntent.intent,
+          signature:       pendingIntent.signature,
+          contractAddress: EXECUTE_CONTRACT_ADDRESS,
+          chainId:         EXECUTE_CHAIN_ID,
+          rpcUrl:          EXECUTE_RPC_URL,
+        }
+        // Fire-and-forget with timeout — solver processes async
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), EXECUTE_TIMEOUT_MS)
+        fetch(executeUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(executePayload),
+          signal:  ctrl.signal,
+        })
+          .then(async (r) => {
+            clearTimeout(timer)
+            const body = await r.json().catch(() => ({}))
+            if (r.ok) {
+              logger.info({ orderId: order.orderId, winner, txHash: (body as Record<string, unknown>)['tx_hash'] }, '[RFQ] Execute signal sent — solver is executing intent')
+            } else {
+              logger.warn({ orderId: order.orderId, status: r.status, body }, '[RFQ] Solver /execute returned error')
+            }
+          })
+          .catch((err: unknown) => {
+            clearTimeout(timer)
+            logger.warn({ orderId: order.orderId, err }, '[RFQ] Failed to send execute signal to solver')
+          })
+      }
+      // Non-gasless orders (old createOrder flow): solver detects via EVM WS — no signal needed
+    }
   }
 
   const result: RFQResult = {
