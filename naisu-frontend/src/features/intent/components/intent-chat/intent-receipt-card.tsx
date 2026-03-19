@@ -1,5 +1,5 @@
-// Receipt card - shows final state, no animations
-import { useEffect, useState } from 'react';
+// Receipt card - shows final state or live progress from Zustand store
+import { useIntentStore } from '@/store';
 
 interface ProgressStep {
   key: string;
@@ -54,38 +54,36 @@ interface IntentReceiptCardProps {
   data: IntentReceiptData;
 }
 
-// Hook to listen for live progress updates from intent-page
-function useLiveProgress() {
-  const [liveProgress, setLiveProgress] = useState<ProgressStep[] | null>(null);
-  
-  useEffect(() => {
-    const handleProgressUpdate = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.progress) {
-        setLiveProgress(detail.progress);
-      }
-    };
-    
-    window.addEventListener('intent-progress-update', handleProgressUpdate);
-    return () => window.removeEventListener('intent-progress-update', handleProgressUpdate);
-  }, []);
-  
-  return liveProgress;
-}
-
 export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
-  const { intent, progress, fillPrice, winnerSolver } = data;
-  const liveProgress = useLiveProgress();
-  // Use live progress if available (active intent tracking)
-  // Otherwise use the stored progress from receipt data
-  const currentProgress = liveProgress || progress;
+  const { intent, progress, fillPrice: storedFillPrice, winnerSolver: storedWinnerSolver } = data;
+  
+  // Get live progress from Zustand store
+  const activeIntent = useIntentStore((state) => state.activeIntent);
+  
+  // Check if this receipt matches the active intent
+  const isActive = activeIntent?.contractOrderId === intent.recipientAddress || 
+                   activeIntent?.intentId?.includes(intent.recipientAddress.slice(0, 20));
+  
+  // Use live progress if this is the active intent, otherwise use stored
+  const currentProgress = isActive && activeIntent?.progress 
+    ? activeIntent.progress 
+    : progress;
+  
+  // Use live fulfillment data if available
+  const currentFillPrice = isActive && activeIntent?.fillPrice 
+    ? activeIntent.fillPrice 
+    : storedFillPrice;
+  
+  const currentWinnerSolver = isActive && activeIntent?.winnerSolver
+    ? activeIntent.winnerSolver
+    : storedWinnerSolver;
   
   const isComplete = currentProgress.every(p => p.done);
   const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
   const startSol = formatLamports(intent.startPrice);
   const floorSol = formatLamports(intent.floorPrice);
-  const displayPrice = fillPrice || startSol;
+  const displayPrice = currentFillPrice || startSol;
   const recipient = shortenAddress(intent.recipientAddress);
 
   return (
@@ -164,11 +162,11 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
           )}
 
           {/* Solver info */}
-          {isComplete && winnerSolver && (
+          {isComplete && currentWinnerSolver && (
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col px-3 py-2.5 rounded-lg bg-white/3 border border-white/5">
                 <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Filled by</span>
-                <span className="text-[12px] font-semibold text-slate-200">{winnerSolver}</span>
+                <span className="text-[12px] font-semibold text-slate-200">{currentWinnerSolver}</span>
               </div>
               <div className="flex flex-col px-3 py-2.5 rounded-lg bg-white/3 border border-white/5">
                 <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Fill time</span>

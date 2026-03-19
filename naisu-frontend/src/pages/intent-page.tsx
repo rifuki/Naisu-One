@@ -11,6 +11,7 @@ import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
 import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
 import type { WidgetConfirmPayload } from '@/features/intent/components/widgets';
+import { useIntentStore, useChatStore, type ProgressStep } from '@/store';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
 const PENDING_INTENT_KEY = 'naisu_pending_signed_intent';
@@ -26,14 +27,6 @@ interface FulfilledState {
   fulfilledAt?: number;
   signedIntentSnapshot?: SignIntentParams;
   intentProgress?: ProgressStep[];  // Persist progress steps
-}
-
-interface ProgressStep {
-  key: string
-  label: string
-  detail?: string
-  done: boolean
-  active: boolean
 }
 
 export default function IntentPage() {
@@ -53,25 +46,28 @@ export default function IntentPage() {
   const [isGaslessFailed, setIsGaslessFailed] = useState(false);
   const [isGaslessSuccess, setIsGaslessSuccess] = useState(false);
 
-  // Progress tracking state (shown after successful sign)
-  const [intentProgress, setIntentProgress] = useState<ProgressStep[] | null>(null);
-  const [intentFulfilled, setIntentFulfilled] = useState(false);
-  const trackedIntentIdRef = useRef<string | null>(null);
-  const previousIntentIdRef = useRef<string | null>(null); // Store old ID during gasless transition
-  // Snapshot of the signed intent — used to render the inline card in chat (stays permanently as receipt)
-  const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
+  // Zustand store for active intent
+  const activeIntent = useIntentStore((state) => state.activeIntent);
+  const setActiveIntent = useIntentStore((state) => state.setActiveIntent);
+  const updateProgress = useIntentStore((state) => state.updateProgress);
+  const updateIntentId = useIntentStore((state) => state.updateIntentId);
+  const markFulfilled = useIntentStore((state) => state.markFulfilled);
+  const clearActiveIntent = useIntentStore((state) => state.clearActiveIntent);
   
-  // Dispatch progress updates for IntentReceiptCard to listen
-  useEffect(() => {
-    if (intentProgress) {
-      window.dispatchEvent(new CustomEvent('intent-progress-update', { detail: { progress: intentProgress } }));
-    }
-  }, [intentProgress]);
-  // Fulfillment details for receipt card
-  const [fillPrice, setFillPrice] = useState<string | undefined>();
-  const [winnerSolver, setWinnerSolver] = useState<string | undefined>();
+  // Local refs for tracking (not state)
+  const trackedIntentIdRef = useRef<string | null>(null);
+  const previousIntentIdRef = useRef<string | null>(null);
+  
+  // Local state for UI feedback
+  const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
   const [signedAt, setSignedAt] = useState<number | undefined>();
-  const [fulfilledAt, setFulfilledAt] = useState<number | undefined>();
+  
+  // Derive from store
+  const intentProgress = activeIntent?.progress || null;
+  const intentFulfilled = activeIntent?.isFulfilled || false;
+  const fillPrice = activeIntent?.fillPrice;
+  const winnerSolver = activeIntent?.winnerSolver;
+  const fulfilledAt = activeIntent?.fulfilledAt;
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
@@ -114,7 +110,7 @@ export default function IntentPage() {
         setSignedAt(undefined);
         setFulfilledAt(undefined);
         setSignedIntentSnapshot(undefined);
-        setIntentProgress(null);
+        clearActiveIntent();
       }
     } catch {
       // Ignore parse errors
@@ -391,7 +387,7 @@ export default function IntentPage() {
       setGaslessStatus(null);
       setIsGaslessFailed(false);
       setIsGaslessSuccess(false);
-      setIntentProgress(null);
+      clearActiveIntent();
       trackedIntentIdRef.current = null;
       currentMsgIdxRef.current = 0;
       return;
@@ -404,7 +400,7 @@ export default function IntentPage() {
     setGaslessStatus(null);
     setIsGaslessFailed(false);
     setIsGaslessSuccess(false);
-    setIntentProgress(null);
+    clearActiveIntent();
     setIntentFulfilled(false);
     setSignedIntentSnapshot(undefined);
     setFillPrice(undefined);
@@ -584,7 +580,7 @@ export default function IntentPage() {
             setGaslessStatus(null);
             setIsGaslessFailed(false);
             setIsGaslessSuccess(false);
-            setIntentProgress(null);
+            clearActiveIntent();
             trackedIntentIdRef.current = null;
             previousIntentIdRef.current = null;
           }}
