@@ -4,6 +4,7 @@ import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
 import type { WidgetConfirmPayload } from '../widgets';
+import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 const SUGGESTIONS = [
   'Bridge 0.1 ETH from Base Sepolia to Solana',
@@ -24,8 +25,14 @@ interface IntentChatProps {
   onRetry: () => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
-  inlineCard?: ReactNode;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
+  // Sign intent card props (rendered inline in chat instead of floating)
+  pendingSignIntent?: SignIntentParams | null;
+  signIntentStatus?: string | null;
+  isSignIntentFailed?: boolean;
+  isSignIntentSuccess?: boolean;
+  onSignIntentConfirm?: () => void;
+  onSignIntentDismiss?: () => void;
 }
 
 function renderMarkdown(content: string) {
@@ -59,10 +66,15 @@ export function IntentChat({
   onRetry,
   onNewChat,
   onOpenSettings,
-  inlineCard,
   onWidgetConfirm,
+  pendingSignIntent,
+  signIntentStatus,
+  isSignIntentFailed,
+  isSignIntentSuccess,
+  onSignIntentConfirm,
+  onSignIntentDismiss,
 }: IntentChatProps) {
-  const isEmpty = messages.length === 0 && !isLoading;
+  const isEmpty = messages.length === 0 && !isLoading && !pendingSignIntent;
 
   const handleSuggestionClick = (text: string) => {
     onSend(text);
@@ -79,8 +91,13 @@ export function IntentChat({
         error={error}
         onRetry={onRetry}
         renderContent={renderMarkdown}
-        inlineCard={inlineCard}
         onWidgetConfirm={onWidgetConfirm}
+        pendingSignIntent={pendingSignIntent}
+        signIntentStatus={signIntentStatus}
+        isSignIntentFailed={isSignIntentFailed}
+        isSignIntentSuccess={isSignIntentSuccess}
+        onSignIntentConfirm={onSignIntentConfirm}
+        onSignIntentDismiss={onSignIntentDismiss}
       />
 
       {/* Input area */}

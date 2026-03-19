@@ -20,6 +20,14 @@ interface GaslessIntentReviewCardProps {
   embedded?: boolean;
   /** When true, shows permanent FULFILLED receipt state — card never disappears */
   fulfilled?: boolean;
+  /** Actual SOL received (lamports string from quotedPrice) */
+  fillPrice?: string;
+  /** Solver name that filled the intent */
+  winnerSolver?: string;
+  /** Timestamp when user signed (ms) */
+  signedAt?: number;
+  /** Timestamp when fulfilled (ms) */
+  fulfilledAt?: number;
 }
 
 const DEST_LABELS: Record<string, string> = {
@@ -43,6 +51,10 @@ export function GaslessIntentReviewCard({
   progress,
   embedded,
   fulfilled,
+  fillPrice,
+  winnerSolver,
+  signedAt,
+  fulfilledAt,
 }: GaslessIntentReviewCardProps) {
   // Format prices from lamports/gwei to human-readable
   const formatPrice = (lamports: string) => {
@@ -52,6 +64,24 @@ export function GaslessIntentReviewCard({
     const intPart = str.slice(0, -decimals) || '0';
     const fracPart = str.slice(-decimals).replace(/0+$/, '').slice(0, 4);
     return fracPart ? `${intPart}.${fracPart}` : intPart;
+  };
+
+  // Calculate fill time in seconds
+  const getFillTime = () => {
+    if (!signedAt || !fulfilledAt) return undefined;
+    const seconds = Math.round((fulfilledAt - signedAt) / 1000);
+    return seconds < 60 ? `~${seconds}s` : `~${Math.round(seconds / 60)}m ${seconds % 60}s`;
+  };
+
+  // Calculate comparison vs floor
+  const getComparisonText = () => {
+    if (!fillPrice || !intent.floorPrice) return undefined;
+    const fill = parseFloat(fillPrice);
+    const floor = parseFloat(formatPrice(intent.floorPrice));
+    if (floor === 0) return undefined;
+    const diff = ((fill - floor) / floor) * 100;
+    const sign = diff >= 0 ? '+' : '';
+    return `vs floor ${sign}${diff.toFixed(1)}%`;
   };
 
   const recipientShort =
@@ -120,9 +150,22 @@ export function GaslessIntentReviewCard({
                   <span className="material-symbols-outlined text-slate-600 text-[16px]">
                     arrow_forward
                   </span>
-                  <span className="text-[13px] font-semibold text-primary">
-                    ~{OUTPUT_TOKEN_LABELS[intent.outputToken] || intent.outputToken}
-                  </span>
+                  {fulfilled && fillPrice ? (
+                    <>
+                      <span className="text-[22px] font-bold text-green-400 tabular-nums">
+                        {fillPrice}
+                      </span>
+                      <span className="text-[13px] font-semibold text-green-400">
+                        {OUTPUT_TOKEN_LABELS[intent.outputToken] || intent.outputToken}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[13px] font-semibold text-primary">
+                        ~{formatPrice(intent.startPrice)} {OUTPUT_TOKEN_LABELS[intent.outputToken] || intent.outputToken}
+                      </span>
+                    </>
+                  )}
                   <span className="text-[11px] text-slate-500">
                     on {DEST_LABELS[intent.destinationChain] || intent.destinationChain}
                   </span>
@@ -150,34 +193,65 @@ export function GaslessIntentReviewCard({
                   </div>
                 </div>
 
-                {/* Auction params */}
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
-                    <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">
-                      Start price
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-300">
-                      {formatPrice(intent.startPrice)} SOL
-                    </span>
-                  </div>
-                  <div className="flex flex-col px-2.5 py-2 rounded-lg bg-green-500/5 border border-green-500/20">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="material-symbols-outlined text-green-500 text-[10px]">verified_user</span>
-                      <span className="text-[9px] text-green-600 uppercase tracking-wider">Min. receive</span>
+                {/* Fulfilled state: YOU RECEIVED hero + details */}
+                {fulfilled ? (
+                  <div className="flex flex-col gap-3">
+                    {/* YOU RECEIVED hero */}
+                    <div className="flex flex-col items-center justify-center py-4 px-4 rounded-xl bg-green-500/10 border border-green-500/30">
+                      <span className="text-[10px] text-green-400/80 uppercase tracking-[0.15em] mb-1">You Received</span>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[32px] font-bold text-green-400 tabular-nums leading-none">
+                          {fillPrice || formatPrice(intent.floorPrice)}
+                        </span>
+                        <span className="text-[14px] font-semibold text-green-400">SOL</span>
+                      </div>
+                      {getComparisonText() && (
+                        <span className="text-[11px] text-green-400/70 mt-1">{getComparisonText()}</span>
+                      )}
                     </div>
-                    <span className="text-[11px] font-mono text-green-400 font-semibold">
-                      {formatPrice(intent.floorPrice)} SOL
-                    </span>
+                    
+                    {/* Solver + Fill time row */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col px-3 py-2.5 rounded-lg bg-white/3 border border-white/5">
+                        <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Filled by</span>
+                        <span className="text-[12px] font-semibold text-slate-200">{winnerSolver || 'Unknown'}</span>
+                      </div>
+                      <div className="flex flex-col px-3 py-2.5 rounded-lg bg-white/3 border border-white/5">
+                        <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Fill time</span>
+                        <span className="text-[12px] font-semibold text-slate-200">{getFillTime() || '—'}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
-                    <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">
-                      Auction
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-300">
-                      {Math.round(intent.durationSeconds / 60)} min
-                    </span>
+                ) : (
+                  /* Auction params - only show when not fulfilled */
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
+                      <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">
+                        Start price
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {formatPrice(intent.startPrice)} SOL
+                      </span>
+                    </div>
+                    <div className="flex flex-col px-2.5 py-2 rounded-lg bg-green-500/5 border border-green-500/20">
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className="material-symbols-outlined text-green-500 text-[10px]">verified_user</span>
+                        <span className="text-[9px] text-green-600 uppercase tracking-wider">Min. receive</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-green-400 font-semibold">
+                        {formatPrice(intent.floorPrice)} SOL
+                      </span>
+                    </div>
+                    <div className="flex flex-col px-2.5 py-2 rounded-lg bg-white/3 border border-white/5">
+                      <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">
+                        Auction
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {Math.round(intent.durationSeconds / 60)} min
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Gas cost display */}
                 <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-green-500/5 border border-green-500/20">
@@ -201,28 +275,61 @@ export function GaslessIntentReviewCard({
 
               {/* Right: progress stepper or actions */}
               {progress ? (
-                <div className="flex flex-col gap-1.5 px-4 py-4 shrink-0 w-[160px]">
-                  {progress.map((step) => (
-                    <div key={step.key} className="flex items-start gap-2">
-                      <div className="mt-0.5 shrink-0">
-                        {step.done ? (
-                          <span className="material-symbols-outlined text-green-400 text-[14px]">check_circle</span>
-                        ) : step.active ? (
-                          <div className="size-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin mt-0.5" />
-                        ) : (
-                          <div className="size-3.5 rounded-full border border-white/15 mt-0.5" />
-                        )}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className={`text-[10px] leading-tight ${step.done ? 'text-green-400' : step.active ? 'text-primary' : 'text-slate-600'}`}>
-                          {step.label}
-                        </span>
-                        {step.detail && (
-                          <span className="text-[9px] text-slate-500 truncate">{step.detail}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex flex-col px-5 py-4 shrink-0 w-[200px]">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-3">Progress</div>
+                  <div className="relative">
+                    {progress.map((step, idx) => {
+                      const isLast = idx === progress.length - 1;
+                      const showConnector = !isLast;
+                      
+                      return (
+                        <div key={step.key} className="relative flex gap-3">
+                          {/* Timeline column with dot and connector */}
+                          <div className="flex flex-col items-center shrink-0">
+                            {/* Dot/Icon */}
+                            <div className="relative z-10">
+                              {step.done ? (
+                                <div className="size-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                                  <span className="material-symbols-outlined text-green-400 text-[14px]">check</span>
+                                </div>
+                              ) : step.active ? (
+                                <div className="size-6 rounded-full bg-primary/20 border border-primary/50 flex items-center justify-center">
+                                  <div className="size-2.5 rounded-full bg-primary animate-pulse" />
+                                </div>
+                              ) : (
+                                <div className="size-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                                  <div className="size-1.5 rounded-full bg-slate-600" />
+                                </div>
+                              )}
+                            </div>
+                            {/* Connector line */}
+                            {showConnector && (
+                              <div 
+                                className={`w-px flex-1 min-h-[24px] ${
+                                  step.done ? 'bg-green-500/40' : 'bg-white/10'
+                                }`}
+                                style={{ marginTop: '4px' }}
+                              />
+                            )}
+                          </div>
+                          
+                          {/* Step content */}
+                          <div className={`flex flex-col pb-3 ${isLast ? '' : ''}`}>
+                            <span className={`text-[11px] font-medium leading-tight ${
+                              step.done ? 'text-green-400' : step.active ? 'text-primary' : 'text-slate-500'
+                            }`}>
+                              {step.label}
+                            </span>
+                            {step.detail && (
+                              <span className="text-[9px] text-slate-500 mt-0.5 leading-tight">
+                                {step.detail}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col justify-center gap-2 px-4 py-4 shrink-0 w-[148px]">

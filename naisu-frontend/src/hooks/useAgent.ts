@@ -8,6 +8,7 @@ const PROJECT_ID = (import.meta.env.VITE_AGENT_PROJECT_ID as string | undefined)
 export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
+  timestamp?: number; // Unix timestamp in milliseconds
 }
 
 // Decoded details extracted from calldata
@@ -248,7 +249,7 @@ export function useAgent(
     setPendingGaslessIntent(undefined);
     setIsLoading(true);
 
-    const newUserMsg: AgentMessage = { role: 'user', content: userMessage };
+    const newUserMsg: AgentMessage = { role: 'user', content: userMessage, timestamp: Date.now() };
     appendMessages(prev => [...prev, newUserMsg]);
 
     // Auto-inject wallet addresses
@@ -292,7 +293,7 @@ export function useAgent(
           const tx = extractTxData(data.message);
           if (tx) setPendingTx(tx);
         }
-        appendMessages(prev => [...prev, { role: 'assistant' as const, content: data.message }]);
+        appendMessages(prev => [...prev, { role: 'assistant' as const, content: data.message, timestamp: Date.now() }]);
       } else {
         throw new Error(data.error ?? 'Unknown error');
       }
@@ -304,6 +305,7 @@ export function useAgent(
         appendMessages(prev => [...prev, {
           role: 'assistant' as const,
           content: `⚠️ **Timeout Error:**\n\n${timeoutMsg}`,
+          timestamp: Date.now(),
         }]);
       } else {
         const msg = err instanceof Error ? err.message : 'Network error';
@@ -312,6 +314,7 @@ export function useAgent(
         appendMessages(prev => [...prev, {
           role: 'assistant' as const,
           content: `Something went wrong: \`${msg}\`\n\nMake sure the agent is running on ${AGENT_URL}.`,
+          timestamp: Date.now(),
         }]);
       }
     } finally {

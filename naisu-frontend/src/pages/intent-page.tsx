@@ -46,6 +46,11 @@ export default function IntentPage() {
   const trackedIntentIdRef = useRef<string | null>(null);
   // Snapshot of the signed intent — used to render the inline card in chat (stays permanently as receipt)
   const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
+  // Fulfillment details for receipt card
+  const [fillPrice, setFillPrice] = useState<string | undefined>();
+  const [winnerSolver, setWinnerSolver] = useState<string | undefined>();
+  const [signedAt, setSignedAt] = useState<number | undefined>();
+  const [fulfilledAt, setFulfilledAt] = useState<number | undefined>();
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
@@ -58,7 +63,7 @@ export default function IntentPage() {
 
   const { 
     sessions, activeSessionId, activeSession, createSession, switchSession, deleteSession,
-    messages, isLoading, error, sendMessage, pendingTx, setPendingTx,
+    messages, isLoading, error, sendMessage, addMessage, pendingTx, setPendingTx,
     pendingGaslessIntent, setPendingGaslessIntent
   } = useGlobalAgent();
 
@@ -79,6 +84,7 @@ export default function IntentPage() {
           : prev
         );
         setIntentFulfilled(true);
+        setFulfilledAt(Date.now());
         trackedIntentIdRef.current = null;
         setPendingGaslessIntent(undefined);
         setGaslessStatus(null);
@@ -110,6 +116,11 @@ export default function IntentPage() {
         const detail = winner
           ? `${winner}${priceSol ? ` — ${priceSol} SOL` : ''}${eta ? ` (ETA ~${eta}s)` : ''}`
           : undefined;
+        
+        // Store winner and fill price for receipt card
+        if (winner) setWinnerSolver(winner);
+        if (priceSol) setFillPrice(priceSol);
+        
         // Mark all steps up to and including winner as done; set executing active
         setIntentProgress(prev => prev ? prev.map(s => {
           if (s.key === 'rfq')       return { ...s, done: true, active: false };
@@ -227,6 +238,10 @@ export default function IntentPage() {
     setIntentProgress(null);
     setIntentFulfilled(false);
     setSignedIntentSnapshot(undefined);
+    setFillPrice(undefined);
+    setWinnerSolver(undefined);
+    setSignedAt(undefined);
+    setFulfilledAt(undefined);
     trackedIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
     createSession();
@@ -286,9 +301,10 @@ export default function IntentPage() {
         }));
       } catch { /* storage unavailable — non-critical */ }
 
-      // Sign succeeded — move card from floating into chat as inline progress tracker
+      // Sign succeeded — add receipt message to chat history and start progress tracking
       trackedIntentIdRef.current = result.submissionResult.intentId;
       setSignedIntentSnapshot(pendingGaslessIntent);
+      setSignedAt(Date.now());
       setPendingGaslessIntent(undefined);
       setGaslessStatus(null);
       setIsGaslessSuccess(false);
@@ -299,6 +315,23 @@ export default function IntentPage() {
         { key: 'executing', label: 'Executing on-chain…',          detail: undefined, done: false, active: false },
         { key: 'fulfilled', label: 'Awaiting fulfillment…',        detail: undefined, done: false, active: false },
       ]);
+      
+      // Add receipt message to chat history
+      const receiptContent = `[INTENT_RECEIPT]${JSON.stringify({
+        intent: pendingGaslessIntent,
+        progress: [
+          { key: 'signed', label: 'Signed & submitted', done: true, active: false },
+          { key: 'rfq', label: 'Broadcasting RFQ to solvers…', done: false, active: true },
+          { key: 'winner', label: 'Waiting for winner…', done: false, active: false },
+          { key: 'executing', label: 'Executing on-chain…', done: false, active: false },
+          { key: 'fulfilled', label: 'Awaiting fulfillment…', done: false, active: false },
+        ],
+        fillPrice,
+        winnerSolver,
+        signedAt: Date.now(),
+      })}`;
+      addMessage(receiptContent, 'assistant');
+      
       window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Signing failed';
@@ -329,7 +362,7 @@ export default function IntentPage() {
         setGaslessStatus(null);
       }, 5000);
     }
-  }, [pendingGaslessIntent, address, signIntent, setPendingGaslessIntent]);
+  }, [pendingGaslessIntent, address, signIntent, setPendingGaslessIntent, addMessage, fillPrice, winnerSolver]);
 
   const handleRetry = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
@@ -364,19 +397,19 @@ export default function IntentPage() {
           onNewChat={handleNewChat}
           onOpenSettings={() => setShowSettings(true)}
           onWidgetConfirm={handleWidgetConfirm}
-          inlineCard={signedIntentSnapshot && intentProgress ? (
-            <GaslessIntentReviewCard
-              intent={signedIntentSnapshot}
-              status={null}
-              isFailed={false}
-              isSuccess={intentFulfilled}
-              progress={intentProgress}
-              fulfilled={intentFulfilled}
-              embedded
-              onConfirm={() => {}}
-              onDismiss={() => {}}
-            />
-          ) : undefined}
+          pendingSignIntent={pendingGaslessIntent && !intentProgress ? pendingGaslessIntent : undefined}
+          signIntentStatus={gaslessStatus}
+          isSignIntentFailed={isGaslessFailed}
+          isSignIntentSuccess={isGaslessSuccess}
+          onSignIntentConfirm={handleSignGaslessIntent}
+          onSignIntentDismiss={() => {
+            setPendingGaslessIntent(undefined);
+            setGaslessStatus(null);
+            setIsGaslessFailed(false);
+            setIsGaslessSuccess(false);
+            setIntentProgress(null);
+            trackedIntentIdRef.current = null;
+          }}
         />
 
         {pendingTx && !isLoading && (
@@ -390,27 +423,6 @@ export default function IntentPage() {
                 setPendingTx(undefined);
                 setTxStatus(null);
                 setIsTxFailed(false);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Gasless Intent Review Card — floating, pre-sign only */}
-        {pendingGaslessIntent && !isLoading && !intentProgress && (
-          <div className={`absolute bottom-32 left-0 right-0 z-30 transition-all ${isGaslessFailed ? 'animate-shake' : ''}`}>
-            <GaslessIntentReviewCard
-              intent={pendingGaslessIntent}
-              status={gaslessStatus}
-              isFailed={isGaslessFailed}
-              isSuccess={isGaslessSuccess}
-              onConfirm={handleSignGaslessIntent}
-              onDismiss={() => {
-                setPendingGaslessIntent(undefined);
-                setGaslessStatus(null);
-                setIsGaslessFailed(false);
-                setIsGaslessSuccess(false);
-                setIntentProgress(null);
-                trackedIntentIdRef.current = null;
               }}
             />
           </div>

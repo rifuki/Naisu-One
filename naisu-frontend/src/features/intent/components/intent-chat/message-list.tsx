@@ -1,6 +1,8 @@
 import { ReactNode, useRef, useEffect } from 'react';
 import { ChatMessage, MessageBubble } from './message-bubble';
+import { SignIntentMessage } from './sign-intent-message';
 import type { WidgetConfirmPayload } from '../widgets';
+import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -10,8 +12,14 @@ interface MessageListProps {
   error?: string | null;
   onRetry?: () => void;
   renderContent: (content: string) => ReactNode;
-  inlineCard?: ReactNode;
   onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
+  // Sign intent card props (rendered inline in chat)
+  pendingSignIntent?: SignIntentParams | null;
+  signIntentStatus?: string | null;
+  isSignIntentFailed?: boolean;
+  isSignIntentSuccess?: boolean;
+  onSignIntentConfirm?: () => void;
+  onSignIntentDismiss?: () => void;
 }
 
 export function MessageList({
@@ -22,8 +30,13 @@ export function MessageList({
   error,
   onRetry,
   renderContent,
-  inlineCard,
   onWidgetConfirm,
+  pendingSignIntent,
+  signIntentStatus,
+  isSignIntentFailed,
+  isSignIntentSuccess,
+  onSignIntentConfirm,
+  onSignIntentDismiss,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -32,7 +45,7 @@ export function MessageList({
       top: scrollRef.current.scrollHeight,
       behavior: 'smooth',
     });
-  }, [messages, isLoading, inlineCard]);
+  }, [messages, isLoading, pendingSignIntent]);
 
   return (
     <div
@@ -68,8 +81,18 @@ export function MessageList({
           );
         })}
 
-        {/* Inline intent progress card — appears after sign, replaces floating card */}
-        {inlineCard}
+        {/* Inline sign intent card — appears when agent sends gasless_intent widget, user can sign directly in chat */}
+        {pendingSignIntent && onSignIntentConfirm && onSignIntentDismiss && (
+          <SignIntentMessage
+            intent={pendingSignIntent}
+            status={signIntentStatus ?? null}
+            isFailed={isSignIntentFailed ?? false}
+            isSuccess={isSignIntentSuccess ?? false}
+            onConfirm={onSignIntentConfirm}
+            onDismiss={onSignIntentDismiss}
+            timestamp={Date.now()}
+          />
+        )}
 
         {/* Loading indicator */}
         {isLoading && (

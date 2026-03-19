@@ -1,10 +1,15 @@
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
+import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
+import ReactMarkdown from 'react-markdown';
+import { useTimeAgo } from '@/hooks/useTimeAgo';
+import { formatAbsoluteTime } from '@/lib/time-utils';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  timestamp?: number;
 }
 
 interface MessageBubbleProps {
@@ -93,6 +98,43 @@ function formatLamports(lamports: string): string {
 function shortenAddress(addr: string, head = 8, tail = 6): string {
   if (addr.length <= head + tail + 3) return addr;
   return `${addr.slice(0, head)}...${addr.slice(-tail)}`;
+}
+
+/** Action buttons row below message bubble (ChatGPT style) */
+function MessageActions({ text, isUser = false }: { text: string; isUser?: boolean }) {
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+  };
+
+  return (
+    <div className={`flex items-center gap-1 mt-1 ${isUser ? 'justify-end' : ''}`}>
+      <button
+        onClick={handleCopy}
+        className="p-1.5 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
+        title="Copy"
+      >
+        <span className="material-symbols-outlined text-[16px]">content_copy</span>
+      </button>
+    </div>
+  );
+}
+
+/** Message header with name and auto-updating timestamp */
+function MessageHeader({ name, timestamp, isUser = false }: { name: string; timestamp?: number; isUser?: boolean }) {
+  const timeAgo = useTimeAgo(timestamp);
+  const absoluteTime = formatAbsoluteTime(timestamp);
+
+  return (
+    <div className={`flex items-center gap-2 mb-1 ${isUser ? 'justify-end' : ''}`}>
+      <span className="text-[12px] font-semibold text-white">{name}</span>
+      <span 
+        className="text-[10px] text-slate-500" 
+        title={absoluteTime || 'just now'}
+      >
+        {timeAgo}
+      </span>
+    </div>
+  );
 }
 
 /** Clean visual summary card for gasless bridge intent — shown inline in chat after sign */
@@ -235,17 +277,15 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
 
     return (
       <div
-        className="flex flex-col items-end gap-3 opacity-0 animate-fade-in-up"
+        className="group flex flex-col items-end gap-1 opacity-0 animate-fade-in-up"
         style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
       >
         <div className="max-w-2xl text-right">
+          <MessageHeader name="You" timestamp={message.timestamp} isUser />
           <div className="inline-block p-4 rounded-2xl rounded-tr-none bg-indigo-500/10 border border-indigo-500/20 text-white text-sm leading-relaxed text-left shadow-lg">
             <p>{message.content}</p>
           </div>
-          <div className="flex items-center justify-end gap-1.5 text-slate-500 text-[11px] mt-1.5">
-            <span className="material-symbols-outlined text-[13px]">account_circle</span>
-            You
-          </div>
+          <MessageActions text={message.content} isUser />
         </div>
       </div>
     );
@@ -253,10 +293,68 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
 
   // Assistant message — parse widget blocks
   const parsed = extractWidgetBlock(message.content);
+  
+  // Check for receipt message
+  const receiptData = extractReceiptData(message.content);
+  if (receiptData) {
+    return (
+      <div
+        className="group flex gap-3 opacity-0 animate-fade-in-up"
+        style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
+      >
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          </div>
+        </div>
+        <div className="flex-1 max-w-2xl">
+          <MessageHeader name="Nesu" timestamp={message.timestamp} />
+          <IntentReceiptCard data={receiptData} />
+          <MessageActions text="Intent Receipt" />
+        </div>
+      </div>
+    );
+  }
+
+  // For gasless_intent widget, show ONLY the inline text (strip the JSON block)
+  // The actual signing UI is handled by the inline GaslessIntentReviewCard
+  if (parsed?.kind === 'gasless_intent') {
+    const intent = parsed.widget;
+    const startSol = formatLamports(intent.startPrice);
+    const destLabel = DEST_LABELS[intent.destinationChain] ?? intent.destinationChain;
+    const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
+    
+    // Concise, highlighted message
+    const conciseText = `**${intent.amount} ETH → ~${startSol} ${tokenLabel}** on ${destLabel}
+
+Sign below — no gas fees!`;
+    
+    return (
+      <div
+        className="group flex gap-3 opacity-0 animate-fade-in-up"
+        style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
+      >
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          </div>
+        </div>
+        <div className="flex-1 max-w-2xl">
+          <MessageHeader name="Nesu" timestamp={message.timestamp} />
+          <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
+            <div className="prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown>{conciseText}</ReactMarkdown>
+            </div>
+          </div>
+          <MessageActions text={parsed.text || conciseText} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      className="flex gap-3 opacity-0 animate-fade-in-up"
+      className="group flex gap-3 opacity-0 animate-fade-in-up"
       style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
     >
       <div className="flex-shrink-0 mt-1 hidden sm:block">
@@ -265,19 +363,8 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
         </div>
       </div>
       <div className="flex-1 max-w-2xl">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-[12px] font-semibold text-white">Nesu</span>
-          <span className="text-[10px] text-slate-600">just now</span>
-        </div>
+        <MessageHeader name="Nesu" timestamp={message.timestamp} />
         <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
-          {parsed?.kind === 'gasless_intent' && (
-            // Floating GaslessIntentReviewCard handles the signing UI — just show agent text here
-            parsed.text ? (
-              <div className="text-slate-300 text-sm leading-relaxed">
-                {renderContent(parsed.text)}
-              </div>
-            ) : null
-          )}
           {parsed?.kind === 'quote_review' && (
             <div className="flex flex-col gap-3">
               <QuoteReviewWidget
@@ -326,6 +413,7 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
             </div>
           )}
         </div>
+        <MessageActions text={message.content} />
       </div>
     </div>
   );
