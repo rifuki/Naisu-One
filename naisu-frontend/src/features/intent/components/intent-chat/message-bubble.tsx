@@ -332,19 +332,17 @@ export function MessageBubble({ message, renderContent, monitorTx, onWidgetConfi
             </svg>
           </div>
         </div>
-        <div className="flex-1 max-w-2xl">
+        <div className="flex-1 max-w-md">
           <MessageHeader name="Nesu" timestamp={message.timestamp} />
-          <div className="mt-2">
-            <DutchAuctionPlanWidget
-              amount={intent.amount}
-              startPrice={intent.startPrice}
-              floorPrice={intent.floorPrice}
-              durationSeconds={intent.durationSeconds}
-              destinationChain={intent.destinationChain}
-              outputToken={intent.outputToken}
-              recipientAddress={intent.recipientAddress}
-            />
-          </div>
+          <DutchAuctionPlanWidget
+            amount={intent.amount}
+            startPrice={intent.startPrice}
+            floorPrice={intent.floorPrice}
+            durationSeconds={intent.durationSeconds}
+            destinationChain={intent.destinationChain}
+            outputToken={intent.outputToken}
+            recipientAddress={intent.recipientAddress}
+          />
           <MessageActions text={`Dutch Auction Plan: ${intent.amount} ETH → ${intent.destinationChain}`} />
         </div>
       </div>

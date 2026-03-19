@@ -62,7 +62,7 @@ export function DutchAuctionPlanWidget({
   const tokenLabel = OUTPUT_TOKEN_LABELS[outputToken] ?? outputToken.toUpperCase();
 
   return (
-    <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
+    <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg max-w-md">
       {/* Header */}
       <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
         <div className="size-5 rounded-md bg-primary/20 flex items-center justify-center">
