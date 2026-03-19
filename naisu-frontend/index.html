@@ -32,6 +32,8 @@
               'scroll': 'scroll 40s linear infinite',
               'fade-in-up': 'fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               'flow-right': 'flowRight 2.5s linear infinite',
+              'magic-lamp': 'magicLamp 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards',
+              'shake': 'shake 0.4s ease-in-out',
             },
             keyframes: {
               float: {
@@ -49,6 +51,16 @@
               flowRight: {
                 '0%': { transform: 'translateX(-100%)' },
                 '100%': { transform: 'translateX(200%)' },
+              },
+              magicLamp: {
+                '0%': { transform: 'translate(0, 0) scale(1)', opacity: '1', filter: 'blur(0px)' },
+                '40%': { transform: 'translate(10vw, 20vh) scaleX(0.4) scaleY(1.4) skewX(5deg)', opacity: '0.9', filter: 'blur(1px)' },
+                '100%': { transform: 'translate(35vw, 35vh) scaleX(0) scaleY(0.1)', opacity: '0', filter: 'blur(4px)' }
+              },
+              shake: {
+                '0%, 100%': { transform: 'translateX(0)' },
+                '25%': { transform: 'translateX(-6px)' },
+                '75%': { transform: 'translateX(6px)' },
               }
             }
           }
@@ -100,6 +112,6 @@
 </head>
   <body>
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>
