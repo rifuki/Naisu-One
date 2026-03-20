@@ -760,7 +760,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 </svg>
                 <span className="text-[12px] font-semibold text-white tracking-wide">Sign Intent</span>
               </div>
-              <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/8 text-slate-400 text-[10px] font-medium tracking-wide">EIP-712 · Offchain</span>
+              <div className="flex items-center gap-1.5 text-[9px]">
+                <span className="font-mono text-slate-600 tracking-tight">EIP-712</span>
+                <span className="text-slate-700">·</span>
+                <span className="flex items-center gap-1 text-green-500 font-bold uppercase tracking-widest">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                  Gasless
+                </span>
+              </div>
             </div>
 
             {/* Error banner — full-width row, same as header, with border-b */}
