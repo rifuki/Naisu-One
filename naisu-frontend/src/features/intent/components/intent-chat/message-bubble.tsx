@@ -763,6 +763,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
               <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/8 text-slate-400 text-[10px] font-medium tracking-wide">EIP-712 · Offchain</span>
             </div>
 
+            {/* Error banner — full width, does not affect column layout */}
+            {signError && (
+              <div className="mx-5 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/8 border border-red-500/20">
+                <span className="text-red-400 text-[12px] shrink-0">✕</span>
+                <p className="text-[10px] text-red-400 leading-snug">{signError}</p>
+              </div>
+            )}
+
             {/* Body — 2 columns */}
             <div className="flex">
               {/* LEFT: what you're signing */}
@@ -832,14 +840,6 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     <span className="text-[11px] font-bold text-green-400">Free</span>
                   </div>
                 </div>
-
-                {/* Error banner — MetaMask cancel or other signing errors */}
-                {signError && (
-                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/8 border border-red-500/20">
-                    <span className="text-red-400 text-[13px] shrink-0 mt-px">✕</span>
-                    <p className="text-[10px] text-red-400 leading-snug">{signError}</p>
-                  </div>
-                )}
 
                 {/* Buttons */}
                 <div className="mt-auto flex flex-col gap-2 pt-2">
