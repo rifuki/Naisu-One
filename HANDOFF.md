@@ -1,5 +1,30 @@
 # Naisu One — Session Handoff
 
+## Session 23 — COMPLETED (2026-03-21)
+
+### Summary
+Session 23 focused on migrating the RFQ backend from a polling fallback to a purely Event-Driven architecture (True Dutch Auction), implementing expired intent sweepers, and executing a major, premium design overhaul for the Failed/Expired UI states on the frontend.
+
+### Major Changes
+
+**1. Pure Event-Driven RFQ Backend (`ws.rs`, `handlers.rs`)**
+- Removed the hardcoded 4-second polling loop from `handlers.rs`.
+- Backend now instantly broadcasts pending `RfqActive` intents to solvers explicitly when they connect (`Register` event via WebSocket).
+- Eliminated legacy `coordinator` imports and fixed rust compilation payload errors.
+
+**2. Automated Expired Intent Sweeper (`main.rs`, `orderbook.rs`)**
+- Implemented a 10s `tokio::time::interval` loop in `main.rs` that systematically sweeps the database for expired intents via `cleanup_expired`.
+- Automatically emits `EXPIRED` server-sent events (SSE) dynamically.
+
+**3. Frontend: Failed/Expired Intent Redesign (`message-bubble.tsx`)**
+- Handled the `EXPIRED` event safely in `intent-page.tsx`.
+- Completely refactored the Tracking Phase UI in `message-bubble.tsx` for error cases.
+- Replaced bright and clashing neon colors (cyan/green) with elegant grayscale (`slate-400`/`slate-600`) components upon task failure.
+- Injected a sophisticated `Auction Expired` Red Alert box holding an `XCircle` icon that populates the abandoned live-auction empty spaces.
+- Changed the "Network Fee: Free" logic to textually read "None (Gasless)" in muted styling to reiterate that users do not lose funds.
+
+---
+
 ## Session 22 — COMPLETED (2026-03-20)
 
 ### Summary

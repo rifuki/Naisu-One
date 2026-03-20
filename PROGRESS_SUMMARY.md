@@ -1,6 +1,6 @@
 # Naisu One - Progress Summary
 
-**Date**: 2026-03-20  
+**Date**: 2026-03-21  
 **Branch**: main  
 **Commits**: 20+ commits
 
@@ -8,7 +8,13 @@
 
 ## ✅ Completed Features
 
-### 1. Order Fulfillment Flow (E2E)
+### 1. True Event-Driven RFQ & Expired State UI
+- [x] Converted RFQ broadcasting from a polling fallback into a strictly event-driven `ws.rs` `Register` emit mechanic
+- [x] Overhauled UI for failed intent paths (Grayscale layout + Muted Red Alert boxes + Non-neon Gasless Network Fees)
+- [x] Solved legacy unused exports and fixed `IntentStatus::Executing` rust errors 
+- [x] Sweeper loop logic utilizing `tokio` time interval on the backend `main.rs` to parse matching `EXPIRED` orders
+
+### 2. Order Fulfillment Flow (E2E)
 - [x] Backend WS mode activation with dotenv config
 - [x] Gasless order matching in OrderFulfilled handler
 - [x] Dual ID tracking (intentId + contractOrderId) for gasless transition
@@ -17,7 +23,7 @@
 - [x] Completed intents history for persistence across refreshes
 - [x] IntentReceiptCard with live progress from Zustand store
 
-### 2. UI Components
+### 3. UI Components
 - [x] IntentReceiptCard with Lucide icons (removed emojis)
 - [x] DutchAuctionPlanWidget with interactive duration selector (2/5/10 min)
 - [x] UnifiedIntentCard for Plan → Sign → Receipt flow
