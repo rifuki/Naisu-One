@@ -117,15 +117,16 @@ export function IntentChat({
 
       {/* Input area */}
       <div className="w-full px-4 sm:px-8 pb-6 pt-3 relative z-20 bg-background/80 backdrop-blur shrink-0 border-t border-white/5">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto opacity-0 animate-fade-in-up" style={{ animationFillMode: 'forwards' }}>
           {/* Suggestion chips — only when chat is empty and user hasn't typed */}
           {isEmpty && !inputValue.trim() && (
             <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
-              {SUGGESTIONS.map((text) => (
+              {SUGGESTIONS.map((text, i) => (
                 <button
                   key={text}
                   onClick={() => handleSuggestionClick(text)}
-                  className="px-3.5 py-1.5 rounded-full bg-[#0A0A0A]/80 border border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-300 hover:text-white text-[13px] font-medium transition-all hover:-translate-y-0.5 shadow-md"
+                  className="px-3.5 py-1.5 rounded-full bg-[#0A0A0A]/80 border border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-300 hover:text-white text-[13px] font-medium shadow-md opacity-0 animate-fade-in-up hover:scale-105 active:scale-95 transition-all duration-200"
+                  style={{ animationDelay: `${(i + 1) * 100}ms`, animationFillMode: 'forwards' }}
                 >
                   {text}
                 </button>

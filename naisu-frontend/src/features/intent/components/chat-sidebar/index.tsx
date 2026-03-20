@@ -173,25 +173,22 @@ export function ChatSidebar({
           </div>
         )}
 
-        {/* New Chat Button — Re-designed for premium look */}
+        {/* New Chat Button — Sleek & Minimalist */}
         <button
           onClick={onNewChat}
           disabled={disabled}
-          className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-300 ${
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
             disabled
-              ? 'bg-white/5 text-slate-500 cursor-not-allowed border outline-none border-transparent'
+              ? 'opacity-50 cursor-not-allowed text-slate-500'
               : activeIsEmpty
-              ? 'bg-primary/20 text-primary shadow-[0_0_15px_rgba(var(--primary),0.1)] border border-primary/30'
-              : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 shadow-sm'
+              ? 'bg-white/10 text-white'
+              : 'bg-transparent hover:bg-white/5 text-slate-300 hover:text-white'
           }`}
         >
-          <div className="flex items-center gap-3">
-            <div className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${activeIsEmpty ? 'bg-primary/20 text-primary' : 'bg-white/10 text-slate-300 group-hover:bg-white/20 group-hover:text-white'}`}>
-              <Plus strokeWidth={2.5} className="w-4 h-4" />
-            </div>
-            <span className="text-[13px] font-semibold tracking-wide">New Chat</span>
+          <div className="flex items-center gap-2.5">
+            <Plus className="w-4 h-4" strokeWidth={2} />
+            <span className="text-[13px] font-medium">New Chat</span>
           </div>
-          <MessageSquarePlus strokeWidth={1.5} className={`w-[18px] h-[18px] transition-opacity ${activeIsEmpty ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} />
         </button>
 
         {/* Session List — only shows sessions with at least one message */}
