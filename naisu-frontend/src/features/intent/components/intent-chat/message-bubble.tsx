@@ -69,6 +69,7 @@ interface MessageBubbleProps {
   isSignIntentSuccess?: boolean;
   onSignIntentConfirm?: () => void;
   onSignIntentDismiss?: () => void;
+  isHistoricalIntent?: boolean;
 }
 
 interface TxInfo {
@@ -298,7 +299,7 @@ function GaslessIntentSummary({ intent, text, renderContent }: {
 export function MessageBubble({
   message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm,
   pendingSignIntent, signIntentStatus, isSignIntentFailed, isSignIntentSuccess,
-  onSignIntentConfirm, onSignIntentDismiss
+  onSignIntentConfirm, onSignIntentDismiss, isHistoricalIntent
 }: MessageBubbleProps) {
   // Must be before any early returns (React rules of hooks)
   const hasActiveIntent = useIntentStore((state) => !!state.activeIntent);
@@ -401,6 +402,7 @@ export function MessageBubble({
         signStatus={signIntentStatus}
         isSignFailed={isSignIntentFailed}
         onDutchPlanConfirm={onDutchPlanConfirm}
+        isHistoricalIntent={isHistoricalIntent}
       />
     );
   }
@@ -498,9 +500,10 @@ interface UnifiedIntentBubbleProps {
   signStatus?: string | null;  // Error/status message from parent
   isSignFailed?: boolean;      // True when signing failed (MetaMask cancel, etc.)
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
+  isHistoricalIntent?: boolean;
 }
 
-function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
+function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, onDutchPlanConfirm, isHistoricalIntent }: UnifiedIntentBubbleProps) {
   // Stable key per intent (nonce is unique per address per submission).
   // Used to persist phase state in localStorage — survives refresh and navigation.
   const phaseKey = `naisu_phase_${intent.recipientAddress}_${intent.nonce}`;
@@ -523,6 +526,26 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
   const [signError, setSignError] = useState<string | null>(null);
   // 1-second ticker for live auction price (only active in tracking phase)
   const [now, setNow] = useState(Date.now());
+
+  // Early return for archived/historical widgets
+  if (isHistoricalIntent && phase !== 'tracking' && phase !== 'done') {
+    return (
+      <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+           <div className="size-8 rounded-full bg-[#0a100f] border border-white/5 flex items-center justify-center grayscale opacity-50">
+             <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+           </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <MessageHeader name="Nesu" timestamp={undefined} />
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0a100f] border border-white/5 text-slate-500 text-xs font-mono shadow-sm">
+            <span className="material-symbols-outlined text-[14px]">history</span>
+            <span>Quote expired • {intent.amount} ETH → {intent.destinationChain === 'solana' ? 'Solana' : 'Sui'}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Live intent progress from Zustand store (used in tracking phase)
   const activeIntent = useIntentStore((state) => state.activeIntent);

@@ -55,6 +55,11 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const lastGaslessIntentIdx = messages.reduce((latest, msg, i) => {
+    if (msg.role === 'assistant' && msg.content.includes('"type":"gasless_intent"')) return i;
+    return latest;
+  }, -1);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -99,6 +104,8 @@ export function MessageList({
             }
           }
 
+          const isHistoricalIntent = lastGaslessIntentIdx !== -1 && idx < lastGaslessIntentIdx && msg.content.includes('"type":"gasless_intent"');
+
           return (
             <MessageBubble
               key={idx}
@@ -113,6 +120,7 @@ export function MessageList({
               isSignIntentSuccess={isSignIntentSuccess}
               onSignIntentConfirm={onSignIntentConfirm}
               onSignIntentDismiss={onSignIntentDismiss}
+              isHistoricalIntent={isHistoricalIntent}
             />
           );
         })}
