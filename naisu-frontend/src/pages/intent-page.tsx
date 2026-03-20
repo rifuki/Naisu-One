@@ -1,13 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useGlobalAgent } from '@/components/providers/agent-provider';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
 import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
+import { PanelLeftOpen } from 'lucide-react';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
 import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
 import type { WidgetConfirmPayload } from '@/features/intent/components/widgets';
@@ -35,7 +36,9 @@ export default function IntentPage() {
   const navigate = useNavigate();
   const initialIntentRef = useRef(location.state?.initialIntent as string | undefined);
   const initialSentRef = useRef(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showSettings, setShowSettings] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTxSent, setIsTxSent] = useState(false);
   const [isTxFailed, setIsTxFailed] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
@@ -118,6 +121,19 @@ export default function IntentPage() {
     // Ignore parse errors
   }
 }, [activeSessionId, setActiveIntent]);
+
+  // Sync activeSessionId with URL search params
+  useEffect(() => {
+    const chatParam = searchParams.get('chat');
+    // If URL has a different chat than active, and it exists, switch to it
+    if (chatParam && chatParam !== activeSessionId && sessions.some(s => s.id === chatParam)) {
+      handleSwitchSession(chatParam);
+    } 
+    // Otherwise if activeSessionId is set but doesn't match URL, update URL
+    else if (activeSessionId && chatParam !== activeSessionId) {
+      setSearchParams({ chat: activeSessionId }, { replace: true });
+    }
+  }, [activeSessionId, searchParams, sessions /* handleSwitchSession is omitted as it causes loop if not careful */, setSearchParams]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -598,6 +614,8 @@ export default function IntentPage() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         disabled={isLoading}
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         onNewChat={handleNewChat}
         onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
@@ -608,6 +626,15 @@ export default function IntentPage() {
       />
 
       <div className="flex-1 flex flex-col relative overflow-hidden">
+        {!isSidebarOpen && (
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-4 left-4 z-40 p-2.5 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-slate-300 hover:text-white transition-all shadow-xl backdrop-blur-xl group"
+            title="Open Sidebar"
+          >
+            <PanelLeftOpen strokeWidth={2} className="w-[18px] h-[18px] group-hover:scale-105 transition-transform" />
+          </button>
+        )}
         <IntentChat
           messages={messages}
           inputValue={inputValue}

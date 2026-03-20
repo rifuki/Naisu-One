@@ -1,11 +1,13 @@
 import React from 'react';
-import { Plus, MessageSquarePlus } from 'lucide-react';
+import { Plus, MessageSquarePlus, PanelLeftClose } from 'lucide-react';
 import type { ChatSession } from '@/hooks/useChatSessions';
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
   activeSessionId: string;
   disabled?: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
   onNewChat: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -55,6 +57,8 @@ export function ChatSidebar({
   sessions,
   activeSessionId,
   disabled,
+  isOpen,
+  onToggle,
   onNewChat,
   onSwitchSession,
   onDeleteSession,
@@ -156,16 +160,18 @@ export function ChatSidebar({
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
   return (
-    <div className="hidden md:flex flex-col w-[240px] h-full bg-[#070a09] border-r border-white/5 shrink-0">
-      <div className="p-3 flex flex-col gap-3 flex-1 min-h-0">
+    <div className={`hidden md:flex flex-col h-full bg-[#070a09] border-r border-white/5 shrink-0 transition-[width,opacity,margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${isOpen ? 'w-[240px] opacity-100' : 'w-0 opacity-0 border-none'}`}>
+      <div className="p-3 flex flex-col gap-3 flex-1 min-h-0 min-w-[240px]">
         {/* Session ID display — only show for sessions that have content */}
         {activeSession && !activeIsEmpty && (
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5" title={`Session: ${activeSessionId}`}>
-            <span className="material-symbols-outlined text-[12px] text-slate-500">tag</span>
-            <span className="text-[10px] font-mono text-slate-400 truncate">{shortenSessionId(activeSessionId)}</span>
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5" title={`Session: ${activeSessionId}`}>
+            <div className="flex items-center gap-2 overflow-hidden">
+              <span className="material-symbols-outlined text-[12px] text-slate-500">tag</span>
+              <span className="text-[10px] font-mono text-slate-400 truncate">{shortenSessionId(activeSessionId)}</span>
+            </div>
             <button
               onClick={() => navigator.clipboard.writeText(activeSessionId)}
-              className="ml-auto text-slate-600 hover:text-slate-300 transition-colors"
+              className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
               title="Copy session ID"
             >
               <span className="material-symbols-outlined text-[11px]">content_copy</span>
@@ -173,23 +179,34 @@ export function ChatSidebar({
           </div>
         )}
 
-        {/* New Chat Button — Sleek & Minimalist */}
-        <button
-          onClick={onNewChat}
-          disabled={disabled}
-          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
-            disabled
-              ? 'opacity-50 cursor-not-allowed text-slate-500'
-              : activeIsEmpty
-              ? 'bg-white/10 text-white'
-              : 'bg-transparent hover:bg-white/5 text-slate-300 hover:text-white'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <Plus className="w-4 h-4" strokeWidth={2} />
-            <span className="text-[13px] font-medium">New Chat</span>
-          </div>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Collapse Sidebar Button */}
+          <button
+            onClick={onToggle}
+            className="p-2.5 rounded-lg bg-transparent hover:bg-white/10 text-slate-400 hover:text-white transition-colors border border-transparent hover:border-white/5 shrink-0"
+            title="Close sidebar"
+          >
+            <PanelLeftClose strokeWidth={2} className="w-[18px] h-[18px]" />
+          </button>
+
+          {/* New Chat Button — Sleek & Minimalist */}
+          <button
+            onClick={onNewChat}
+            disabled={disabled}
+            className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg transition-colors border border-transparent ${
+              disabled
+                ? 'opacity-50 cursor-not-allowed text-slate-500'
+                : activeIsEmpty
+                ? 'bg-white/10 text-white'
+                : 'bg-transparent hover:bg-white/5 text-slate-300 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Plus className="w-4 h-4" strokeWidth={2} />
+              <span className="text-[13px] font-medium tracking-wide">New Chat</span>
+            </div>
+          </button>
+        </div>
 
         {/* Session List — only shows sessions with at least one message */}
         <div className="flex-1 overflow-y-auto pr-1 -mr-1">
