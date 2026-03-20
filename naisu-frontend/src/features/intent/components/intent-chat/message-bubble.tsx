@@ -1284,8 +1284,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* TX Receipts — complete state */}
                 {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
-                    <div className="px-2.5 py-0.5 bg-white/[0.04] border-b border-white/[0.08]">
-                      <span className="text-[7.5px] text-slate-500 uppercase tracking-widest font-bold leading-none">Transaction Receipts</span>
+                    <div className="px-2.5 h-6 flex items-center bg-white/[0.04] border-b border-white/[0.08]">
+                      <span className="text-[7.5px] text-slate-500 uppercase tracking-widest font-bold">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
                       <TxReceiptRow
@@ -1411,8 +1411,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                               </div>
                             )}
 
-                            {/* Done step detail (e.g. "VAA verified") — only if no txHash */}
-                            {step.done && step.detail && !chip && (
+                            {/* Done step detail — skip generic status steps (signed, rfq) */}
+                            {step.done && step.detail && !chip && step.key !== 'signed' && step.key !== 'rfq' && (
                               <span className="text-[8.5px] text-slate-600 mt-0.5 leading-snug">{step.detail}</span>
                             )}
                           </div>
