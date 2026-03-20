@@ -122,22 +122,45 @@ export default function IntentPage() {
   }
 }, [activeSessionId, setActiveIntent]);
 
+  /** Switch to an existing session — clears active intent so the new session starts fresh */
+  const handleSwitchSession = useCallback((id: string | null) => {
+    clearActiveIntent();
+    setSignedIntentSnapshot(undefined);
+    setSignedAt(undefined);
+    switchSession(id);
+    
+    // Immediately sync the router synchronously to prevent race conditions in useEffect
+    if (id) {
+      setSearchParams({ chat: id }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  }, [clearActiveIntent, switchSession, setSearchParams]);
+
+  const prevActiveSessionIdRef = useRef(activeSessionId);
+
   // Sync activeSessionId with URL search params
   useEffect(() => {
     const chatParam = searchParams.get('chat');
-    // If URL has a different chat than active, and it exists, switch to it
-    if (chatParam && chatParam !== activeSessionId && sessions.some(s => s.id === chatParam)) {
-      handleSwitchSession(chatParam);
-    } 
-    // Otherwise if activeSessionId is set but doesn't match URL, update URL
-    else if (activeSessionId && chatParam !== activeSessionId) {
-      setSearchParams({ chat: activeSessionId }, { replace: true });
+    
+    // Only act if URL and local state mismatch
+    if (chatParam !== activeSessionId) {
+      if (chatParam && sessions.some(s => s.id === chatParam)) {
+        // URL says chat X, state says chat Y -> User navigated via Browser Back/Forward or direct link
+        handleSwitchSession(chatParam);
+      } else if (activeSessionId && !chatParam) {
+        // State has an active session, but URL is empty.
+        if (prevActiveSessionIdRef.current === null) {
+          // We just implicitly created a session from a Virtual New Chat (null -> s_abc). Sync to URL!
+          setSearchParams({ chat: activeSessionId }, { replace: true });
+        } else {
+          // The URL param vanished, but state hasn't changed -> User pressed Browser Back to a Virtual New Chat `/intent`
+          handleSwitchSession(null);
+        }
+      }
     }
-    // If activeSessionId is null (new chat) but URL has a chat param, clear it
-    else if (!activeSessionId && chatParam) {
-      setSearchParams({}, { replace: true });
-    }
-  }, [activeSessionId, searchParams, sessions /* handleSwitchSession is omitted as it causes loop if not careful */, setSearchParams]);
+    prevActiveSessionIdRef.current = activeSessionId;
+  }, [activeSessionId, searchParams, sessions, handleSwitchSession, setSearchParams]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -405,13 +428,7 @@ export default function IntentPage() {
     [address, sendTransactionAsync]
   );
 
-  /** Switch to an existing session — clears active intent so the new session starts fresh */
-  const handleSwitchSession = useCallback((id: string | null) => {
-    clearActiveIntent();
-    setSignedIntentSnapshot(undefined);
-    setSignedAt(undefined);
-    switchSession(id);
-  }, [clearActiveIntent, switchSession]);
+
 
   /** New Chat: show empty chat state. Session is only created when the user sends the first message.
    *  If already on an empty session (ChatGPT-style), just reset UI state without creating another session. */
