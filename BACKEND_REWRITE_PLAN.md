@@ -1,6 +1,6 @@
 # Naisu Backend Rewrite — TypeScript → Rust
 
-> Status: PLANNING
+> Status: PHASE 1 COMPLETE
 > Last updated: 2026-03-20
 
 ---
@@ -204,12 +204,12 @@ RFQ:
 
 ## Implementation Phases
 
-### Phase 1 — Scaffold (copy aksara, wire basics)
-- [ ] Copy aksara/api to naisu-backend-rs
-- [ ] Update Cargo.toml (name, new deps)
-- [ ] Remove aksara-specific: wallet_auth middleware, on_chain middleware, aksara feature
-- [ ] Add health feature (keep from aksara)
-- [ ] Verify: `cargo build` clean
+### Phase 1 — Scaffold (copy aksara, wire basics) ✅ DONE
+- [x] Copy aksara/api to naisu-backend-rs
+- [x] Update Cargo.toml (name, new deps)
+- [x] Remove aksara-specific: wallet_auth middleware, on_chain middleware, aksara feature
+- [x] Add health feature (keep from aksara)
+- [x] Verify: `cargo build` clean
 
 ### Phase 2 — Intent Store + REST (no SSE yet)
 - [ ] `feature/intent/model.rs` — all types ported from TS
