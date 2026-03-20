@@ -4,7 +4,9 @@ pub mod orderbook;
 pub mod routes;
 pub mod store;
 
+mod eip712;
 mod handlers;
+mod price;
 mod sse;
 
 pub use events::SolverProgressEvent;

@@ -3,7 +3,7 @@ use std::{net::SocketAddr, time::Duration};
 use naisu_backend_rs::{
     AppState, app_routes,
     infrastructure::{
-        Config, env, logging,
+        Config, env, indexer, logging,
         server::{create_listener, shutdown_signal},
         web::{cors::build_cors_layer, middleware::http_trace_middleware},
     },
@@ -53,6 +53,14 @@ async fn main() -> Result<()> {
                 interval.tick().await;
                 registry.check_fades();
             }
+        });
+    }
+
+    // Background: EVM indexer (WS subscription with HTTP poll fallback)
+    {
+        let state_idx = state.clone();
+        tokio::spawn(async move {
+            indexer::evm::start(state_idx).await;
         });
     }
 
