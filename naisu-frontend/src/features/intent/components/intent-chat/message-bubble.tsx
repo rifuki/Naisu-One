@@ -1369,10 +1369,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           </div>
 
                           {/* Text content */}
-                          <div className={`flex flex-col flex-1 min-w-0 min-h-[18px] justify-center`}
+                          <div className={`flex flex-col flex-1 min-w-0`}
                             style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
                             {/* Step label: white when done (clear), teal when active, dim when pending */}
-                            <span className={`text-[10px] font-medium leading-tight ${
+                            <span className={`text-[10px] font-medium leading-tight mt-[3px] ${
                               step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
                             }`}>
                               {step.label}
