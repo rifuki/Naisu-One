@@ -433,7 +433,7 @@ function DynamicHash({ hash, className }: { hash: string; className?: string }) 
   }, [hash]);
 
   return (
-    <div ref={containerRef} className={`w-full overflow-hidden whitespace-nowrap relative ${className ?? 'font-mono text-[9px] text-slate-400'}`}>
+    <div ref={containerRef} className={`w-full overflow-hidden whitespace-nowrap relative ${className ?? 'font-mono text-[10px] text-slate-400'}`}>
       <span ref={measureRef} className="absolute invisible whitespace-nowrap pointer-events-none">{hash}</span>
       {displayHash}
     </div>
@@ -449,10 +449,10 @@ function TxReceiptRow({
   return (
     <div className="px-2.5 py-1.5 flex items-center gap-2 border-t border-white/5 first:border-0">
       <div className={`size-4 rounded-full border flex items-center justify-center shrink-0 ${badgeClass}`}>
-        <span className="text-[7px] font-bold">{badge}</span>
+        <span className="text-[8px] font-bold">{badge}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[7.5px] text-slate-700 leading-none mb-0.5">{label}</div>
+        <div className="text-[9px] text-slate-700 leading-none mb-0.5">{label}</div>
         <DynamicHash hash={hash} />
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -1134,7 +1134,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       <span className="text-[22px] font-bold text-white tabular-nums leading-none">{intent.amount}</span>
                       <span className="text-[12px] text-slate-400 font-medium">ETH</span>
                     </div>
-                    <span className="text-[9px] text-slate-600">Base Sepolia</span>
+                    <span className="text-[11px] text-slate-600">Base Sepolia</span>
                   </div>
                   <ArrowRight size={16} className={isComplete ? 'text-green-400 shrink-0' : 'text-[#0df2df] shrink-0'} />
                   <div className="flex flex-col gap-0.5">
@@ -1145,7 +1145,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       }
                       <span className={`text-[12px] font-medium ${isComplete ? 'text-green-400/70' : 'text-[#0df2df]/70'}`}>{tokenLabel}</span>
                     </div>
-                    <span className="text-[9px] text-slate-600">{destLabel}</span>
+                    <span className="text-[11px] text-slate-600">{destLabel}</span>
                   </div>
                 </div>
 
@@ -1194,12 +1194,12 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
                       </div>
                       <div>
-                        <div className="text-[11px] font-semibold text-[#0df2df]">{activeStep.label}</div>
-                        <div className="text-[9px] text-slate-500 mt-0.5">{activeStep.detail ?? 'In progress…'}</div>
+                        <div className="text-[12px] font-semibold text-[#0df2df]">{activeStep.label}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{activeStep.detail ?? 'In progress…'}</div>
                       </div>
                     </div>
                     {winnerSolver && (
-                      <div className="flex items-center justify-between text-[9px] border-t border-white/5 pt-2.5">
+                      <div className="flex items-center justify-between text-[10px] border-t border-white/5 pt-2.5">
                         <span className="text-slate-600">Filled by</span>
                         <span className="text-slate-300 font-semibold">{winnerSolver}</span>
                       </div>
@@ -1214,53 +1214,53 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     <div className="px-3 py-2.5 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <ShieldCheck size={10} className="text-green-500 shrink-0" />
-                        <span className="text-[8.5px] text-green-500/70 uppercase tracking-widest font-bold">You received</span>
+                        <span className="text-[10px] text-green-500/70 uppercase tracking-widest font-bold">You received</span>
                       </div>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-[18px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
                         <span className="text-[11px] font-semibold text-green-400/70">{tokenLabel}</span>
-                        {fillUsdVal && <span className="text-[9px] text-slate-500">≈${fillUsdVal}</span>}
+                        {fillUsdVal && <span className="text-[10px] text-slate-500">≈${fillUsdVal}</span>}
                       </div>
                     </div>
                     {/* Price info row */}
                     <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
-                      <span className="text-[8.5px] text-slate-600">Best offer</span>
-                      <span className="text-[8.5px] font-mono text-slate-400">{startSol} {tokenLabel}</span>
+                      <span className="text-[10px] text-slate-600">Best offer</span>
+                      <span className="text-[10px] font-mono text-slate-400">{startSol} {tokenLabel}</span>
                     </div>
                     <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
-                      <span className="text-[8.5px] text-slate-600">Floor price</span>
-                      <span className="text-[8.5px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
+                      <span className="text-[10px] text-slate-600">Floor price</span>
+                      <span className="text-[10px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
                     </div>
                     {/* Filled by / fill time / auction duration / fee row */}
                     <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center gap-3">
                       {winnerSolver && (
                         <>
                           <div className="flex items-center gap-1">
-                            <span className="text-[8px] text-slate-600">By</span>
-                            <span className="text-[8.5px] font-semibold text-slate-300">{winnerSolver}</span>
+                            <span className="text-[9px] text-slate-600">By</span>
+                            <span className="text-[10px] font-semibold text-slate-300">{winnerSolver}</span>
                           </div>
                           <span className="text-slate-700">·</span>
                           <div className="flex items-center gap-1">
-                            <span className="text-[8px] text-slate-600">Fill time</span>
-                            <span className="text-[8.5px] font-semibold text-slate-300">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
+                            <span className="text-[9px] text-slate-600">Fill time</span>
+                            <span className="text-[10px] font-semibold text-slate-300">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
                           </div>
                           <span className="text-slate-700">·</span>
                           <div className="flex items-center gap-1">
-                            <span className="text-[8px] text-slate-600">Auction</span>
-                            <span className="text-[8.5px] font-semibold text-slate-300">{Math.round(intent.durationSeconds / 60)} min</span>
+                            <span className="text-[9px] text-slate-600">Auction</span>
+                            <span className="text-[10px] font-semibold text-slate-300">{Math.round(intent.durationSeconds / 60)} min</span>
                           </div>
                           <span className="text-slate-700">·</span>
                         </>
                       )}
-                      <span className="text-[8.5px] font-semibold text-green-400">Free</span>
+                      <span className="text-[10px] font-semibold text-green-400">Free</span>
                     </div>
                   </div>
                 )}
 
                 {/* Recipient */}
                 <div className="space-y-1">
-                  <div className="text-[9px] text-slate-600">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[8.5px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 flex items-center gap-1.5">
+                  <div className="text-[11px] text-slate-600">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 flex items-center gap-1.5">
                     <span className="truncate flex-1">{intent.recipientAddress}</span>
                     <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
                       className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
@@ -1276,8 +1276,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                 {!isComplete && (
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] text-slate-600">Network fee</span>
-                    <span className="text-[9px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                    <span className="text-[10px] text-slate-600">Network fee</span>
+                    <span className="text-[10px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
                   </div>
                 )}
 
@@ -1285,7 +1285,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
                     <div className="px-2.5 h-6 flex items-center bg-white/[0.04] border-b border-white/[0.08]">
-                      <span className="text-[7.5px] text-slate-500 uppercase tracking-widest font-bold">Transaction Receipts</span>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
                       <TxReceiptRow
@@ -1329,7 +1329,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
               {/* RIGHT column — progress stepper */}
               <div className="w-[220px] shrink-0 p-4 flex flex-col gap-2">
-                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Progress</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Progress</div>
 
                 {progress.length === 0 ? (
                   <div className="flex items-center gap-2 text-[11px] text-slate-500">
@@ -1374,16 +1374,16 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                             {/* Step label: white when done (clear), teal when active, dim when pending */}
                             {step.key === 'winner' && step.label.includes(': ') ? (
                               <span className="flex items-center gap-1 leading-tight mt-[3px]">
-                                <span className={`text-[10px] font-medium ${
+                                <span className={`text-[11px] font-medium ${
                                   step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'
                                 }`}>Solver</span>
-                                <span className="text-slate-600 text-[10px]">·</span>
-                                <span className={`text-[10px] font-semibold ${
+                                <span className="text-slate-600 text-[11px]">·</span>
+                                <span className={`text-[11px] font-semibold ${
                                   step.done ? 'text-slate-300' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
                                 }`}>{step.label.split(': ')[1]}</span>
                               </span>
                             ) : (
-                              <span className={`text-[10px] font-medium leading-tight mt-[3px] ${
+                              <span className={`text-[11px] font-medium leading-tight mt-[3px] ${
                                 step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
                               }`}>
                                 {step.label}
@@ -1392,13 +1392,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Active step detail */}
                             {step.active && step.detail && (
-                              <span className="text-[8.5px] text-slate-500 mt-0.5 leading-snug">{step.detail}</span>
+                              <span className="text-[9.5px] text-slate-500 mt-0.5 leading-snug">{step.detail}</span>
                             )}
 
                             {/* Inline tx hash — styled as detail line, not a card */}
                             {chip && (
                               <div className="flex items-center gap-1 mt-0.5 w-full min-w-0 group/chip">
-                                <span className="material-symbols-outlined text-[8px] shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
+                                <span className="material-symbols-outlined text-[9px] shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
                                 <a
                                   href={chip.href}
                                   target="_blank"
@@ -1408,7 +1408,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                 >
                                   <DynamicHash
                                     hash={step.txHash!}
-                                    className="font-mono text-[8.5px] leading-snug overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
+                                    className="font-mono text-[9px] leading-snug overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
                                   />
                                 </a>
                                 <button
@@ -1416,7 +1416,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                   className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                                   title={copiedKey === step.key ? 'Copied!' : 'Copy'}
                                 >
-                                  <span className="material-symbols-outlined text-[8px]">
+                                  <span className="material-symbols-outlined text-[9px]">
                                     {copiedKey === step.key ? 'check' : 'content_copy'}
                                   </span>
                                 </button>
@@ -1425,7 +1425,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Done step detail — skip generic status steps (signed, rfq) */}
                             {step.done && step.detail && !chip && step.key !== 'signed' && step.key !== 'rfq' && (
-                              <span className="text-[8.5px] text-slate-600 mt-0.5 leading-snug">{step.detail}</span>
+                              <span className="text-[9.5px] text-slate-600 mt-0.5 leading-snug">{step.detail}</span>
                             )}
                           </div>
                         </div>
@@ -1437,17 +1437,17 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* Intent ID — small reference at bottom */}
                 {displayIntentId && (
                   <div className="mt-auto pt-3 border-t border-white/5">
-                    <div className="text-[8px] text-slate-700 uppercase tracking-wider mb-0.5">Intent ID</div>
+                    <div className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Intent ID</div>
                     <div className="flex items-center gap-1 bg-white/[0.02] rounded-md px-1.5 py-0.5 border border-white/5">
-                      <span className="font-mono text-[8px] text-slate-600 truncate flex-1">
-                        {`${displayIntentId.slice(0, 10)}…${displayIntentId.slice(-6)}`}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <DynamicHash hash={displayIntentId} className="font-mono text-[9px] text-slate-600 leading-snug overflow-hidden whitespace-nowrap relative" />
+                      </div>
                       <button
                         onClick={() => copyToClipboard(displayIntentId, 'intentId')}
                         className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors"
                         title={copiedKey === 'intentId' ? 'Copied!' : 'Copy Intent ID'}
                       >
-                        <span className="material-symbols-outlined text-[9px]">
+                        <span className="material-symbols-outlined text-[10px]">
                           {copiedKey === 'intentId' ? 'check' : 'content_copy'}
                         </span>
                       </button>

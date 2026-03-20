@@ -299,7 +299,7 @@ export default function IntentPage() {
         const count = (evt.data['solverCount'] as number | undefined) ?? 1;
         updateProgress(currentProgress.map(s =>
           s.key === 'rfq'
-            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}…`, active: true }
+            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}`, active: true }
             : s
         ));
       } else if (evt.type === 'rfq_winner') {
