@@ -33,12 +33,14 @@
     "hono": "^4.11.8",
     "pg": "^8.11.0",
     "viem": "^2.45.1",
+    "ws": "^8.19.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@hono/zod-validator": "^0.2.0",
     "@types/bun": "latest",
     "@types/pg": "^8.11.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
     "drizzle-kit": "^0.21.0",

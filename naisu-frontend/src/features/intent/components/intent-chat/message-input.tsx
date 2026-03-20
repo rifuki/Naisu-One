@@ -1,4 +1,4 @@
-import { useState, FormEvent, KeyboardEvent } from 'react';
+import { forwardRef, KeyboardEvent } from 'react';
 import { ArrowUp, Loader2 } from 'lucide-react';
 
 interface MessageInputProps {
@@ -9,13 +9,13 @@ interface MessageInputProps {
   placeholder?: string;
 }
 
-export function MessageInput({
+export const MessageInput = forwardRef<HTMLInputElement, MessageInputProps>(function MessageInput({
   value,
   onChange,
   onSubmit,
   isLoading = false,
   placeholder = 'Message Nesu...',
-}: MessageInputProps) {
+}, ref) {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -30,6 +30,7 @@ export function MessageInput({
       <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-indigo-500/20 rounded-[28px] blur-md opacity-20 group-hover:opacity-40 transition duration-500" />
       <div className="relative bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[28px] p-1.5 flex items-center shadow-2xl transition-all group-focus-within:border-white/20 group-focus-within:bg-white/10 group-focus-within:shadow-[0_0_30px_rgba(255,255,255,0.05)]">
         <input
+          ref={ref}
           className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 text-[15px] px-4 py-3 outline-none font-normal"
           placeholder={isLoading ? 'Agent is thinking...' : placeholder}
           type="text"
@@ -52,5 +53,5 @@ export function MessageInput({
       </div>
     </div>
   );
-}
+});
 

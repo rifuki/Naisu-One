@@ -69,8 +69,11 @@ async fn process_evm_order(
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
     reporter: coordinator::SharedReporter,
 ) {
-    let order_id_hex = hex::encode(order.order_id);
-    let short = &order_id_hex[..8];
+    // 0x-prefixed to match the format used by the backend indexer (viem) and the frontend tracker.
+    // Without this prefix, sol_sent/vaa_ready orderId would mismatch the contractOrderId
+    // the frontend receives via gasless_resolved, causing progress events to be silently dropped.
+    let order_id_hex = format!("0x{}", hex::encode(order.order_id));
+    let short = &order_id_hex[2..10]; // skip "0x", take 8 hex chars for display
     let chain_name = evm_chain_name(chain_id);
     let dest_name = dest_chain_name(order.destination_chain);
     let eth_fmt = format_wei_eth(order.amount);
@@ -299,6 +302,8 @@ async fn process_evm_order(
                 info!(" [{short}]  ETH tx  : {tx_hash}");
                 info!(" [{short}]  ETH url : {evm_explorer}");
             }
+            // Report settle tx to frontend so "Bridge settled" step gets its tx hash
+            coordinator::report_step(&reporter, &order_id_hex, "settled", Some(&tx_hash)).await;
             info!("{SEP}");
         }
         SettleOutcome::PermanentSkip(reason) => {

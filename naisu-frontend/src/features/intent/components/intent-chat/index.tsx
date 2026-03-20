@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
@@ -86,9 +86,11 @@ export function IntentChat({
   onSignIntentDismiss,
 }: IntentChatProps) {
   const isEmpty = messages.length === 0 && !isLoading && !pendingSignIntent;
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSuggestionClick = (text: string) => {
     onInputChange(text);
+    inputRef.current?.focus();
   };
 
   return (
@@ -131,6 +133,7 @@ export function IntentChat({
           )}
 
           <MessageInput
+            ref={inputRef}
             value={inputValue}
             onChange={onInputChange}
             onSubmit={onSend}

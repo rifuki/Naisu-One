@@ -1,13 +1,17 @@
-//! Solver network coordinator:
-//!   1. Register with naisu-backend on startup
-//!   2. Send heartbeat every 30s with current balances
-//!   3. Serve HTTP /rfq   — backend calls this to request a quote
-//!   4. Serve HTTP /execute — backend calls this when solver wins RFQ (gasless flow)
+//! Solver network coordinator — WebSocket client mode.
 //!
-//! All three tasks are no-ops if SOLVER_NAME or SOLVER_BACKEND_URL are not set.
+//! The solver connects to naisu-backend over WebSocket (/api/v1/solver/ws)
+//! and operates as a pure client:
+//!   1. Connect and send {type:"register"} — receive {type:"registered", solverId, token}
+//!   2. Handle {type:"rfq"}     — compute and send back {type:"rfq_quote"}
+//!   3. Handle {type:"execute"} — call executeIntent() on EVM, then send {type:"execute_confirmed"}
+//!   4. Send {type:"heartbeat"} every 30s with current balances
+//!   5. Reconnect automatically on disconnect (5s delay)
+//!
+//! evm_listener calls report_step() to push sol_sent/vaa_ready/execute_confirmed events;
+//! those go into an mpsc channel and are forwarded to the backend via the WS connection.
 
 use crate::config::Config;
-use axum::{extract::State, routing::post, Json, Router};
 use ethers::{
     abi::{encode as abi_encode, Token},
     middleware::SignerMiddleware,
@@ -16,31 +20,29 @@ use ethers::{
     types::{Address, Bytes, TransactionRequest, U256},
 };
 use eyre::Result;
-use serde::{Deserialize, Serialize};
+use futures::{SinkExt, StreamExt};
+use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 // ============================================================================
-// Shared reporter — written after successful registration, read by evm_listener
+// Shared reporter — backward-compatible public interface used by evm_listener
 // ============================================================================
 
-/// Holds all state needed to report steps back to the backend.
-pub struct SolverReporter {
-    pub backend_url: String,
-    pub token:       String,
-    pub solver_name: String,
-}
+/// Holds the sender end of the mpsc channel used to forward progress messages
+/// (sol_sent, vaa_ready, execute_confirmed) from evm_listener to the WS connection.
+pub type SharedReporter = Arc<RwLock<Option<mpsc::Sender<String>>>>;
 
-/// Arc-wrapped optional reporter shared across async tasks.
-pub type SharedReporter = Arc<RwLock<Option<SolverReporter>>>;
-
-/// Create an empty shared reporter (call from main.rs before spawning tasks).
+/// Create an empty shared reporter. Call from main.rs before spawning tasks.
 pub fn make_shared_reporter() -> SharedReporter {
     Arc::new(RwLock::new(None))
 }
 
-/// Report a solver step (sol_sent / vaa_ready) to naisu-backend via HTTP POST.
-/// No-op if registration has not yet completed.
+/// Report a solver progress step to naisu-backend.
+/// Serializes the step as a JSON WS message and sends it via the mpsc channel
+/// that the active WebSocket session is reading from.
+/// No-op if the channel is not yet set up (registration not complete).
 pub async fn report_step(
     reporter: &SharedReporter,
     order_id: &str,
@@ -48,161 +50,29 @@ pub async fn report_step(
     tx_hash: Option<&str>,
 ) {
     let guard = reporter.read().await;
-    let Some(r) = guard.as_ref() else { return };
+    let Some(tx) = guard.as_ref() else { return };
 
-    let client = reqwest::Client::new();
-    let mut payload = serde_json::json!({
-        "orderId": order_id,
+    let mut msg = serde_json::json!({
         "type":    step_type,
+        "orderId": order_id,
     });
     if let Some(hash) = tx_hash {
-        payload["txHash"] = serde_json::Value::String(hash.to_string());
+        msg["txHash"] = Value::String(hash.to_string());
     }
 
-    let url = format!("{}/api/v1/solver/report-step", r.backend_url);
-    let res = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", r.token))
-        .json(&payload)
-        .send()
-        .await;
-
-    match res {
-        Ok(resp) if resp.status().is_success() => {
-            tracing::debug!(step = step_type, order_id, "Step reported to backend");
-        }
-        Ok(resp) => {
-            tracing::warn!(
-                step   = step_type,
-                status = %resp.status(),
-                "report-step returned non-OK"
-            );
-        }
-        Err(e) => {
-            tracing::warn!(step = step_type, err = %e, "Failed to report step to backend");
-        }
+    let payload = msg.to_string();
+    if let Err(e) = tx.send(payload).await {
+        tracing::warn!(step = step_type, err = %e, "Failed to queue report_step — WS channel closed?");
     }
-}
-
-// ============================================================================
-// API types (backend ↔ solver)
-// ============================================================================
-
-#[derive(Serialize)]
-struct RegisterBody {
-    name:             String,
-    #[serde(rename = "evmAddress")]
-    evm_address:      String,
-    #[serde(rename = "solanaAddress")]
-    solana_address:   String,
-    #[serde(rename = "callbackUrl")]
-    callback_url:     String,
-    #[serde(rename = "supportedRoutes")]
-    supported_routes: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct RegisterResponse {
-    data: RegisterData,
-}
-
-#[derive(Deserialize)]
-struct RegisterData {
-    #[serde(rename = "solverId")]
-    solver_id: String,
-    token: String,
-}
-
-#[derive(Serialize)]
-struct HeartbeatBody {
-    #[serde(rename = "solanaBalance")]
-    solana_balance: String,
-    #[serde(rename = "evmBalance")]
-    evm_balance: String,
-    status: String,
-}
-
-#[derive(Deserialize)]
-pub struct RfqRequest {
-    #[serde(rename = "orderId")]
-    pub order_id: String,
-    #[serde(rename = "startPrice")]
-    pub start_price: String,
-    #[serde(rename = "floorPrice")]
-    pub floor_price: String,
-    pub deadline: u64,
-}
-
-#[derive(Serialize)]
-pub struct RfqResponse {
-    #[serde(rename = "quotedPrice")]
-    pub quoted_price: String,
-    #[serde(rename = "estimatedETA")]
-    pub estimated_eta: u64,
-    #[serde(rename = "expiresAt")]
-    pub expires_at: u64,
-}
-
-// ============================================================================
-// Internal state for axum handlers
-// ============================================================================
-
-struct SolverState {
-    solver_name:        String,
-    quote_discount_bps: u64,
-    eta_seconds:        u64,
-    config:             Arc<Config>,
-}
-
-// ── Execute endpoint types ───────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-struct ExecuteIntentFields {
-    creator:           String,
-    recipient:         String,   // 0x-prefixed bytes32 hex (64 hex chars)
-    #[serde(rename = "destinationChain")]
-    destination_chain: u64,
-    amount:            String,   // wei as decimal string
-    #[serde(rename = "startPrice")]
-    start_price:       String,
-    #[serde(rename = "floorPrice")]
-    floor_price:       String,
-    deadline:          u64,
-    #[serde(rename = "intentType")]
-    intent_type:       u64,
-    nonce:             u64,
-}
-
-#[derive(Deserialize)]
-struct ExecuteRequest {
-    #[serde(rename = "intentId")]
-    intent_id:        String,
-    intent:           ExecuteIntentFields,
-    signature:        String,         // 0x-prefixed 65-byte hex
-    #[serde(rename = "contractAddress")]
-    contract_address: String,
-    #[serde(rename = "chainId")]
-    chain_id:         u64,
-    #[serde(rename = "rpcUrl")]
-    rpc_url:          String,
-}
-
-#[derive(Serialize)]
-struct ExecuteResponse {
-    success: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tx_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error:   Option<String>,
 }
 
 // ============================================================================
 // Entry point — call from main.rs via tokio::spawn
 // ============================================================================
 
-/// Start solver network coordinator. No-op if SOLVER_NAME or SOLVER_BACKEND_URL not set.
-/// After successful registration the token is written to `reporter` so that other tasks
-/// (e.g. evm_listener) can call `report_step()` to push progress events to the backend.
+/// Start solver network coordinator.
+/// No-op if SOLVER_NAME or SOLVER_BACKEND_URL are not set.
+/// Loops: connect → run session → clear reporter → wait 5s → reconnect.
 pub async fn start(config: Arc<Config>, reporter: SharedReporter) {
     let name = match &config.solver_name {
         Some(n) => n.clone(),
@@ -220,324 +90,329 @@ pub async fn start(config: Arc<Config>, reporter: SharedReporter) {
         }
     };
 
-    let evm_address = match derive_evm_address(&config.evm_private_key) {
-        Ok(a) => a,
-        Err(e) => {
-            tracing::warn!("Cannot derive EVM address for coordinator: {e}");
-            return;
+    // Convert http(s):// base URL to a ws(s):// WebSocket URL
+    let ws_url = {
+        let url = format!("{backend_url}/api/v1/solver/ws");
+        if url.starts_with("https://") {
+            url.replacen("https://", "wss://", 1)
+        } else {
+            url.replacen("http://", "ws://", 1)
         }
     };
 
-    let sol_address = match derive_sol_address(&config.solana_private_key) {
-        Ok(a) => a,
-        Err(e) => {
-            tracing::warn!("Cannot derive SOL address for coordinator: {e}");
-            return;
-        }
-    };
-
-    let rfq_port    = config.solver_rfq_port;
-    let callback_url = format!("http://127.0.0.1:{rfq_port}");
-
-    // Guard: claim the port before registering — fail fast if already in use
-    let addr = format!("0.0.0.0:{rfq_port}");
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            tracing::error!(
-                "Cannot bind RFQ port {rfq_port}: {e}\n\
-                Another solver instance may already be running. \
-                Kill it first (lsof -i :{rfq_port}) then retry."
-            );
-            std::process::exit(1);
-        }
-    };
-    tracing::info!(%addr, "RFQ port reserved");
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("Cannot build HTTP client: {e}");
-            return;
-        }
-    };
-
-    // ── Register ──────────────────────────────────────────────────────────────
-
-    let register_url = format!("{backend_url}/api/v1/solver/register");
-    let body = RegisterBody {
-        name:             name.clone(),
-        evm_address:      evm_address.clone(),
-        solana_address:   sol_address.clone(),
-        callback_url,
-        supported_routes: vec!["evm-base→solana".to_string()],
-    };
-
-    let token = match client.post(&register_url).json(&body).send().await {
-        Ok(r) if r.status().is_success() => match r.json::<RegisterResponse>().await {
-            Ok(data) => {
-                tracing::info!(
-                    solver_id = %data.data.solver_id,
-                    name = %name,
-                    "Registered with naisu-backend"
-                );
-                data.data.token
-            }
-            Err(e) => {
-                tracing::warn!("Register response parse error: {e}");
-                return;
-            }
-        },
-        Ok(r) => {
-            tracing::warn!(status = %r.status(), "Backend registration failed — solver network disabled");
-            return;
-        }
-        Err(e) => {
-            tracing::warn!(err = %e, "Backend unreachable — solver network disabled");
-            return;
-        }
-    };
-
-    // Write reporter so evm_listener can report steps back to the backend
-    *reporter.write().await = Some(SolverReporter {
-        backend_url: backend_url.clone(),
-        token:       token.clone(),
-        solver_name: name.clone(),
-    });
-
-    // ── Heartbeat loop (background) ───────────────────────────────────────────
-
-    {
-        let client2      = client.clone();
-        let token2       = token.clone();
-        let backend_url2 = backend_url.clone();
-        let rpc_url      = config.solana_rpc_url.clone();
-        let evm_rpc_url  = config.base_rpc_url.clone();
-        let sol_addr     = sol_address.clone();
-        let evm_addr     = evm_address.clone();
-        let name2        = name.clone();
-        let callback_url2 = format!("http://127.0.0.1:{rfq_port}");
-
-        tokio::spawn(async move {
-            heartbeat_loop(
-                client2, token2, backend_url2, rpc_url, evm_rpc_url, sol_addr, evm_addr,
-                name2, callback_url2,
-            ).await
-        });
-    }
-
-    // ── RFQ + Execute HTTP server (blocks task) ───────────────────────────────
-
-    let solver_state = Arc::new(SolverState {
-        solver_name:        name,
-        quote_discount_bps: config.solver_quote_discount_bps,
-        eta_seconds:        config.solver_eta_seconds,
-        config:             config.clone(),
-    });
-
-    let app = Router::new()
-        .route("/rfq",     post(handle_rfq))
-        .route("/execute", post(handle_execute))
-        .with_state(solver_state);
-
-    tracing::info!(%addr, "RFQ server listening");
-    if let Err(e) = axum::serve(listener, app).await {
-        tracing::error!("RFQ server error: {e}");
-    }
-}
-
-// ============================================================================
-// Heartbeat loop
-// ============================================================================
-
-async fn heartbeat_loop(
-    client:       reqwest::Client,
-    initial_token: String,
-    backend_url:  String,
-    sol_rpc:      String,
-    evm_rpc:      String,
-    sol_address:  String,
-    evm_address:  String,
-    solver_name:  String,
-    callback_url: String,
-) {
-    let hb_url       = format!("{backend_url}/api/v1/solver/heartbeat");
-    let register_url = format!("{backend_url}/api/v1/solver/register");
-    let mut token    = initial_token;
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-    interval.tick().await; // discard first instant tick
+    tracing::info!(%ws_url, solver = %name, "Solver coordinator starting — will connect to backend WS");
 
     loop {
-        interval.tick().await;
+        tracing::info!(%ws_url, "Connecting to backend WebSocket...");
 
-        let sol_balance = fetch_sol_balance(&client, &sol_rpc, &sol_address)
-            .await
-            .unwrap_or_else(|_| "0".to_string());
+        match run_ws_session(&config, &ws_url, Arc::clone(&reporter)).await {
+            Ok(()) => tracing::info!("WS session ended cleanly — reconnecting in 5s"),
+            Err(e) => tracing::warn!(err = %e, "WS session error — reconnecting in 5s"),
+        }
 
-        let evm_balance = fetch_evm_balance(&evm_rpc, &evm_address)
-            .await
-            .unwrap_or_else(|_| "0".to_string());
+        // Clear reporter so evm_listener does not try to use a dead channel
+        *reporter.write().await = None;
 
-        let body = HeartbeatBody {
-            solana_balance: sol_balance,
-            evm_balance,
-            status: "ready".to_string(),
-        };
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
 
-        match client.post(&hb_url).bearer_auth(&token).json(&body).send().await {
-            Ok(r) if r.status().is_success() => tracing::debug!("Heartbeat OK"),
-            Ok(r) if r.status() == 401 => {
-                tracing::warn!("Heartbeat 401 — backend restarted, re-registering...");
-                // Re-register to get a fresh token
-                let reg_body = RegisterBody {
-                    name:             solver_name.clone(),
-                    evm_address:      evm_address.clone(),
-                    solana_address:   sol_address.clone(),
-                    callback_url:     callback_url.clone(),
-                    supported_routes: vec!["evm-base→solana".to_string()],
-                };
-                match client.post(&register_url).json(&reg_body).send().await {
-                    Ok(r) if r.status().is_success() => {
-                        match r.json::<RegisterResponse>().await {
-                            Ok(data) => {
-                                tracing::info!(solver_id = %data.data.solver_id, "Re-registered with naisu-backend");
-                                token = data.data.token;
+// ============================================================================
+// WebSocket session
+// ============================================================================
+
+async fn run_ws_session(
+    config: &Arc<Config>,
+    ws_url: &str,
+    reporter: SharedReporter,
+) -> Result<()> {
+    let (ws_stream, _response) = connect_async(ws_url).await?;
+    tracing::info!("WebSocket connected to backend");
+
+    let (mut write, mut read) = ws_stream.split();
+
+    // ── Derive addresses ─────────────────────────────────────────────────────
+    let evm_address = derive_evm_address(&config.evm_private_key)?;
+    let sol_address = derive_sol_address(&config.solana_private_key)?;
+    let solver_name = config.solver_name.as_deref().unwrap_or("unknown").to_string();
+
+    // ── Send register message ─────────────────────────────────────────────────
+    let register_msg = serde_json::json!({
+        "type":            "register",
+        "name":            solver_name,
+        "evmAddress":      evm_address,
+        "solanaAddress":   sol_address,
+        "supportedRoutes": ["evm-base→solana"],
+    });
+    write.send(Message::Text(register_msg.to_string().into())).await?;
+    tracing::debug!("Register message sent");
+
+    // ── Wait for {type:"registered"} ─────────────────────────────────────────
+    let registered_resp = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        read.next(),
+    )
+    .await
+    .map_err(|_| eyre::eyre!("Timeout waiting for registered response"))?
+    .ok_or_else(|| eyre::eyre!("WS closed before registered response"))?;
+
+    let registered_msg = registered_resp?;
+    let registered_text = match &registered_msg {
+        Message::Text(t) => t.as_str().to_string(),
+        _ => return Err(eyre::eyre!("Expected text for registered response, got {:?}", registered_msg)),
+    };
+
+    let registered: Value = serde_json::from_str(&registered_text)?;
+    if registered["type"].as_str() != Some("registered") {
+        return Err(eyre::eyre!("Expected type=registered, got: {registered_text}"));
+    }
+    let solver_id = registered["solverId"].as_str().unwrap_or("unknown").to_string();
+    tracing::info!(solver_id = %solver_id, "Registered with naisu-backend via WebSocket");
+
+    // ── Create mpsc channel for progress reports from evm_listener ────────────
+    // Buffer of 64 allows bursts without blocking evm_listener.
+    let (report_tx, mut report_rx) = mpsc::channel::<String>(64);
+
+    // Write the sender into the shared reporter so evm_listener can use it
+    *reporter.write().await = Some(report_tx);
+
+    // ── Heartbeat interval ────────────────────────────────────────────────────
+    let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    heartbeat_interval.tick().await; // discard first instant tick
+
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let sol_rpc = config.solana_rpc_url.clone();
+    let evm_rpc = config.base_rpc_url.clone();
+    let sol_addr_hb = sol_address.clone();
+    let evm_addr_hb = evm_address.clone();
+
+    // ── Main event loop ───────────────────────────────────────────────────────
+    loop {
+        tokio::select! {
+            // ── Forward progress reports from evm_listener to backend ──────────
+            Some(report_payload) = report_rx.recv() => {
+                write.send(Message::Text(report_payload.into())).await?;
+            }
+
+            // ── Heartbeat tick ─────────────────────────────────────────────────
+            _ = heartbeat_interval.tick() => {
+                let sol_bal = fetch_sol_balance(&http_client, &sol_rpc, &sol_addr_hb)
+                    .await
+                    .unwrap_or_else(|_| "0".to_string());
+                let evm_bal = fetch_evm_balance(&evm_rpc, &evm_addr_hb)
+                    .await
+                    .unwrap_or_else(|_| "0".to_string());
+
+                let hb = serde_json::json!({
+                    "type":           "heartbeat",
+                    "evmBalance":     evm_bal,
+                    "solanaBalance":  sol_bal,
+                    "status":         "ready",
+                });
+                write.send(Message::Text(hb.to_string().into())).await?;
+                tracing::debug!("Heartbeat sent");
+            }
+
+            // ── Incoming backend message ───────────────────────────────────────
+            msg = read.next() => {
+                match msg {
+                    None => {
+                        tracing::info!("WS stream ended by backend");
+                        return Ok(());
+                    }
+                    Some(Err(e)) => {
+                        return Err(eyre::eyre!("WS read error: {e}"));
+                    }
+                    Some(Ok(Message::Ping(data))) => {
+                        write.send(Message::Pong(data)).await?;
+                    }
+                    Some(Ok(Message::Close(_))) => {
+                        tracing::info!("WS Close frame received");
+                        return Ok(());
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        let parsed: Value = match serde_json::from_str(text.as_str()) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::warn!(err = %e, "Non-JSON message from backend — ignoring");
+                                continue;
                             }
-                            Err(e) => tracing::warn!(err = %e, "Re-register parse error"),
+                        };
+
+                        let msg_type = parsed["type"].as_str().unwrap_or("");
+
+                        match msg_type {
+                            "rfq" => {
+                                handle_rfq_message(&parsed, config, &mut write).await;
+                            }
+                            "execute" => {
+                                handle_execute_message(&parsed, config, Arc::clone(&reporter)).await;
+                            }
+                            _ => {
+                                tracing::debug!(msg_type, "Unhandled backend message type");
+                            }
                         }
                     }
-                    Ok(r) => tracing::warn!(status = %r.status(), "Re-register failed"),
-                    Err(e) => tracing::warn!(err = %e, "Re-register request error"),
+                    Some(Ok(_)) => {
+                        // Binary or other frame types — ignore
+                    }
                 }
             }
-            Ok(r) => tracing::warn!(status = %r.status(), "Heartbeat failed"),
-            Err(e) => tracing::warn!(err = %e, "Heartbeat error"),
         }
     }
 }
 
 // ============================================================================
-// RFQ handler
+// RFQ message handler
 // ============================================================================
 
-async fn handle_rfq(
-    State(state): State<Arc<SolverState>>,
-    Json(req): Json<RfqRequest>,
-) -> Json<RfqResponse> {
+async fn handle_rfq_message(
+    msg: &Value,
+    config: &Arc<Config>,
+    write: &mut (impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin),
+) {
+    let order_id = match msg["orderId"].as_str() {
+        Some(id) => id.to_string(),
+        None => {
+            tracing::warn!("rfq message missing orderId — ignoring");
+            return;
+        }
+    };
+
+    // Parse prices — sent as decimal strings
+    let start_price: u64 = msg["startPrice"].as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let floor_price: u64 = msg["floorPrice"].as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let deadline = msg["deadline"].as_u64().unwrap_or(0);
+
     // Reject if order already past deadline
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    if req.deadline < now_ms {
-        tracing::warn!(order_id = %req.order_id, "RFQ rejected: order past deadline");
-        // Return floor price so backend can still include us but we'll score low
+
+    if deadline > 0 && deadline < now_ms {
+        tracing::warn!(order_id = %order_id, "RFQ rejected: order past deadline");
+        // Still respond with floor_price so backend can include us but we score low
     }
 
-    let start_price: u64 = req.start_price.parse().unwrap_or(0);
-    let floor_price: u64 = req.floor_price.parse().unwrap_or(0);
-
-    // Quote = startPrice minus solver's discount (better deal for user)
-    // Clamped to floor so we never quote below the minimum
-    let range       = start_price.saturating_sub(floor_price);
-    let discount    = (range * state.quote_discount_bps) / 10_000;
+    // Quote = startPrice minus solver's discount (better deal for user), clamped to floor
+    let range        = start_price.saturating_sub(floor_price);
+    let discount     = (range * config.solver_quote_discount_bps) / 10_000;
     let quoted_price = start_price.saturating_sub(discount).max(floor_price);
 
-    let expires_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-        + 30_000;  // quote valid for 30s
+    let expires_at = now_ms + 30_000; // quote valid for 30s
 
     tracing::info!(
-        order_id = %req.order_id,
+        order_id = %order_id,
         quoted_price,
-        eta = state.eta_seconds,
-        solver = %state.solver_name,
+        eta      = config.solver_eta_seconds,
         "RFQ received — responding with quote"
     );
 
-    Json(RfqResponse {
-        quoted_price:  quoted_price.to_string(),
-        estimated_eta: state.eta_seconds,
-        expires_at,
-    })
+    let quote_msg = serde_json::json!({
+        "type":         "rfq_quote",
+        "orderId":      order_id,
+        "quotedPrice":  quoted_price.to_string(),
+        "estimatedETA": config.solver_eta_seconds,
+        "expiresAt":    expires_at,
+    });
+
+    if let Err(e) = write.send(Message::Text(quote_msg.to_string().into())).await {
+        tracing::warn!(err = %e, "Failed to send rfq_quote");
+    }
 }
 
 // ============================================================================
-// Execute handler — gasless flow: call executeIntent() on EVM with the
-// user's EIP-712 signature so the contract emits OrderCreated, then the
-// EVM listener picks it up and does the cross-chain execution.
+// Execute message handler — gasless flow
 // ============================================================================
 
-async fn handle_execute(
-    State(state): State<Arc<SolverState>>,
-    Json(req): Json<ExecuteRequest>,
-) -> Json<ExecuteResponse> {
-    tracing::info!(intent_id = %req.intent_id, "Execute signal received from backend — calling executeIntent()");
+/// Spawns a background task that calls executeIntent() on EVM.
+/// When the tx is mined, sends {type:"execute_confirmed"} via the reporter channel.
+async fn handle_execute_message(
+    msg: &Value,
+    config: &Arc<Config>,
+    reporter: SharedReporter,
+) {
+    let intent_id = match msg["intentId"].as_str() {
+        Some(id) => id.to_string(),
+        None => {
+            tracing::warn!("execute message missing intentId — ignoring");
+            return;
+        }
+    };
 
-    macro_rules! err {
-        ($msg:expr) => {
-            return Json(ExecuteResponse { success: false, tx_hash: None, error: Some($msg) })
-        };
-    }
+    tracing::info!(intent_id = %intent_id, "Execute signal received — calling executeIntent()");
 
-    // Build ethers client
-    let wallet = match state.config.evm_private_key.parse::<LocalWallet>() {
-        Ok(w) => w.with_chain_id(req.chain_id),
-        Err(e) => err!(format!("Invalid private key: {e}")),
-    };
-    let provider = match Provider::<Http>::try_from(req.rpc_url.as_str()) {
-        Ok(p) => p,
-        Err(e) => err!(format!("Invalid RPC URL: {e}")),
-    };
-    let client = SignerMiddleware::new(provider, wallet);
+    // Clone everything needed by the background task before spawning
+    let config_bg     = Arc::clone(config);
+    let reporter_bg   = reporter;
+    let intent_id_bg  = intent_id.clone();
+    let msg_bg        = msg.clone();
 
-    // Parse intent fields
-    let contract_addr: Address = match req.contract_address.parse() {
-        Ok(a) => a,
-        Err(e) => err!(format!("Invalid contract address: {e}")),
-    };
-    let creator: Address = match req.intent.creator.parse() {
-        Ok(a) => a,
-        Err(e) => err!(format!("Invalid creator: {e}")),
-    };
+    tokio::spawn(async move {
+        if let Err(e) = execute_intent_task(&config_bg, &intent_id_bg, &msg_bg, reporter_bg).await {
+            tracing::error!(intent_id = %intent_id_bg, err = %e, "execute_intent_task failed");
+        }
+    });
+}
+
+async fn execute_intent_task(
+    config: &Arc<Config>,
+    intent_id: &str,
+    msg: &Value,
+    reporter: SharedReporter,
+) -> Result<()> {
+    // ── Parse execute message fields ──────────────────────────────────────────
+    let intent        = &msg["intent"];
+    let signature     = msg["signature"].as_str().unwrap_or("").to_string();
+    let contract_addr_str = msg["contractAddress"].as_str().unwrap_or("").to_string();
+    let chain_id      = msg["chainId"].as_u64().unwrap_or(84532);
+    let rpc_url       = msg["rpcUrl"].as_str().unwrap_or("").to_string();
+
+    // ── Build ethers client ───────────────────────────────────────────────────
+    let wallet = config.evm_private_key.parse::<LocalWallet>()?
+        .with_chain_id(chain_id);
+    let provider = Provider::<Http>::try_from(rpc_url.as_str())?;
+    let client   = SignerMiddleware::new(provider, wallet);
+
+    // ── Parse intent fields ───────────────────────────────────────────────────
+    let contract_addr: Address = contract_addr_str.parse()?;
+    let creator: Address       = intent["creator"].as_str().unwrap_or("").parse()?;
 
     // recipient is bytes32 (0x + 64 hex chars)
-    let recipient_hex = req.intent.recipient.trim_start_matches("0x");
+    let recipient_hex = intent["recipient"].as_str().unwrap_or("")
+        .trim_start_matches("0x")
+        .to_string();
     if recipient_hex.len() != 64 {
-        err!(format!("recipient must be 64 hex chars, got {}", recipient_hex.len()));
+        return Err(eyre::eyre!("recipient must be 64 hex chars, got {}", recipient_hex.len()));
     }
     let mut recipient_bytes = [0u8; 32];
-    if hex::decode_to_slice(recipient_hex, &mut recipient_bytes).is_err() {
-        err!("Invalid recipient hex".to_string());
-    }
+    hex::decode_to_slice(&recipient_hex, &mut recipient_bytes)
+        .map_err(|e| eyre::eyre!("Invalid recipient hex: {e}"))?;
 
-    let amount = match U256::from_dec_str(&req.intent.amount) {
-        Ok(a) => a,
-        Err(e) => err!(format!("Invalid amount: {e}")),
-    };
-    let start_price = match U256::from_dec_str(&req.intent.start_price) {
-        Ok(a) => a,
-        Err(e) => err!(format!("Invalid startPrice: {e}")),
-    };
-    let floor_price = match U256::from_dec_str(&req.intent.floor_price) {
-        Ok(a) => a,
-        Err(e) => err!(format!("Invalid floorPrice: {e}")),
-    };
+    let amount = U256::from_dec_str(intent["amount"].as_str().unwrap_or("0"))?;
+    let start_price = U256::from_dec_str(intent["startPrice"].as_str().unwrap_or("0"))?;
+    let floor_price = U256::from_dec_str(intent["floorPrice"].as_str().unwrap_or("0"))?;
+    let destination_chain = intent["destinationChain"].as_u64().unwrap_or(0);
+    let deadline          = intent["deadline"].as_u64().unwrap_or(0);
+    let intent_type       = intent["intentType"].as_u64().unwrap_or(0);
+    let nonce             = intent["nonce"].as_u64().unwrap_or(0);
 
-    // Parse signature
-    let sig_hex = req.signature.trim_start_matches("0x");
-    let sig_bytes = match hex::decode(sig_hex) {
-        Ok(b) => b,
-        Err(e) => err!(format!("Invalid signature hex: {e}")),
-    };
+    // ── Parse signature ───────────────────────────────────────────────────────
+    let sig_hex   = signature.trim_start_matches("0x").to_string();
+    let sig_bytes = hex::decode(&sig_hex)
+        .map_err(|e| eyre::eyre!("Invalid signature hex: {e}"))?;
 
-    // Build ABI calldata for:
-    //   executeIntent((address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8,uint256),bytes)
+    // ── Build ABI calldata ────────────────────────────────────────────────────
+    // executeIntent((address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8,uint256),bytes)
     let selector = &ethers::utils::keccak256(
         b"executeIntent((address,bytes32,uint16,uint256,uint256,uint256,uint256,uint8,uint256),bytes)"
     )[..4];
@@ -545,20 +420,20 @@ async fn handle_execute(
     let intent_tuple = Token::Tuple(vec![
         Token::Address(creator),
         Token::FixedBytes(recipient_bytes.to_vec()),
-        Token::Uint(U256::from(req.intent.destination_chain)),
+        Token::Uint(U256::from(destination_chain)),
         Token::Uint(amount),
         Token::Uint(start_price),
         Token::Uint(floor_price),
-        Token::Uint(U256::from(req.intent.deadline)),
-        Token::Uint(U256::from(req.intent.intent_type)),
-        Token::Uint(U256::from(req.intent.nonce)),
+        Token::Uint(U256::from(deadline)),
+        Token::Uint(U256::from(intent_type)),
+        Token::Uint(U256::from(nonce)),
     ]);
 
     let mut calldata = selector.to_vec();
     calldata.extend_from_slice(&abi_encode(&[intent_tuple, Token::Bytes(sig_bytes)]));
 
-    // Get pending nonce
-    let nonce = client
+    // ── Get pending nonce ─────────────────────────────────────────────────────
+    let nonce_val = client
         .provider()
         .get_transaction_count(client.address(), Some(ethers::types::BlockNumber::Pending.into()))
         .await
@@ -567,90 +442,74 @@ async fn handle_execute(
     let mut tx = TransactionRequest::new()
         .to(contract_addr)
         .data(Bytes::from(calldata))
-        .value(amount);   // msg.value must equal intent.amount
+        .value(amount);  // msg.value must equal intent.amount
 
-    if let Some(n) = nonce {
+    if let Some(n) = nonce_val {
         tx = tx.nonce(n);
     }
 
     tracing::info!(
-        intent_id = %req.intent_id,
+        intent_id = %intent_id,
         amount    = %amount,
-        contract  = %req.contract_address,
-        "Sending executeIntent() tx — solver pays gas, order ETH locked in contract"
+        contract  = %contract_addr_str,
+        "Sending executeIntent() tx"
     );
 
-    // Submit tx — do NOT await the receipt here.
-    // Backend HTTP timeout (10s) kills the connection before Base Sepolia mines the block (~15-30s).
-    // Solution: submit → copy tx hash → drop client → poll receipt in background task.
-    let pending = match client.send_transaction(tx, None).await {
-        Ok(p)  => p,
-        Err(e) => {
-            tracing::error!(intent_id = %req.intent_id, err = %e, "send_transaction failed");
-            err!(format!("send_transaction failed: {e}"))
-        }
-    };
+    // ── Submit tx — do NOT await receipt here ─────────────────────────────────
+    // The backend WS connection stays alive while we poll in the background.
+    let pending = client.send_transaction(tx, None).await
+        .map_err(|e| eyre::eyre!("send_transaction failed: {e}"))?;
 
-    // Copy the H256 tx hash before dropping pending (which borrows client)
-    let tx_hash_h256 = pending.tx_hash();
-    let submitted_hash = format!("{:?}", tx_hash_h256);
+    let tx_hash_h256      = pending.tx_hash();
+    let submitted_hash    = format!("{:?}", tx_hash_h256);
 
     tracing::info!(
-        intent_id = %req.intent_id,
+        intent_id = %intent_id,
         tx_hash   = %submitted_hash,
         "executeIntent() submitted — polling confirmation in background"
     );
 
-    // Drop pending + client so background task can own rpc_url without borrow issues
     drop(pending);
     drop(client);
 
-    // Background task: create fresh provider, poll for receipt
-    let rpc_url_bg  = req.rpc_url.clone();
-    let intent_id_bg = req.intent_id.clone();
-    tokio::spawn(async move {
-        use ethers::providers::Middleware as _;
-        let provider = match Provider::<Http>::try_from(rpc_url_bg.as_str()) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(intent_id = %intent_id_bg, err = %e, "Background: invalid RPC URL");
-                return;
-            }
-        };
+    // ── Poll for receipt ──────────────────────────────────────────────────────
+    let provider2 = Provider::<Http>::try_from(rpc_url.as_str())?;
 
-        // Poll every 3s for up to ~5 minutes (100 attempts)
-        for attempt in 0u32..100 {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            match provider.get_transaction_receipt(tx_hash_h256).await {
-                Ok(Some(receipt)) => {
-                    let tx_hash_str = format!("{:?}", receipt.transaction_hash);
-                    if receipt.status == Some(ethers::types::U64::from(1)) {
-                        tracing::info!(
-                            intent_id = %intent_id_bg,
-                            tx_hash   = %tx_hash_str,
-                            "executeIntent() mined ✓ — EVM listener will detect OrderCreated and execute cross-chain"
-                        );
-                    } else {
-                        tracing::error!(
-                            intent_id = %intent_id_bg,
-                            tx_hash   = %tx_hash_str,
-                            "executeIntent() REVERTED — check msg.value / signature / nonce"
-                        );
-                    }
-                    return;
+    for attempt in 0u32..100 {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        match provider2.get_transaction_receipt(tx_hash_h256).await {
+            Ok(Some(receipt)) => {
+                let tx_hash_str = format!("{:?}", receipt.transaction_hash);
+
+                if receipt.status == Some(ethers::types::U64::from(1)) {
+                    tracing::info!(
+                        intent_id = %intent_id,
+                        tx_hash   = %tx_hash_str,
+                        "executeIntent() mined — reporting execute_confirmed"
+                    );
+                    // Use report_step so the message is forwarded over the WS channel
+                    report_step(&reporter, intent_id, "execute_confirmed", Some(&submitted_hash)).await;
+                } else {
+                    tracing::error!(
+                        intent_id = %intent_id,
+                        tx_hash   = %tx_hash_str,
+                        "executeIntent() REVERTED — check msg.value / signature / nonce"
+                    );
                 }
-                Ok(None) => {
-                    if attempt % 10 == 9 {
-                        tracing::debug!(intent_id = %intent_id_bg, attempt, "Still waiting for executeIntent() receipt...");
-                    }
-                }
-                Err(e) => tracing::warn!(intent_id = %intent_id_bg, err = %e, "Receipt poll error — retrying"),
+                return Ok(());
             }
+            Ok(None) => {
+                if attempt % 10 == 9 {
+                    tracing::debug!(intent_id = %intent_id, attempt, "Waiting for executeIntent() receipt...");
+                }
+            }
+            Err(e) => tracing::warn!(intent_id = %intent_id, err = %e, "Receipt poll error — retrying"),
         }
-        tracing::warn!(intent_id = %intent_id_bg, "executeIntent() receipt poll timed out after 5 min");
-    });
+    }
 
-    Json(ExecuteResponse { success: true, tx_hash: Some(submitted_hash), error: None })
+    tracing::warn!(intent_id = %intent_id, "executeIntent() receipt poll timed out after ~5 min");
+    Ok(())
 }
 
 // ============================================================================
@@ -664,18 +523,17 @@ async fn fetch_sol_balance(
 ) -> Result<String> {
     let body = serde_json::json!({
         "jsonrpc": "2.0", "id": 1,
-        "method": "getBalance",
-        "params": [address, {"commitment": "confirmed"}]
+        "method":  "getBalance",
+        "params":  [address, {"commitment": "confirmed"}]
     });
-    let resp: serde_json::Value = client.post(rpc).json(&body).send().await?.json().await?;
+    let resp: Value = client.post(rpc).json(&body).send().await?.json().await?;
     let lamports = resp["result"]["value"].as_u64().unwrap_or(0);
     Ok(format!("{:.4}", lamports as f64 / 1e9))
 }
 
 async fn fetch_evm_balance(evm_rpc: &str, address: &str) -> Result<String> {
-    use ethers::providers::{Http, Middleware, Provider};
     let provider  = Provider::<Http>::try_from(evm_rpc)?;
-    let addr: ethers::types::Address = address.parse()?;
+    let addr: Address = address.parse()?;
     let balance   = provider.get_balance(addr, None).await?;
     Ok(ethers::utils::format_ether(balance))
 }

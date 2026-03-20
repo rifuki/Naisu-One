@@ -18,7 +18,8 @@ export interface ActiveIntent {
   intentId: string;
   sessionId?: string;          // Chat session this intent belongs to (for cross-session isolation)
   contractOrderId?: string;
-  sourceTxHash?: string;       // EVM tx hash on Base Sepolia (creation tx)
+  sourceTxHash?: string;       // EVM executeIntent tx hash on Base Sepolia
+  settledTxHash?: string;      // EVM settle tx hash on Base Sepolia
   destinationTxHash?: string;  // Destination chain tx hash (e.g. Solana)
   progress: ProgressStep[];
   progressUpdatedAt?: number; // Timestamp of last progress update
@@ -40,6 +41,7 @@ interface IntentState {
   updateProgress: (progress: ProgressStep[]) => void;
   updateIntentId: (contractOrderId: string) => void;
   setSourceTxHash: (hash: string) => void;
+  setSettledTxHash: (hash: string) => void;
   setDestinationTxHash: (hash: string) => void;
   markFulfilled: (fillPrice?: string, winnerSolver?: string) => void;
   clearActiveIntent: () => void;
@@ -76,6 +78,13 @@ export const useIntentStore = create<IntentState>()(
         set((state) => ({
           activeIntent: state.activeIntent
             ? { ...state.activeIntent, sourceTxHash: hash }
+            : null
+        })),
+
+      setSettledTxHash: (hash) =>
+        set((state) => ({
+          activeIntent: state.activeIntent
+            ? { ...state.activeIntent, settledTxHash: hash }
             : null
         })),
 

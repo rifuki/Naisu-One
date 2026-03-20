@@ -152,6 +152,7 @@ intentRouter.get('/watch', async (c) => {
       solverEvents.on('execute_sent', onSolverEvent)
       solverEvents.on('sol_sent', onSolverEvent)
       solverEvents.on('vaa_ready', onSolverEvent)
+      solverEvents.on('settled', onSolverEvent)
       solverEvents.on('order_fulfilled', onSolverEvent)
 
       // Heartbeat every 30s to keep connection alive through proxies
@@ -176,6 +177,7 @@ intentRouter.get('/watch', async (c) => {
         solverEvents.off('execute_sent', onSolverEvent)
         solverEvents.off('sol_sent', onSolverEvent)
         solverEvents.off('vaa_ready', onSolverEvent)
+        solverEvents.off('settled', onSolverEvent)
         solverEvents.off('order_fulfilled', onSolverEvent)
       }
 

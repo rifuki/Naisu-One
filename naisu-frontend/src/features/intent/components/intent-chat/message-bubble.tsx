@@ -387,6 +387,36 @@ const SLIPPAGE_OPTIONS = [
   { label: '20%', pct: 20, hint: 'Fastest fill' },
 ];
 
+function TxReceiptRow({
+  label, badge, badgeClass, hash, href, copiedKey, copyKey, onCopy,
+}: {
+  label: string; badge: string; badgeClass: string; hash: string; href: string;
+  copiedKey: string | null; copyKey: string; onCopy: () => void;
+}) {
+  return (
+    <div className="px-2.5 py-1.5 flex items-center gap-2 border-t border-white/5 first:border-0">
+      <div className={`size-4 rounded-full border flex items-center justify-center shrink-0 ${badgeClass}`}>
+        <span className="text-[7px] font-bold">{badge}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[7.5px] text-slate-700 leading-none mb-0.5">{label}</div>
+        <div className="font-mono text-[9px] text-slate-400 truncate">{`${hash.slice(0, 12)}…${hash.slice(-6)}`}</div>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
+          <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+        </a>
+        <button onClick={onCopy} className="text-slate-700 hover:text-slate-400 transition-colors"
+          title={copiedKey === copyKey ? 'Copied!' : 'Copy'}>
+          <span className="material-symbols-outlined text-[11px]">
+            {copiedKey === copyKey ? 'check' : 'content_copy'}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Module-level flag: when a UnifiedIntentBubble is in tracking phase,
 // MessageBubble skips rendering the separate receipt card to avoid duplication.
 let _bubbleTracking = false;
@@ -426,6 +456,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
   const [signError, setSignError] = useState<string | null>(null);
   // 1-second ticker for live auction price (only active in tracking phase)
   const [now, setNow] = useState(Date.now());
+  // Copy feedback state — tracks which step key (or 'intentId') was recently copied
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1200);
+    }).catch(() => {/* ignore */});
+  };
 
   // Early return for archived/historical widgets
   if (isHistoricalIntent && phase !== 'tracking' && phase !== 'done') {
@@ -503,12 +541,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       try {
         localStorage.setItem(phaseKey, JSON.stringify({
           isFulfilled: true,
+          intentId: activeIntent.intentId,
           fillPrice: activeIntent.fillPrice,
           winnerSolver: activeIntent.winnerSolver,
           progress: activeIntent.progress,
           signedAt: activeIntent.signedAt,
           fulfilledAt: activeIntent.fulfilledAt,
           sourceTxHash: activeIntent.sourceTxHash,
+          settledTxHash: activeIntent.settledTxHash,
           destinationTxHash: activeIntent.destinationTxHash,
         }));
       } catch { /* storage unavailable */ }
@@ -890,9 +930,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
         const raw = localStorage.getItem(phaseKey);
         if (!raw) return null;
         if (raw.startsWith('{')) return JSON.parse(raw) as {
-          isFulfilled?: boolean; fillPrice?: string; winnerSolver?: string;
+          isFulfilled?: boolean; intentId?: string; fillPrice?: string; winnerSolver?: string;
           progress?: import('@/store').ProgressStep[]; signedAt?: number; fulfilledAt?: number;
-          sourceTxHash?: string; destinationTxHash?: string;
+          sourceTxHash?: string; settledTxHash?: string; destinationTxHash?: string;
         };
         return null; // raw = 'tracking' (written before fulfillment)
       } catch { return null; }
@@ -905,6 +945,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     const signedAtMs   = activeIntent?.signedAt      ?? localSnap?.signedAt       ?? now;
     const srcTxHash    = activeIntent?.sourceTxHash      ?? localSnap?.sourceTxHash;
     const destTxHash   = activeIntent?.destinationTxHash ?? localSnap?.destinationTxHash;
+    const settledTxHash = (activeIntent as import('@/store').ActiveIntent | null)?.settledTxHash ?? localSnap?.settledTxHash;
+    const displayIntentId = activeIntent?.intentId ?? localSnap?.intentId;
     const fillTimeSec  = (activeIntent?.signedAt ?? localSnap?.signedAt) &&
                          (activeIntent?.fulfilledAt ?? localSnap?.fulfilledAt)
       ? Math.round(((activeIntent?.fulfilledAt ?? localSnap?.fulfilledAt)! -
@@ -958,12 +1000,12 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       const isSolana = step.key === 'sol_sent';
       return {
         short: isSolana
-          ? `${step.txHash.slice(0, 6)}…${step.txHash.slice(-4)}`
-          : `${step.txHash.slice(0, 8)}…${step.txHash.slice(-6)}`,
+          ? `${step.txHash.slice(0, 8)}…${step.txHash.slice(-4)}`
+          : `${step.txHash.slice(0, 10)}…${step.txHash.slice(-6)}`,
         href: isSolana
-          ? `https://explorer.solana.com/tx/${step.txHash}?cluster=devnet`
+          ? `https://solscan.io/tx/${step.txHash}?cluster=devnet`
           : `https://sepolia.basescan.org/tx/${step.txHash}`,
-        label: isSolana ? 'Solana Explorer' : 'BaseScan',
+        label: isSolana ? 'Solscan' : 'BaseScan',
       };
     };
 
@@ -1088,105 +1130,107 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                   </div>
                 )}
 
-                {/* Complete: you received */}
+                {/* Complete: you received — compact */}
                 {isComplete && (
-                  <>
-                    <div className="p-3.5 rounded-xl bg-green-500/8 border border-green-500/20 relative overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/4 to-transparent pointer-events-none" />
-                      <div className="relative z-10">
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <ShieldCheck size={11} className="text-green-500" />
-                          <span className="text-[9px] text-green-500/80 uppercase tracking-widest font-bold">You received</span>
-                        </div>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-[28px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
-                          <span className="text-[13px] font-semibold text-green-400/70">{tokenLabel}</span>
-                          {fillUsdVal && <span className="text-[10px] text-slate-500 ml-1">≈${fillUsdVal}</span>}
-                        </div>
+                  <div className="rounded-xl bg-green-500/8 border border-green-500/20 overflow-hidden">
+                    {/* Received amount row */}
+                    <div className="px-3 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck size={10} className="text-green-500 shrink-0" />
+                        <span className="text-[8.5px] text-green-500/70 uppercase tracking-widest font-bold">You received</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[18px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
+                        <span className="text-[11px] font-semibold text-green-400/70">{tokenLabel}</span>
+                        {fillUsdVal && <span className="text-[9px] text-slate-500">≈${fillUsdVal}</span>}
                       </div>
                     </div>
-                    {winnerSolver && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
-                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Filled by</div>
-                          <div className="text-[12px] font-semibold text-slate-200">{winnerSolver}</div>
-                        </div>
-                        <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
-                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Fill time</div>
-                          <div className="text-[12px] font-semibold text-slate-200">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</div>
-                        </div>
-                      </div>
-                    )}
-                  </>
+                    {/* Price info row */}
+                    <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
+                      <span className="text-[8.5px] text-slate-600">Best offer</span>
+                      <span className="text-[8.5px] font-mono text-slate-400">{startSol} {tokenLabel}</span>
+                    </div>
+                    <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
+                      <span className="text-[8.5px] text-slate-600">Floor price</span>
+                      <span className="text-[8.5px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
+                    </div>
+                    {/* Filled by / fill time / fee row */}
+                    <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center gap-3">
+                      {winnerSolver && (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[8px] text-slate-600">By</span>
+                            <span className="text-[8.5px] font-semibold text-slate-300">{winnerSolver}</span>
+                          </div>
+                          <span className="text-slate-700">·</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[8px] text-slate-600">Time</span>
+                            <span className="text-[8.5px] font-semibold text-slate-300">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
+                          </div>
+                          <span className="text-slate-700">·</span>
+                        </>
+                      )}
+                      <span className="text-[8.5px] font-semibold text-green-400">Free</span>
+                    </div>
+                  </div>
                 )}
 
-                {/* Recipient + fee */}
-                <div className="border-t border-white/5 pt-3 space-y-2">
-                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
+                {/* Recipient */}
+                <div className="space-y-1">
+                  <div className="text-[9px] text-slate-600">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[8.5px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
                     {intent.recipientAddress}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500">Network fee</span>
-                    <span className="text-[10px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
                   </div>
                 </div>
 
-                {/* TX Receipts — complete state, in left column (uses srcTxHash/destTxHash which fall back to localStorage) */}
-                {isComplete && (srcTxHash || destTxHash) && (
+                {!isComplete && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-slate-600">Network fee</span>
+                    <span className="text-[9px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                  </div>
+                )}
+
+                {/* TX Receipts — complete state */}
+                {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
-                    <div className="px-3 py-2 bg-white/[0.02] border-b border-white/5">
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Transaction receipts</span>
+                    <div className="px-2.5 py-1.5 bg-white/[0.02] border-b border-white/5">
+                      <span className="text-[8px] text-slate-600 uppercase tracking-widest font-bold">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
-                      <div className="px-3 py-2 flex items-center justify-between border-b border-white/5 last:border-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="size-5 rounded-full bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0">
-                            <span className="text-[8px] font-bold text-blue-400">B</span>
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[8px] text-slate-600 leading-none mb-0.5">Base Sepolia</div>
-                            <div className="font-mono text-[9px] text-slate-400 truncate">
-                              {`${srcTxHash.slice(0, 10)}…${srcTxHash.slice(-6)}`}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 ml-2">
-                          <a href={`https://sepolia.basescan.org/tx/${srcTxHash}`} target="_blank" rel="noreferrer"
-                            className="text-slate-700 hover:text-[#0df2df] transition-colors" title="BaseScan">
-                            <span className="material-symbols-outlined text-[12px]">open_in_new</span>
-                          </a>
-                          <button onClick={() => navigator.clipboard.writeText(srcTxHash!)}
-                            className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
-                            <span className="material-symbols-outlined text-[12px]">content_copy</span>
-                          </button>
-                        </div>
-                      </div>
+                      <TxReceiptRow
+                        label="Base Sepolia"
+                        badge="B"
+                        badgeClass="bg-blue-500/15 border-blue-500/20 text-blue-400"
+                        hash={srcTxHash}
+                        href={`https://sepolia.basescan.org/tx/${srcTxHash}`}
+                        copiedKey={copiedKey}
+                        copyKey="srcTx"
+                        onCopy={() => copyToClipboard(srcTxHash!, 'srcTx')}
+                      />
                     )}
                     {destTxHash && (
-                      <div className="px-3 py-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="size-5 rounded-full bg-purple-500/15 border border-purple-500/20 flex items-center justify-center shrink-0">
-                            <span className="text-[8px] font-bold text-purple-400">S</span>
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[8px] text-slate-600 leading-none mb-0.5">Solana Devnet</div>
-                            <div className="font-mono text-[9px] text-slate-400 truncate">
-                              {`${destTxHash.slice(0, 8)}…${destTxHash.slice(-4)}`}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 ml-2">
-                          <a href={`https://explorer.solana.com/tx/${destTxHash}?cluster=devnet`} target="_blank" rel="noreferrer"
-                            className="text-slate-700 hover:text-[#9945FF] transition-colors" title="Solana Explorer">
-                            <span className="material-symbols-outlined text-[12px]">open_in_new</span>
-                          </a>
-                          <button onClick={() => navigator.clipboard.writeText(destTxHash!)}
-                            className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
-                            <span className="material-symbols-outlined text-[12px]">content_copy</span>
-                          </button>
-                        </div>
-                      </div>
+                      <TxReceiptRow
+                        label="Solana Devnet"
+                        badge="S"
+                        badgeClass="bg-purple-500/15 border-purple-500/20 text-purple-400"
+                        hash={destTxHash}
+                        href={`https://solscan.io/tx/${destTxHash}?cluster=devnet`}
+                        copiedKey={copiedKey}
+                        copyKey="destTx"
+                        onCopy={() => copyToClipboard(destTxHash!, 'destTx')}
+                      />
+                    )}
+                    {settledTxHash && (
+                      <TxReceiptRow
+                        label="Base Sepolia (settle)"
+                        badge="B"
+                        badgeClass="bg-blue-500/15 border-blue-500/20 text-blue-400"
+                        hash={settledTxHash}
+                        href={`https://sepolia.basescan.org/tx/${settledTxHash}`}
+                        copiedKey={copiedKey}
+                        copyKey="settledTx"
+                        onCopy={() => copyToClipboard(settledTxHash!, 'settledTx')}
+                      />
                     )}
                   </div>
                 )}
@@ -1249,15 +1293,20 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Inline tx hash chip */}
                             {chip && (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <span className="font-mono text-[8px] text-slate-500">{chip.short}</span>
+                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-fit">
+                                <span className="font-mono text-[9px] text-slate-400 leading-none">{chip.short}</span>
                                 <a href={chip.href} target="_blank" rel="noreferrer"
-                                  className="text-slate-700 hover:text-[#0df2df] transition-colors" title={chip.label}>
-                                  <span className="material-symbols-outlined text-[9px]">open_in_new</span>
+                                  className="text-slate-600 hover:text-[#0df2df] transition-colors shrink-0" title={chip.label}>
+                                  <span className="material-symbols-outlined text-[10px]">open_in_new</span>
                                 </a>
-                                <button onClick={() => navigator.clipboard.writeText(step.txHash!)}
-                                  className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
-                                  <span className="material-symbols-outlined text-[9px]">content_copy</span>
+                                <button
+                                  onClick={() => copyToClipboard(step.txHash!, step.key)}
+                                  className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
+                                  title={copiedKey === step.key ? 'Copied!' : 'Copy'}
+                                >
+                                  <span className="material-symbols-outlined text-[10px]">
+                                    {copiedKey === step.key ? 'check' : 'content_copy'}
+                                  </span>
                                 </button>
                               </div>
                             )}
@@ -1274,16 +1323,21 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 )}
 
                 {/* Intent ID — small reference at bottom */}
-                {activeIntent?.intentId && (
+                {displayIntentId && (
                   <div className="mt-auto pt-3 border-t border-white/5">
                     <div className="text-[8px] text-slate-700 uppercase tracking-wider mb-0.5">Intent ID</div>
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-[8px] text-slate-600 truncate">
-                        {`${activeIntent.intentId.slice(0, 10)}…${activeIntent.intentId.slice(-6)}`}
+                    <div className="flex items-center gap-1 bg-white/[0.02] rounded-md px-1.5 py-0.5 border border-white/5">
+                      <span className="font-mono text-[8px] text-slate-600 truncate flex-1">
+                        {`${displayIntentId.slice(0, 10)}…${displayIntentId.slice(-6)}`}
                       </span>
-                      <button onClick={() => navigator.clipboard.writeText(activeIntent.intentId)}
-                        className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors" title="Copy Intent ID">
-                        <span className="material-symbols-outlined text-[9px]">content_copy</span>
+                      <button
+                        onClick={() => copyToClipboard(displayIntentId, 'intentId')}
+                        className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors"
+                        title={copiedKey === 'intentId' ? 'Copied!' : 'Copy Intent ID'}
+                      >
+                        <span className="material-symbols-outlined text-[9px]">
+                          {copiedKey === 'intentId' ? 'check' : 'content_copy'}
+                        </span>
                       </button>
                     </div>
                   </div>

@@ -17,17 +17,6 @@ interface ChatSidebarProps {
   onClearAll?: () => void;
 }
 
-function shortenSessionId(id: string): string {
-  if (id.length <= 12) return id;
-  // For UUID format, show first 8 and last 4
-  if (id.includes('-')) {
-    const parts = id.split('-');
-    return `${parts[0]!}…${parts[parts.length - 1]!.slice(-4)}`;
-  }
-  // For other formats, show first 8 and last 4
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
-}
-
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60_000);
@@ -156,29 +145,9 @@ export function ChatSidebar({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Find active session for showing its ID
-  const activeSession = sessions.find(s => s.id === activeSessionId);
-
   return (
     <div className={`hidden md:flex flex-col h-full bg-[#070a09] border-r border-white/5 shrink-0 transition-[width,opacity,margin] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${isOpen ? 'w-[240px] opacity-100' : 'w-0 opacity-0 border-none'}`}>
       <div className="p-3 flex flex-col gap-3 flex-1 min-h-0 min-w-[240px]">
-        {/* Session ID display — only show for sessions that have content */}
-        {activeSession && !activeIsEmpty && (
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5" title={`Session: ${activeSessionId}`}>
-            <div className="flex items-center gap-2 overflow-hidden">
-              <span className="material-symbols-outlined text-[12px] text-slate-500">tag</span>
-              <span className="text-[10px] font-mono text-slate-400 truncate">{shortenSessionId(activeSessionId)}</span>
-            </div>
-            <button
-              onClick={() => navigator.clipboard.writeText(activeSessionId)}
-              className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
-              title="Copy session ID"
-            >
-              <span className="material-symbols-outlined text-[11px]">content_copy</span>
-            </button>
-          </div>
-        )}
-
         <div className="flex items-center gap-2">
           {/* Collapse Sidebar Button */}
           <button

@@ -58,6 +58,7 @@ export default function IntentPage() {
   const markFulfilled = useIntentStore((state) => state.markFulfilled);
   const setSourceTxHash = useIntentStore((state) => state.setSourceTxHash);
   const setDestinationTxHash = useIntentStore((state) => state.setDestinationTxHash);
+  const setSettledTxHash = useIntentStore((state) => state.setSettledTxHash);
   const clearActiveIntent = useIntentStore((state) => state.clearActiveIntent);
   
   // Local refs for tracking (not state)
@@ -324,18 +325,17 @@ export default function IntentPage() {
           });
         }
 
-        // Mark rfq + winner done; set evm_submitted active
+        // rfq done; winner ACTIVE — solver selected, waiting for execute signal
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'rfq')           return { ...s, done: true, active: false };
-          if (s.key === 'winner')        return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
-          if (s.key === 'evm_submitted') return { ...s, active: true };
+          if (s.key === 'rfq')    return { ...s, done: true, active: false };
+          if (s.key === 'winner') return { ...s, active: true, label: detail ? `Winner: ${detail}` : 'Winner selected' };
           return s;
         }));
       } else if (evt.type === 'execute_sent') {
         // Capture EVM source tx hash (solver's executeIntent() call on Base Sepolia)
         const sourceTx = evt.data['txHash'] as string | null | undefined;
         if (sourceTx) setSourceTxHash(sourceTx);
-        // evm_submitted: ACTIVE with tx hash stored inline — sol_sent stays inactive (not started yet)
+        // winner DONE, evm_submitted ACTIVE + txHash
         updateProgress(currentProgress.map(s => {
           if (s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
           if (s.key === 'evm_submitted') return { ...s, active: true, txHash: sourceTx ?? undefined };
@@ -345,24 +345,30 @@ export default function IntentPage() {
         // Capture Solana destination tx hash
         const destTx = evt.data['txHash'] as string | null | undefined;
         if (destTx) setDestinationTxHash(destTx);
-        // evm_submitted DONE (keeps txHash), sol_sent DONE with Solana hash, vaa_ready ACTIVE
+        // evm_submitted DONE, sol_sent ACTIVE + txHash — waiting for Wormhole VAA
         updateProgress(currentProgress.map(s => {
           if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
           if (s.key === 'evm_submitted') return { ...s, done: true, active: false };
-          if (s.key === 'sol_sent') return { ...s, done: true, active: false, txHash: destTx ?? undefined };
-          if (s.key === 'vaa_ready') return { ...s, active: true };
+          if (s.key === 'sol_sent') return { ...s, active: true, txHash: destTx ?? undefined };
           return s;
         }));
       } else if (evt.type === 'vaa_ready') {
-        // vaa_ready DONE, settled ACTIVE
+        // sol_sent DONE, vaa_ready DONE, settled ACTIVE — waiting for EVM settle tx
         updateProgress(currentProgress.map(s => {
           if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted' || s.key === 'sol_sent') return { ...s, done: true, active: false };
           if (s.key === 'vaa_ready') return { ...s, done: true, active: false, detail: 'VAA verified' };
           if (s.key === 'settled') return { ...s, active: true };
           return s;
         }));
+      } else if (evt.type === 'settled') {
+        const settleTx = evt.data['txHash'] as string | null | undefined;
+        if (settleTx) setSettledTxHash(settleTx);
+        updateProgress(currentProgress.map(s => {
+          if (s.key === 'settled') return { ...s, done: true, active: false, txHash: settleTx ?? undefined };
+          return s;
+        }));
       }
-    }, [setSourceTxHash, setDestinationTxHash]),
+    }, [setSourceTxHash, setDestinationTxHash, setSettledTxHash]),
   });
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {

@@ -1,22 +1,18 @@
 /**
  * Solver Network Routes
  *
- *   POST /api/v1/solver/register         — solver daftar saat startup
- *   POST /api/v1/solver/heartbeat        — solver ping setiap 30s (auth: Bearer token)
- *   GET  /api/v1/solver/list             — list semua solver aktif + stats
- *   GET  /api/v1/solver/selection/:orderId — hasil RFQ + winner reasoning
+ *   POST /api/v1/solver/register    — legacy stub (use WebSocket instead)
+ *   POST /api/v1/solver/heartbeat   — legacy stub (use WebSocket instead)
+ *   GET  /api/v1/solver/list        — list all solvers + stats
+ *   GET  /api/v1/solver/selection/:orderId — RFQ result + winner reasoning
+ *
+ * NOTE: Solver registration, heartbeat, and step reporting are now handled
+ * over WebSocket at /api/v1/solver/ws. The HTTP register/heartbeat/report-step
+ * routes are kept as informational stubs so old clients receive a clear error.
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
-import { z } from 'zod'
-import {
-  registerSolver,
-  processHeartbeat,
-  listSolvers,
-  getSolverSelection,
-  reportStep,
-} from '@services/solver.service'
+import { listSolvers, getSolverSelection } from '@services/solver.service'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
 
@@ -25,52 +21,37 @@ export const solverRouter = new Hono()
 solverRouter.use('*', rateLimit({ windowMs: 60000, maxRequests: 500 }))
 
 // ============================================================================
-// POST /register
+// POST /register — legacy stub
 // ============================================================================
 
-const registerBody = z.object({
-  name:            z.string().min(1).max(32),
-  evmAddress:      z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Invalid EVM address'),
-  solanaAddress:   z.string().min(32).max(44),
-  callbackUrl:     z.string().url(),
-  supportedRoutes: z.array(z.string()).min(1),
-})
-
-solverRouter.post('/register', zValidator('json', registerBody), async (c) => {
-  const body = c.req.valid('json')
-
-  logger.info({ name: body.name, evmAddress: body.evmAddress }, '[Route] Solver register')
-
-  const result = registerSolver(body)
-  return c.json({ success: true, data: result }, 201)
+solverRouter.post('/register', async (c) => {
+  logger.warn('[Route] Solver HTTP /register called — redirecting to WS')
+  return c.json(
+    { success: false, error: 'HTTP registration is deprecated. Connect via WebSocket at /api/v1/solver/ws' },
+    410
+  )
 })
 
 // ============================================================================
-// POST /heartbeat
+// POST /heartbeat — legacy stub
 // ============================================================================
 
-const heartbeatBody = z.object({
-  solanaBalance: z.string(),
-  evmBalance:    z.string(),
-  status:        z.enum(['ready', 'busy', 'draining']),
+solverRouter.post('/heartbeat', async (c) => {
+  return c.json(
+    { success: false, error: 'HTTP heartbeat is deprecated. Send {type:"heartbeat"} over WebSocket at /api/v1/solver/ws' },
+    410
+  )
 })
 
-solverRouter.post('/heartbeat', zValidator('json', heartbeatBody), async (c) => {
-  const authHeader = c.req.header('Authorization')
-  const token      = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+// ============================================================================
+// POST /report-step — legacy stub
+// ============================================================================
 
-  if (!token) {
-    return c.json({ success: false, error: 'Authorization header required' }, 401)
-  }
-
-  const body = c.req.valid('json')
-  const ok   = processHeartbeat(token, body)
-
-  if (!ok) {
-    return c.json({ success: false, error: 'Invalid token' }, 401)
-  }
-
-  return c.json({ success: true })
+solverRouter.post('/report-step', async (c) => {
+  return c.json(
+    { success: false, error: 'HTTP report-step is deprecated. Send {type:"execute_confirmed"|"sol_sent"|"vaa_ready"} over WebSocket at /api/v1/solver/ws' },
+    410
+  )
 })
 
 // ============================================================================
@@ -98,33 +79,4 @@ solverRouter.get('/selection/:orderId', (c) => {
   }
 
   return c.json({ success: true, data: selection })
-})
-
-// ============================================================================
-// POST /report-step — solver reports sol_sent or vaa_ready progress back
-// ============================================================================
-
-const reportStepBody = z.object({
-  orderId: z.string().min(1),
-  type:    z.enum(['sol_sent', 'vaa_ready']),
-  txHash:  z.string().optional(),
-})
-
-solverRouter.post('/report-step', zValidator('json', reportStepBody), async (c) => {
-  const authHeader = c.req.header('Authorization')
-  const token      = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-
-  if (!token) {
-    return c.json({ success: false, error: 'Authorization header required' }, 401)
-  }
-
-  const body = c.req.valid('json')
-  const ok   = reportStep(token, body)
-
-  if (!ok) {
-    return c.json({ success: false, error: 'Invalid token' }, 401)
-  }
-
-  logger.info({ orderId: body.orderId, type: body.type }, '[Route] Solver report-step accepted')
-  return c.json({ success: true })
 })
