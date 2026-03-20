@@ -38,11 +38,12 @@ function usePythPrices(
 
   return { fromUsd, toUsd };
 }
-import { Zap, ShieldCheck, Check, ArrowRight, Clock } from 'lucide-react';
+import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
+import { useIntentStore } from '@/store';
 import { GaslessIntentReviewCard } from '../gasless-intent-review-card';
 import ReactMarkdown from 'react-markdown';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
@@ -351,9 +352,11 @@ export function MessageBubble({
   // Assistant message — parse widget blocks
   const parsed = extractWidgetBlock(message.content);
   
-  // Check for receipt message
+  // Check for receipt message — suppress entirely if UnifiedIntentBubble is handling tracking
   const receiptData = extractReceiptData(message.content);
   if (receiptData) {
+    if (isBubbleTracking()) return null;
+    // Otherwise render the standalone receipt card
     return (
       <div
         className="group flex gap-3 opacity-0 animate-fade-in-up"
@@ -466,6 +469,12 @@ const SLIPPAGE_OPTIONS = [
   { label: '20%', pct: 20, hint: 'Fastest fill' },
 ];
 
+// Module-level flag: when a UnifiedIntentBubble is in tracking phase,
+// MessageBubble skips rendering the separate receipt card to avoid duplication.
+let _bubbleTracking = false;
+const setBubbleTracking = (v: boolean) => { _bubbleTracking = v; };
+const isBubbleTracking = () => _bubbleTracking;
+
 // Internal component for unified intent flow with phase state
 interface UnifiedIntentBubbleProps {
   intent: GaslessIntentData;
@@ -476,9 +485,36 @@ interface UnifiedIntentBubbleProps {
 }
 
 function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
-  const [phase, setPhase] = useState<'plan' | 'sign' | 'done'>('plan');
+  const [phase, setPhase] = useState<'plan' | 'sign' | 'tracking' | 'done'>('plan');
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
   const [slippagePct, setSlippagePct] = useState(10);
+  // 1-second ticker for live auction price (only active in tracking phase)
+  const [now, setNow] = useState(Date.now());
+
+  // Live intent progress from Zustand store (used in tracking phase)
+  const activeIntent = useIntentStore((state) => state.activeIntent);
+
+  // Smooth phase transition: fade out → swap → fade in
+  const transitionTo = (next: 'plan' | 'sign' | 'tracking' | 'done') => {
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setPhase(next);
+      setIsTransitioning(false);
+    }, 200);
+  };
+
+  // Signal to MessageBubble that this bubble is handling progress tracking
+  useEffect(() => {
+    setBubbleTracking(phase === 'tracking');
+  }, [phase]);
+
+  // Live ticker — only ticks when tracking
+  useEffect(() => {
+    if (phase !== 'tracking') return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [phase]);
 
   const { fromUsd, toUsd } = usePythPrices(intent.amount, intent.destinationChain, intent.fromUsd, intent.toUsd);
 
@@ -518,7 +554,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
 
-          <div className="rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans">
+          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
             {/* Header */}
             <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -527,14 +563,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#0df2df]" />
-                <span>Pyth Oracle • 5.0% conf</span>
+                <span>Pyth Oracle</span>
               </div>
             </div>
 
             {/* Body — 2 columns */}
             <div className="flex">
               {/* LEFT: quote info */}
-              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5">
+              <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/5 justify-center">
                 {/* Conversion */}
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -582,6 +618,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                     </div>
                   </div>
                 </div>
+
+                {/* Separator + Recipient */}
+                <div className="border-t border-white/5 pt-3 space-y-1.5">
+                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
+                    {intent.recipientAddress}
+                  </div>
+                </div>
               </div>
 
               {/* RIGHT: settings + action */}
@@ -618,7 +662,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                 {/* Slippage */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-white">Slippage</span>
+                    <div className="flex items-center gap-1.5">
+                      <SlidersHorizontal size={11} className="text-[#0df2df]" />
+                      <span className="text-[11px] font-semibold text-white">Slippage</span>
+                    </div>
                     <span className="text-[9px] text-slate-500">Higher = faster fill</span>
                   </div>
                   <div className="flex gap-1.5">
@@ -646,24 +693,16 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                   </div>
                 </div>
 
-                {/* Recipient */}
-                <div className="space-y-1.5">
-                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#111] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
-                    {intent.recipientAddress}
-                  </div>
-                </div>
-
                 {/* CTA */}
                 <button
                   onClick={() => {
                     onDutchPlanConfirm?.({ ...intent, floorPrice: adjustedFloorPrice, durationSeconds: selectedDuration });
-                    setPhase('sign');
+                    transitionTo('sign');
                   }}
                   className="mt-auto w-full py-3 rounded-[13px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:opacity-90 text-black text-[12px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_16px_rgba(13,242,223,0.12)] flex items-center justify-center gap-1.5"
                 >
-                  <Check size={14} className="stroke-[3]" />
-                  Looks good — prepare my intent
+                  Looks good
+                  <ArrowRight size={13} className="stroke-[2.5]" />
                 </button>
               </div>
             </div>
@@ -679,81 +718,131 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
       <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
           </div>
         </div>
-        <div className="flex-1 max-w-md">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[12px] font-semibold text-white">Nesu</span>
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
-          
-          <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
-            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
-              <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              <span className="text-[11px] font-medium text-primary">Sign Intent</span>
-              <span className="ml-auto px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-medium">FREE</span>
+
+          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+            {/* Header */}
+            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-3.5 h-3.5 text-[#0df2df]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span className="text-[12px] font-semibold text-white tracking-wide">Sign Intent</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/8 text-slate-400 text-[10px] font-medium tracking-wide">EIP-712 · Offchain</span>
             </div>
 
-            <div className="p-4 space-y-4">
-              <div className="text-center">
-                <div className="text-lg text-slate-300">Bridge</div>
-                <div className="text-2xl font-bold text-white">{intent.amount} ETH</div>
-                <div className="text-sm text-slate-400">→</div>
-                <div className="text-xl font-semibold text-primary">{adjustedFloorSol} – {startSol} {tokenLabel}</div>
+            {/* Body — 2 columns */}
+            <div className="flex">
+              {/* LEFT: what you're signing */}
+              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5 justify-center">
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2">You are bridging</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
+                    <span className="text-[13px] text-slate-400 font-medium">ETH</span>
+                    <ArrowRight size={18} className="text-[#0df2df] shrink-0" />
+                    <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
+                    <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">on {destLabel}</div>
+                  {inputUsd != null && outputUsd != null && (
+                    <div className="mt-2 inline-flex items-center gap-2 bg-white/[0.03] border border-white/5 rounded-full px-3 py-1 text-[11px] text-slate-400">
+                      <span>≈${inputUsd}</span>
+                      <span className="opacity-40">→</span>
+                      <span>≈${outputUsd}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Min receive highlight */}
+                <div className="p-3 rounded-xl bg-[#0F0F0F] border border-green-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck size={12} className="text-green-500" />
+                    <span className="text-[10px] text-green-500 uppercase tracking-widest font-bold">Guaranteed Min.</span>
+                  </div>
+                  <div className="text-[14px] font-bold text-green-400 font-mono">
+                    {adjustedFloorSol} <span className="text-[10px] font-semibold">{tokenLabel}</span>
+                    {minOutputUsd != null && <span className="text-[10px] text-slate-500 font-normal ml-1">≈${minOutputUsd}</span>}
+                  </div>
+                </div>
+
+                {/* Recipient */}
+                <div className="border-t border-white/5 pt-3 space-y-1.5">
+                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
+                    {intent.recipientAddress}
+                  </div>
+                </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Duration</span>
-                  <span className="text-slate-300">{currentOption.label}</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Slippage</span>
-                  <span className="text-slate-300">{slippagePct}%</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Min. receive</span>
-                  <span className="text-green-400 font-semibold">{adjustedFloorSol} {tokenLabel}</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Recipient</span>
-                  <code className="text-slate-300">{intent.recipientAddress.slice(0, 6)}...{intent.recipientAddress.slice(-4)}</code>
-                </div>
-              </div>
+              {/* RIGHT: summary + action */}
+              <div className="w-[220px] shrink-0 p-5 flex flex-col gap-3">
+                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Your settings</div>
 
-              {signStatus && (
-                <div className="text-[11px] text-primary text-center">{signStatus}</div>
-              )}
-            </div>
+                {/* Summary rows */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0F0F0F] border border-white/5">
+                    <div className="flex items-center gap-1.5">
+                      <Clock size={10} className="text-[#0df2df]" />
+                      <span className="text-[10px] text-slate-400">Duration</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-white">{currentOption.label}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0F0F0F] border border-white/5">
+                    <div className="flex items-center gap-1.5">
+                      <SlidersHorizontal size={10} className="text-[#0df2df]" />
+                      <span className="text-[10px] text-slate-400">Slippage</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-white">{slippagePct}%</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0F0F0F] border border-white/5">
+                    <span className="text-[10px] text-slate-400">Network fee</span>
+                    <span className="text-[11px] font-bold text-green-400">Free</span>
+                  </div>
+                </div>
 
-            <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 flex gap-2">
-              <button
-                onClick={() => setPhase('plan')}
-                className="flex-1 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-medium transition-colors"
-              >
-                Back
-              </button>
-              <button
-                onClick={() => {
-                  onSignIntent?.();
-                  setPhase('done');
-                }}
-                disabled={isSigning}
-                className="flex-1 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-black text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-              >
-                {isSigning && (
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                {signStatus && (
+                  <div className="text-[10px] text-primary text-center px-2">{signStatus}</div>
                 )}
-                Sign
-              </button>
+
+                {/* Buttons */}
+                <div className="mt-auto flex flex-col gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      onSignIntent?.();
+                      transitionTo('tracking');
+                    }}
+                    disabled={isSigning}
+                    className="w-full py-3 rounded-[13px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:opacity-90 disabled:opacity-50 text-black text-[12px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_16px_rgba(13,242,223,0.12)] flex items-center justify-center gap-1.5"
+                  >
+                    {isSigning ? (
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <>
+                        Sign & Submit
+                        <ArrowRight size={13} className="stroke-[2.5]" />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => transitionTo('plan')}
+                    className="w-full py-2 rounded-[10px] bg-white/3 hover:bg-white/8 border border-white/5 text-slate-400 hover:text-white text-[11px] font-medium transition-colors"
+                  >
+                    ← Back
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -761,6 +850,247 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
     );
   }
 
-  // Done Phase - will show receipt instead
+  // Tracking Phase — live Dutch auction progress + bridge status
+  if (phase === 'tracking') {
+    const isComplete = activeIntent?.isFulfilled ?? false;
+    const progress = activeIntent?.progress ?? [];
+    const fillPrice = activeIntent?.fillPrice;
+    const winnerSolver = activeIntent?.winnerSolver;
+    const signedAtMs = activeIntent?.signedAt ?? now;
+    const fillTimeSec = activeIntent?.signedAt && activeIntent?.fulfilledAt
+      ? Math.round((activeIntent.fulfilledAt - activeIntent.signedAt) / 1000)
+      : null;
+
+    // Live auction calculations (only meaningful when !isComplete)
+    const elapsedSec = Math.max(0, Math.floor((now - signedAtMs) / 1000));
+    const durationSec = selectedDuration;
+    const progressRatio = Math.min(elapsedSec / durationSec, 1);
+    const remainingSec = Math.max(0, durationSec - elapsedSec);
+
+    // Dutch auction current price: linear interpolation startPrice → floorPrice
+    const currentPriceSol = (() => {
+      try {
+        const startL = BigInt(intent.startPrice);
+        const floorL = BigInt(adjustedFloorPrice);
+        const drop = startL - floorL;
+        const elapsed1000 = BigInt(Math.floor(progressRatio * 1000));
+        const cur = startL - (drop * elapsed1000 / 1000n);
+        return (Number(cur) / 1e9).toFixed(4);
+      } catch { return startSol; }
+    })();
+    const currentUsdVal = toUsd != null ? (parseFloat(currentPriceSol) * toUsd).toFixed(2) : null;
+    const fillUsdVal = fillPrice != null && toUsd != null ? (parseFloat(fillPrice) * toUsd).toFixed(2) : null;
+
+    return (
+      <div className="group flex gap-3">
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[12px] font-semibold text-white">Nesu</span>
+            <span className="text-[10px] text-slate-500">just now</span>
+          </div>
+
+          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+            {/* Header */}
+            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isComplete
+                  ? <CheckCircle2 size={13} className="text-green-400" />
+                  : <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                }
+                <span className="text-[12px] font-semibold text-white tracking-wide">
+                  {isComplete ? 'Bridge Complete' : 'Dutch Auction Live'}
+                </span>
+                {!isComplete && (
+                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0df2df] animate-pulse" />
+                    {elapsedSec}s elapsed
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                Base Sepolia
+              </span>
+            </div>
+
+            {/* Body — 2 columns */}
+            <div className="flex">
+              {/* LEFT: live auction + outcome */}
+              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5">
+
+                {/* In-progress: Dutch Auction live panel */}
+                {!isComplete && (
+                  <>
+                    {/* Bridge summary row */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
+                      <span className="text-[11px] text-slate-500">ETH</span>
+                      <ArrowRight size={13} className="text-slate-600 shrink-0" />
+                      <span className="text-[13px] text-slate-400">~{startSol}</span>
+                      <span className="text-[11px] text-slate-500">{tokenLabel} on {destLabel}</span>
+                    </div>
+
+                    {/* Live offer card */}
+                    <div className="p-4 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/15 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#0df2df]/3 to-transparent" />
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#0df2df] animate-pulse" />
+                          <span className="text-[9px] text-[#0df2df]/70 uppercase tracking-widest font-bold">Current offer</span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[32px] font-bold text-[#0df2df] tabular-nums leading-none font-mono">{currentPriceSol}</span>
+                          <span className="text-[14px] font-semibold text-[#0df2df]/70">{tokenLabel}</span>
+                          {currentUsdVal && <span className="text-[11px] text-slate-500 ml-1">≈${currentUsdVal}</span>}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mt-1">Solver who accepts this price wins the auction</div>
+                      </div>
+                    </div>
+
+                    {/* Auction progress bar */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-500">Auction progress</span>
+                        <span className={`font-semibold tabular-nums ${remainingSec < 30 ? 'text-amber-400' : 'text-slate-400'}`}>
+                          {remainingSec > 0 ? `${remainingSec}s remaining` : 'Ending…'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#0df2df] to-[#0df2df]/50 transition-all duration-1000"
+                          style={{ width: `${Math.round(progressRatio * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] text-slate-600">
+                        <span>Best: {startSol} {tokenLabel}</span>
+                        <span>Floor: {adjustedFloorSol} {tokenLabel}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Complete: you received */}
+                {isComplete && (
+                  <>
+                    {/* Bridge summary row */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
+                      <span className="text-[11px] text-slate-500">ETH</span>
+                      <ArrowRight size={13} className="text-green-500 shrink-0" />
+                      <span className="text-[13px] text-green-400 font-semibold">{fillPrice ?? startSol}</span>
+                      <span className="text-[11px] text-slate-500">{tokenLabel} on {destLabel}</span>
+                    </div>
+
+                    {/* You received — big */}
+                    <div className="p-4 rounded-xl bg-green-500/8 border border-green-500/20 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/4 to-transparent" />
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <ShieldCheck size={11} className="text-green-500" />
+                          <span className="text-[9px] text-green-500/80 uppercase tracking-widest font-bold">You received</span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[32px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
+                          <span className="text-[14px] font-semibold text-green-400/70">{tokenLabel}</span>
+                          {fillUsdVal && <span className="text-[11px] text-slate-500 ml-1">≈${fillUsdVal}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Solver + fill time */}
+                    {winnerSolver && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2 flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
+                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Winning solver</div>
+                          <div className="text-[13px] font-semibold text-slate-200">{winnerSolver}</div>
+                        </div>
+                        <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
+                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Fill time</div>
+                          <div className="text-[13px] font-semibold text-slate-200">{fillTimeSec != null ? `${fillTimeSec}s` : '—'}</div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Separator + Recipient + fee */}
+                <div className="border-t border-white/5 pt-3 space-y-2">
+                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
+                    {intent.recipientAddress}
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-500">Network fee</span>
+                    <span className="text-[11px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT: progress tracker */}
+              <div className="w-[210px] shrink-0 p-5 flex flex-col gap-3">
+                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Progress</div>
+                {progress.length === 0 ? (
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin shrink-0" />
+                    Submitting to network…
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-0">
+                    {progress.map((step, idx) => {
+                      const isLast = idx === progress.length - 1;
+                      return (
+                        <div key={step.key} className="flex gap-2.5">
+                          <div className="flex flex-col items-center shrink-0 w-5">
+                            <div className="relative z-10 shrink-0">
+                              {step.done ? (
+                                <div className="size-5 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                                  <CheckCircle2 size={11} className="text-green-400" />
+                                </div>
+                              ) : step.active ? (
+                                <div className="size-5 rounded-full bg-[#0df2df]/15 border border-[#0df2df]/30 flex items-center justify-center">
+                                  <div className="w-2.5 h-2.5 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                                </div>
+                              ) : (
+                                <div className="size-5 rounded-full bg-white/4 border border-white/8 flex items-center justify-center">
+                                  <div className="size-1.5 rounded-full bg-slate-700" />
+                                </div>
+                              )}
+                            </div>
+                            {!isLast && (
+                              <div className={`w-px flex-1 min-h-[18px] mt-0.5 ${step.done ? 'bg-green-500/30' : 'bg-white/8'}`} />
+                            )}
+                          </div>
+                          <div className={`flex flex-col ${isLast ? 'pb-0' : 'pb-3'}`}>
+                            <span className={`text-[11px] font-medium leading-tight ${
+                              step.done ? 'text-green-400' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
+                            }`}>
+                              {step.label}
+                            </span>
+                            {step.detail && (
+                              <span className={`text-[9px] mt-0.5 leading-snug ${
+                                step.done ? 'text-green-400/50' : step.active ? 'text-[#0df2df]/50' : 'text-slate-700'
+                              }`}>
+                                {step.detail}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Done Phase (fallback — should not normally reach here)
   return null;
 }
