@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
 import { useGlobalAgent } from '@/components/providers/agent-provider';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
@@ -34,9 +34,11 @@ export default function IntentPage() {
   const [inputValue, setInputValue] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
+  const navType = useNavigationType();
   const initialIntentRef = useRef(location.state?.initialIntent as string | undefined);
   const initialSentRef = useRef(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const isNavigatingRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTxSent, setIsTxSent] = useState(false);
@@ -124,6 +126,7 @@ export default function IntentPage() {
 
   /** Switch to an existing session — clears active intent so the new session starts fresh */
   const handleSwitchSession = useCallback((id: string | null) => {
+    isNavigatingRef.current = true;
     clearActiveIntent();
     setSignedIntentSnapshot(undefined);
     setSignedAt(undefined);
@@ -143,6 +146,18 @@ export default function IntentPage() {
   useEffect(() => {
     const chatParam = searchParams.get('chat');
     
+    // If they match, clear the programmatic navigation lock
+    if (chatParam === activeSessionId) {
+      isNavigatingRef.current = false;
+      prevActiveSessionIdRef.current = activeSessionId;
+      return;
+    }
+
+    // Ignore transient mismatch caused by our own React state changes prior to Router updates
+    if (isNavigatingRef.current) {
+      return;
+    }
+    
     // Only act if URL and local state mismatch
     if (chatParam !== activeSessionId) {
       if (chatParam && sessions.some(s => s.id === chatParam)) {
@@ -152,15 +167,23 @@ export default function IntentPage() {
         // State has an active session, but URL is empty.
         if (prevActiveSessionIdRef.current === null) {
           // We just implicitly created a session from a Virtual New Chat (null -> s_abc). Sync to URL!
+          isNavigatingRef.current = true;
           setSearchParams({ chat: activeSessionId }, { replace: true });
         } else {
-          // The URL param vanished, but state hasn't changed -> User pressed Browser Back to a Virtual New Chat `/intent`
-          handleSwitchSession(null);
+          // The URL param vanished, but state hasn't changed.
+          if (navType === 'POP') {
+            // User pressed Browser Back to a Virtual New Chat `/intent`
+            handleSwitchSession(null);
+          } else {
+            // User clicked NavLink (PUSH/REPLACE) from somewhere else, let's resume their active session!
+            isNavigatingRef.current = true;
+            setSearchParams({ chat: activeSessionId }, { replace: true });
+          }
         }
       }
     }
     prevActiveSessionIdRef.current = activeSessionId;
-  }, [activeSessionId, searchParams, sessions, handleSwitchSession, setSearchParams]);
+  }, [activeSessionId, searchParams, sessions, handleSwitchSession, setSearchParams, navType]);
 
   const currentMsgIdxRef = useRef(0);
 
