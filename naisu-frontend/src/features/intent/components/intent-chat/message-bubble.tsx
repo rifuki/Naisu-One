@@ -416,7 +416,9 @@ function TxReceiptRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[7.5px] text-slate-700 leading-none mb-0.5">{label}</div>
-        <div className="font-mono text-[9px] text-slate-400 truncate">{hash}</div>
+        <div className="font-mono text-[9px] text-slate-400 truncate">
+          {hash.length > 66 ? `${hash.slice(0, 20)}…${hash.slice(-14)}` : hash}
+        </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
@@ -1025,8 +1027,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       const isSolana = step.key === 'sol_sent';
       return {
         short: isSolana
-          ? `${step.txHash.slice(0, 14)}…${step.txHash.slice(-8)}`
-          : `${step.txHash.slice(0, 16)}…${step.txHash.slice(-8)}`,
+          ? `${step.txHash.slice(0, 6)}…${step.txHash.slice(-5)}`
+          : `${step.txHash.slice(0, 8)}…${step.txHash.slice(-6)}`,
         href: isSolana
           ? `https://solscan.io/tx/${step.txHash}?cluster=devnet`
           : `https://sepolia.basescan.org/tx/${step.txHash}`,
@@ -1318,8 +1320,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Inline tx hash chip */}
                             {chip && (
-                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-full min-w-0">
-                                <span className="font-mono text-[9px] text-slate-400 leading-none flex-1">{chip.short}</span>
+                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-full overflow-hidden">
+                                <span className="font-mono text-[9px] text-slate-400 leading-none flex-1 whitespace-nowrap">{chip.short}</span>
                                 <a href={chip.href} target="_blank" rel="noreferrer"
                                   className="text-slate-600 hover:text-[#0df2df] transition-colors shrink-0" title={chip.label}>
                                   <span className="material-symbols-outlined text-[10px]">open_in_new</span>

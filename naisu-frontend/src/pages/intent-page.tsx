@@ -248,8 +248,8 @@ export default function IntentPage() {
         // Mark as fulfilled in Zustand store — read fresh values from store (not stale closure)
         const { fillPrice: fp, winnerSolver: ws } = useIntentStore.getState().activeIntent ?? {};
         markFulfilled(fp, ws);
-        trackedIntentIdRef.current = null;
-        previousIntentIdRef.current = null;
+        // Do NOT clear trackedIntentIdRef here — late-arriving events (e.g. 'settled' with txHash)
+        // must still match. Refs are cleared when the user starts a new intent.
         setPendingGaslessIntent(undefined);
         setGaslessStatus(null);
         window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
