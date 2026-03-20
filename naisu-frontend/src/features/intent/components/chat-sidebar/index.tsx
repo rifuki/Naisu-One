@@ -62,7 +62,14 @@ export function ChatSidebar({
   onImport,
   onClearAll,
 }: ChatSidebarProps) {
-  const { today, yesterday, older } = groupSessions(sessions);
+  // Only list sessions that have at least one message — empty sessions are "virtual new chat"
+  // state and should not appear in history or be deletable by the user.
+  const visibleSessions = sessions.filter(s => (s.messages?.length ?? 0) > 0);
+  const { today, yesterday, older } = groupSessions(visibleSessions);
+
+  // "New Chat" button is visually selected when the active session is empty
+  const activeIsEmpty = !sessions.find(s => s.id === activeSessionId)?.messages?.length;
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const SessionItem = ({ s }: { s: ChatSession }) => {
@@ -150,8 +157,8 @@ export function ChatSidebar({
   return (
     <div className="hidden md:flex flex-col w-[240px] h-full bg-[#070a09] border-r border-white/5 shrink-0">
       <div className="p-3 flex flex-col gap-3 flex-1 min-h-0">
-        {/* Session ID display */}
-        {activeSession && (
+        {/* Session ID display — only show for sessions that have content */}
+        {activeSession && !activeIsEmpty && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5" title={`Session: ${activeSessionId}`}>
             <span className="material-symbols-outlined text-[12px] text-slate-500">tag</span>
             <span className="text-[10px] font-mono text-slate-400 truncate">{shortenSessionId(activeSessionId)}</span>
@@ -165,13 +172,15 @@ export function ChatSidebar({
           </div>
         )}
 
-        {/* New Chat Button */}
+        {/* New Chat Button — highlighted when active session is empty (ChatGPT-style) */}
         <button
           onClick={onNewChat}
           disabled={disabled}
           className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors border ${
             disabled
               ? 'bg-white/5 text-slate-200 border-white/5 opacity-50 cursor-not-allowed'
+              : activeIsEmpty
+              ? 'bg-white/10 text-white border-white/10'
               : 'bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border-white/5 hover:border-white/10'
           }`}
         >
@@ -182,9 +191,9 @@ export function ChatSidebar({
           <span className="material-symbols-outlined text-sm opacity-40">edit</span>
         </button>
 
-        {/* Session List */}
+        {/* Session List — only shows sessions with at least one message */}
         <div className="flex-1 overflow-y-auto pr-1 -mr-1">
-          {sessions.length === 0 ? (
+          {visibleSessions.length === 0 ? (
             <p className="text-xs text-slate-600 px-2 py-4 text-center">No chats yet</p>
           ) : (
             <>
@@ -239,7 +248,7 @@ export function ChatSidebar({
               />
             </>
           )}
-          {onClearAll && sessions.length > 1 && (
+          {onClearAll && visibleSessions.length > 0 && (
             <button
               onClick={() => {
                 if (confirm('Clear ALL chat history? This cannot be undone.')) {

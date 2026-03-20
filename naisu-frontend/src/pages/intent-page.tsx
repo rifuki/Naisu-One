@@ -110,16 +110,14 @@ export default function IntentPage() {
         setSignedAt(state.signedAt);
         // Clean up old format
         localStorage.removeItem(FULFILLED_STATE_KEY(activeSessionId));
-      } else {
-        // Reset state if no persisted data for this session
-        clearActiveIntent();
-        setSignedIntentSnapshot(undefined);
-        setSignedAt(undefined);
-      }
-    } catch {
-      // Ignore parse errors
     }
-  }, [activeSessionId, clearActiveIntent, setActiveIntent]);
+    // Do NOT clear activeIntent here. Zustand persist keeps intent state
+    // across same-session page refreshes. Session-switch clearing is handled
+    // explicitly in handleSwitchSession.
+  } catch {
+    // Ignore parse errors
+  }
+}, [activeSessionId, setActiveIntent]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -271,33 +269,31 @@ export default function IntentPage() {
       } else if (evt.type === 'execute_sent') {
         // Capture EVM source tx hash (solver's executeIntent() call on Base Sepolia)
         const sourceTx = evt.data['txHash'] as string | null | undefined;
-        if (sourceTx) {
-          setSourceTxHash(sourceTx);
-        }
-        // Mark signed + rfq + winner + evm_submitted done; set sol_sent active
+        if (sourceTx) setSourceTxHash(sourceTx);
+        // evm_submitted: ACTIVE with tx hash stored inline — sol_sent stays inactive (not started yet)
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
-          if (s.key === 'evm_submitted') return { ...s, done: true, active: false };
-          if (s.key === 'sol_sent')      return { ...s, active: true };
+          if (s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
+          if (s.key === 'evm_submitted') return { ...s, active: true, txHash: sourceTx ?? undefined };
           return s;
         }));
       } else if (evt.type === 'sol_sent') {
         // Capture Solana destination tx hash
         const destTx = evt.data['txHash'] as string | null | undefined;
-        if (destTx) {
-          setDestinationTxHash(destTx);
-        }
-        // Mark all up to evm_submitted done; set sol_sent active
+        if (destTx) setDestinationTxHash(destTx);
+        // evm_submitted DONE (keeps txHash), sol_sent DONE with Solana hash, vaa_ready ACTIVE
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted') return { ...s, done: true, active: false };
-          if (s.key === 'sol_sent') return { ...s, active: true };
+          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
+          if (s.key === 'evm_submitted') return { ...s, done: true, active: false };
+          if (s.key === 'sol_sent') return { ...s, done: true, active: false, txHash: destTx ?? undefined };
+          if (s.key === 'vaa_ready') return { ...s, active: true };
           return s;
         }));
       } else if (evt.type === 'vaa_ready') {
-        // Mark all up to sol_sent done; set vaa_ready active
+        // vaa_ready DONE, settled ACTIVE
         updateProgress(currentProgress.map(s => {
           if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted' || s.key === 'sol_sent') return { ...s, done: true, active: false };
-          if (s.key === 'vaa_ready') return { ...s, active: true };
+          if (s.key === 'vaa_ready') return { ...s, done: true, active: false, detail: 'VAA verified' };
+          if (s.key === 'settled') return { ...s, active: true };
           return s;
         }));
       }
@@ -305,7 +301,9 @@ export default function IntentPage() {
   });
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
-    const text = (typeof overrideText === 'string' ? overrideText : inputValue).trim();
+    // Ignore React event objects passed as overrideText (e.g. form submit)
+    const raw = typeof overrideText === 'string' ? overrideText : inputValue;
+    const text = raw.trim();
     if (!text || isLoading) return;
 
     setInputValue('');
@@ -390,28 +388,22 @@ export default function IntentPage() {
     [address, sendTransactionAsync]
   );
 
-  /** New Chat: create a new session, stay on /intent */
+  /** Switch to an existing session — clears active intent so the new session starts fresh */
+  const handleSwitchSession = useCallback((id: string) => {
+    clearActiveIntent();
+    setSignedIntentSnapshot(undefined);
+    setSignedAt(undefined);
+    switchSession(id);
+  }, [clearActiveIntent, switchSession]);
+
+  /** New Chat: show empty chat state. Session is only created when the user sends the first message.
+   *  If already on an empty session (ChatGPT-style), just reset UI state without creating another session. */
   const handleNewChat = useCallback(() => {
-    // Check if current session has messages or fulfillment state
     const hasMessages = messages.length > 0;
     const hasFulfillmentState = intentFulfilled || signedIntentSnapshot;
     const isEffectivelyEmpty = !hasMessages && !hasFulfillmentState;
-    
-    // If session is effectively empty (no messages, no fulfillment), just reset without creating new session
-    if (isEffectivelyEmpty && activeSession) {
-      setInputValue('');
-      setSubmittedTxs([]);
-      setPendingTx(undefined);
-      setPendingGaslessIntent(undefined);
-      setGaslessStatus(null);
-      setIsGaslessFailed(false);
-      setIsGaslessSuccess(false);
-      clearActiveIntent();
-      trackedIntentIdRef.current = null;
-      currentMsgIdxRef.current = 0;
-      return;
-    }
-    
+
+    // Always reset UI state
     setInputValue('');
     setSubmittedTxs([]);
     setPendingTx(undefined);
@@ -423,9 +415,15 @@ export default function IntentPage() {
     setSignedIntentSnapshot(undefined);
     setSignedAt(undefined);
     trackedIntentIdRef.current = null;
+    previousIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
-    createSession();
-  }, [createSession, setPendingTx, setPendingGaslessIntent, messages.length, intentFulfilled, signedIntentSnapshot, activeSession]);
+
+    // Only create a new session if the current one actually has content.
+    // If already on an empty session, reusing it avoids accumulating ghost sessions.
+    if (!isEffectivelyEmpty) {
+      createSession();
+    }
+  }, [createSession, setPendingTx, setPendingGaslessIntent, messages.length, intentFulfilled, signedIntentSnapshot, clearActiveIntent]);
 
   /** Handle widget confirm — agent sent a quote_review widget, user confirmed selections */
   const handleDutchPlanConfirm = useCallback((intentData: {
@@ -530,6 +528,7 @@ export default function IntentPage() {
       ];
       setActiveIntent({
         intentId: result.submissionResult.intentId,
+        sessionId: activeSessionId ?? undefined,
         progress: initialProgress,
         isFulfilled: false,
         signedAt: Date.now(),
@@ -600,7 +599,7 @@ export default function IntentPage() {
         activeSessionId={activeSessionId}
         disabled={isLoading}
         onNewChat={handleNewChat}
-        onSwitchSession={switchSession}
+        onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
         onOpenSettings={() => setShowSettings(true)}
         onExport={exportSessions}

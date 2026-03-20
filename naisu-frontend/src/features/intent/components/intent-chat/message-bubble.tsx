@@ -295,11 +295,14 @@ function GaslessIntentSummary({ intent, text, renderContent }: {
   );
 }
 
-export function MessageBubble({ 
+export function MessageBubble({
   message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm,
   pendingSignIntent, signIntentStatus, isSignIntentFailed, isSignIntentSuccess,
   onSignIntentConfirm, onSignIntentDismiss
 }: MessageBubbleProps) {
+  // Must be before any early returns (React rules of hooks)
+  const hasActiveIntent = useIntentStore((state) => !!state.activeIntent);
+
   if (message.role === 'user') {
     // Hide system/widget-confirm messages from chat UI
     if (
@@ -355,7 +358,20 @@ export function MessageBubble({
   // Check for receipt message — suppress entirely if UnifiedIntentBubble is handling tracking
   const receiptData = extractReceiptData(message.content);
   if (receiptData) {
-    if (isBubbleTracking()) return null;
+    // Suppress when UnifiedIntentBubble is handling this specific intent.
+    // 1. Module-level flag: live flow (same render cycle)
+    // 2. Zustand store: post-refresh with live data
+    // 3. localStorage phaseKey: historical sessions where Zustand was cleared but
+    //    this intent's bubble previously saved its tracking state
+    const receiptNonce = (receiptData.intent as { nonce?: number }).nonce;
+    const receiptPhaseKey = receiptNonce != null
+      ? `naisu_phase_${receiptData.intent.recipientAddress}_${receiptNonce}`
+      : null;
+    const isTrackedByBubble = (() => {
+      try { return receiptPhaseKey ? localStorage.getItem(receiptPhaseKey) !== null : false; }
+      catch { return false; }
+    })();
+    if (isBubbleTracking() || hasActiveIntent || isTrackedByBubble) return null;
     // Otherwise render the standalone receipt card
     return (
       <div
@@ -367,7 +383,7 @@ export function MessageBubble({
             <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
           </div>
         </div>
-        <div className="flex-1 max-w-2xl">
+        <div className="flex-1 min-w-0">
           <MessageHeader name="Nesu" timestamp={message.timestamp} />
           <IntentReceiptCard data={receiptData} />
           <MessageActions text="Intent Receipt" />
@@ -485,7 +501,20 @@ interface UnifiedIntentBubbleProps {
 }
 
 function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
-  const [phase, setPhase] = useState<'plan' | 'sign' | 'tracking' | 'done'>('plan');
+  // Stable key per intent (nonce is unique per address per submission).
+  // Used to persist phase state in localStorage — survives refresh and navigation.
+  const phaseKey = `naisu_phase_${intent.recipientAddress}_${intent.nonce}`;
+
+  // Phase init: read from localStorage keyed by this specific intent's nonce.
+  // This correctly handles: refresh (same intent keeps tracking), new bridge request
+  // in same session (new nonce → no key → starts in plan), historical sessions.
+  const [phase, setPhase] = useState<'plan' | 'sign' | 'tracking' | 'done'>(() => {
+    try {
+      const raw = localStorage.getItem(`naisu_phase_${intent.recipientAddress}_${intent.nonce}`);
+      if (raw) return 'tracking';
+    } catch { /* storage unavailable */ }
+    return 'plan';
+  });
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
   const [slippagePct, setSlippagePct] = useState(10);
@@ -532,6 +561,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     if (activeIntent && localSigning) {
       setLocalSigning(false);
       setSignError(null);
+      // Persist phase to localStorage so refresh/navigation restores the correct state
+      try { localStorage.setItem(phaseKey, 'tracking'); } catch { /* storage unavailable */ }
       // Set flag immediately to suppress the standalone receipt card before phase changes
       setBubbleTracking(true);
       setIsTransitioning(true);
@@ -540,7 +571,26 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
         setIsTransitioning(false);
       }, 200);
     }
-  }, [activeIntent, localSigning]);
+  }, [activeIntent, localSigning, phaseKey]);
+
+  // Persist fulfilled snapshot to localStorage so historical sessions can display
+  // Bridge Complete even when Zustand store is cleared (e.g. after session switch).
+  useEffect(() => {
+    if (activeIntent?.isFulfilled && phase === 'tracking') {
+      try {
+        localStorage.setItem(phaseKey, JSON.stringify({
+          isFulfilled: true,
+          fillPrice: activeIntent.fillPrice,
+          winnerSolver: activeIntent.winnerSolver,
+          progress: activeIntent.progress,
+          signedAt: activeIntent.signedAt,
+          fulfilledAt: activeIntent.fulfilledAt,
+          sourceTxHash: activeIntent.sourceTxHash,
+          destinationTxHash: activeIntent.destinationTxHash,
+        }));
+      } catch { /* storage unavailable */ }
+    }
+  }, [activeIntent?.isFulfilled, phase, phaseKey, activeIntent]);
 
   const { fromUsd, toUsd } = usePythPrices(intent.amount, intent.destinationChain, intent.fromUsd, intent.toUsd);
 
@@ -908,36 +958,91 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     );
   }
 
-  // Tracking Phase — live Dutch auction progress + bridge status
+  // Tracking Phase — live Dutch auction + bridge execution status
   if (phase === 'tracking') {
-    const isComplete = activeIntent?.isFulfilled ?? false;
-    const progress = activeIntent?.progress ?? [];
-    const fillPrice = activeIntent?.fillPrice;
-    const winnerSolver = activeIntent?.winnerSolver;
-    const signedAtMs = activeIntent?.signedAt ?? now;
-    const fillTimeSec = activeIntent?.signedAt && activeIntent?.fulfilledAt
-      ? Math.round((activeIntent.fulfilledAt - activeIntent.signedAt) / 1000)
+    // Read localStorage snapshot as fallback when Zustand is null (historical session,
+    // or after session switch where clearActiveIntent was called).
+    const localSnap = (() => {
+      try {
+        const raw = localStorage.getItem(phaseKey);
+        if (!raw) return null;
+        if (raw.startsWith('{')) return JSON.parse(raw) as {
+          isFulfilled?: boolean; fillPrice?: string; winnerSolver?: string;
+          progress?: import('@/store').ProgressStep[]; signedAt?: number; fulfilledAt?: number;
+          sourceTxHash?: string; destinationTxHash?: string;
+        };
+        return null; // raw = 'tracking' (written before fulfillment)
+      } catch { return null; }
+    })();
+
+    const isComplete   = activeIntent?.isFulfilled   ?? localSnap?.isFulfilled   ?? false;
+    const progress     = activeIntent?.progress      ?? localSnap?.progress       ?? [];
+    const fillPrice    = activeIntent?.fillPrice     ?? localSnap?.fillPrice;
+    const winnerSolver = activeIntent?.winnerSolver  ?? localSnap?.winnerSolver;
+    const signedAtMs   = activeIntent?.signedAt      ?? localSnap?.signedAt       ?? now;
+    const srcTxHash    = activeIntent?.sourceTxHash      ?? localSnap?.sourceTxHash;
+    const destTxHash   = activeIntent?.destinationTxHash ?? localSnap?.destinationTxHash;
+    const fillTimeSec  = (activeIntent?.signedAt ?? localSnap?.signedAt) &&
+                         (activeIntent?.fulfilledAt ?? localSnap?.fulfilledAt)
+      ? Math.round(((activeIntent?.fulfilledAt ?? localSnap?.fulfilledAt)! -
+                    (activeIntent?.signedAt    ?? localSnap?.signedAt)!) / 1000)
       : null;
 
-    // Live auction calculations (only meaningful when !isComplete)
-    const elapsedSec = Math.max(0, Math.floor((now - signedAtMs) / 1000));
-    const durationSec = selectedDuration;
+    // Determine current execution phase
+    const activeStep = progress.find(s => s.active);
+    const isAuctionPhase = !activeStep || ['rfq', 'winner'].includes(activeStep.key);
+    const isExecPhase = activeStep && ['evm_submitted', 'sol_sent', 'vaa_ready', 'settled'].includes(activeStep.key);
+
+    // Dutch auction live calcs
+    const elapsedSec   = Math.max(0, Math.floor((now - signedAtMs) / 1000));
+    const durationSec  = selectedDuration;
     const progressRatio = Math.min(elapsedSec / durationSec, 1);
     const remainingSec = Math.max(0, durationSec - elapsedSec);
-
-    // Dutch auction current price: linear interpolation startPrice → floorPrice
     const currentPriceSol = (() => {
       try {
         const startL = BigInt(intent.startPrice);
         const floorL = BigInt(adjustedFloorPrice);
         const drop = startL - floorL;
         const elapsed1000 = BigInt(Math.floor(progressRatio * 1000));
-        const cur = startL - (drop * elapsed1000 / 1000n);
-        return (Number(cur) / 1e9).toFixed(4);
+        return (Number(startL - drop * elapsed1000 / 1000n) / 1e9).toFixed(4);
       } catch { return startSol; }
     })();
     const currentUsdVal = toUsd != null ? (parseFloat(currentPriceSol) * toUsd).toFixed(2) : null;
-    const fillUsdVal = fillPrice != null && toUsd != null ? (parseFloat(fillPrice) * toUsd).toFixed(2) : null;
+    const fillUsdVal    = fillPrice != null && toUsd != null ? (parseFloat(fillPrice) * toUsd).toFixed(2) : null;
+
+    // Header label
+    const headerLabel = isComplete ? 'Bridge Complete'
+      : isExecPhase ? 'Executing Bridge'
+      : 'Dutch Auction Live';
+
+    // Per-step icon helper
+    const getStepIcon = (key: string) => {
+      switch (key) {
+        case 'signed':        return CheckCircle2;
+        case 'rfq':           return Radio;
+        case 'winner':        return Trophy;
+        case 'evm_submitted': return Link;
+        case 'sol_sent':      return Send;
+        case 'vaa_ready':     return Shield;
+        case 'settled':       return Sparkles;
+        default:              return CheckCircle2;
+      }
+    };
+
+    // tx hash chip config per step key
+    const stepTxChip = (step: import('@/store').ProgressStep) => {
+      if (!step.txHash) return null;
+      const isSolana = step.key === 'sol_sent';
+      return {
+        short: isSolana
+          ? `${step.txHash.slice(0, 6)}…${step.txHash.slice(-4)}`
+          : `${step.txHash.slice(0, 8)}…${step.txHash.slice(-6)}`,
+        href: isSolana
+          ? `https://explorer.solana.com/tx/${step.txHash}?cluster=devnet`
+          : `https://sepolia.basescan.org/tx/${step.txHash}`,
+        label: isSolana ? 'Solana Explorer' : 'BaseScan',
+      };
+    };
 
     return (
       <div className="group flex gap-3">
@@ -953,16 +1058,15 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
           </div>
 
           <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
-            {/* Header */}
+
+            {/* ── Header ─────────────────────────────────────────────── */}
             <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {isComplete
                   ? <CheckCircle2 size={13} className="text-green-400" />
                   : <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
                 }
-                <span className="text-[12px] font-semibold text-white tracking-wide">
-                  {isComplete ? 'Bridge Complete' : 'Dutch Auction Live'}
-                </span>
+                <span className="text-[12px] font-semibold text-white tracking-wide">{headerLabel}</span>
                 {!isComplete && (
                   <span className="flex items-center gap-1 text-[10px] text-slate-500">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#0df2df] animate-pulse" />
@@ -975,65 +1079,64 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
               </span>
             </div>
 
-            {/* Body — 2 columns */}
+            {/* ── Body — 2 columns ───────────────────────────────────── */}
             <div className="flex">
-              {/* LEFT: live auction + outcome */}
+
+              {/* LEFT column */}
               <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5">
 
-                {/* In-progress: Dutch Auction live panel */}
-                {!isComplete && (
-                  <>
-                    {/* Bridge summary row */}
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
-                          <span className="text-[11px] text-slate-500">ETH</span>
-                        </div>
-                        <span className="text-[9px] text-slate-600">Base Sepolia</span>
-                      </div>
-                      <ArrowRight size={13} className="text-slate-600 shrink-0 mt-1" />
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[13px] text-slate-400">~{startSol}</span>
-                          <span className="text-[11px] text-slate-500">{tokenLabel}</span>
-                        </div>
-                        <span className="text-[9px] text-slate-600">{destLabel}</span>
-                      </div>
+                {/* Amount row — always shown */}
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[22px] font-bold text-white tabular-nums leading-none">{intent.amount}</span>
+                      <span className="text-[12px] text-slate-400 font-medium">ETH</span>
                     </div>
+                    <span className="text-[9px] text-slate-600">Base Sepolia</span>
+                  </div>
+                  <ArrowRight size={16} className={isComplete ? 'text-green-400 shrink-0' : 'text-[#0df2df] shrink-0'} />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-baseline gap-1.5">
+                      {isComplete
+                        ? <span className="text-[22px] font-bold text-green-400 tabular-nums leading-none">{fillPrice ?? startSol}</span>
+                        : <span className="text-[22px] font-bold text-[#0df2df] tabular-nums leading-none">~{startSol}</span>
+                      }
+                      <span className={`text-[12px] font-medium ${isComplete ? 'text-green-400/70' : 'text-[#0df2df]/70'}`}>{tokenLabel}</span>
+                    </div>
+                    <span className="text-[9px] text-slate-600">{destLabel}</span>
+                  </div>
+                </div>
 
-                    {/* Live offer card */}
-                    <div className="p-4 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/15 relative overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-br from-[#0df2df]/3 to-transparent" />
+                {/* Auction phase: live offer + progress bar */}
+                {!isComplete && isAuctionPhase && (
+                  <>
+                    <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/15 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#0df2df]/3 to-transparent pointer-events-none" />
                       <div className="relative z-10">
-                        <div className="flex items-center gap-1.5 mb-2">
+                        <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="w-1.5 h-1.5 rounded-full bg-[#0df2df] animate-pulse" />
                           <span className="text-[9px] text-[#0df2df]/70 uppercase tracking-widest font-bold">Current offer</span>
                         </div>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-[32px] font-bold text-[#0df2df] tabular-nums leading-none font-mono">{currentPriceSol}</span>
-                          <span className="text-[14px] font-semibold text-[#0df2df]/70">{tokenLabel}</span>
-                          {currentUsdVal && <span className="text-[11px] text-slate-500 ml-1">≈${currentUsdVal}</span>}
+                          <span className="text-[28px] font-bold text-[#0df2df] tabular-nums leading-none font-mono">{currentPriceSol}</span>
+                          <span className="text-[13px] font-semibold text-[#0df2df]/70">{tokenLabel}</span>
+                          {currentUsdVal && <span className="text-[10px] text-slate-500 ml-1">≈${currentUsdVal}</span>}
                         </div>
-                        <div className="text-[10px] text-slate-600 mt-1">Solver who accepts this price wins the auction</div>
+                        <div className="text-[9px] text-slate-600 mt-1">Solver who accepts this price wins the auction</div>
                       </div>
                     </div>
-
-                    {/* Auction progress bar */}
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="text-slate-500">Auction progress</span>
                         <span className={`font-semibold tabular-nums ${remainingSec < 30 ? 'text-amber-400' : 'text-slate-400'}`}>
                           {remainingSec > 0 ? `${remainingSec}s remaining` : 'Ending…'}
                         </span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-[#0df2df] to-[#0df2df]/50 transition-all duration-1000"
-                          style={{ width: `${Math.round(progressRatio * 100)}%` }}
-                        />
+                      <div className="h-1 rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-[#0df2df] to-[#0df2df]/40 transition-all duration-1000"
+                          style={{ width: `${Math.round(progressRatio * 100)}%` }} />
                       </div>
-                      <div className="flex items-center justify-between text-[9px] text-slate-600">
+                      <div className="flex justify-between text-[9px] text-slate-600">
                         <span>Best: {startSol} {tokenLabel}</span>
                         <span>Floor: {adjustedFloorSol} {tokenLabel}</span>
                       </div>
@@ -1041,134 +1144,204 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                   </>
                 )}
 
+                {/* Execution phase: bridge status card */}
+                {!isComplete && isExecPhase && activeStep && (
+                  <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/10 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-full bg-[#0df2df]/10 border border-[#0df2df]/20 flex items-center justify-center shrink-0">
+                        <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-semibold text-[#0df2df]">{activeStep.label}</div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">{activeStep.detail ?? 'In progress…'}</div>
+                      </div>
+                    </div>
+                    {winnerSolver && (
+                      <div className="flex items-center justify-between text-[9px] border-t border-white/5 pt-2.5">
+                        <span className="text-slate-600">Filled by</span>
+                        <span className="text-slate-300 font-semibold">{winnerSolver}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Complete: you received */}
                 {isComplete && (
                   <>
-                    {/* Bridge summary row */}
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
-                          <span className="text-[11px] text-slate-500">ETH</span>
-                        </div>
-                        <span className="text-[9px] text-slate-600">Base Sepolia</span>
-                      </div>
-                      <ArrowRight size={13} className="text-green-500 shrink-0 mt-1" />
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[13px] text-green-400 font-semibold">{fillPrice ?? startSol}</span>
-                          <span className="text-[11px] text-slate-500">{tokenLabel}</span>
-                        </div>
-                        <span className="text-[9px] text-slate-600">{destLabel}</span>
-                      </div>
-                    </div>
-
-                    {/* You received — big */}
-                    <div className="p-4 rounded-xl bg-green-500/8 border border-green-500/20 relative overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/4 to-transparent" />
+                    <div className="p-3.5 rounded-xl bg-green-500/8 border border-green-500/20 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/4 to-transparent pointer-events-none" />
                       <div className="relative z-10">
-                        <div className="flex items-center gap-1.5 mb-2">
+                        <div className="flex items-center gap-1.5 mb-1.5">
                           <ShieldCheck size={11} className="text-green-500" />
                           <span className="text-[9px] text-green-500/80 uppercase tracking-widest font-bold">You received</span>
                         </div>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-[32px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
-                          <span className="text-[14px] font-semibold text-green-400/70">{tokenLabel}</span>
-                          {fillUsdVal && <span className="text-[11px] text-slate-500 ml-1">≈${fillUsdVal}</span>}
+                          <span className="text-[28px] font-bold text-green-400 tabular-nums leading-none font-mono">{fillPrice ?? startSol}</span>
+                          <span className="text-[13px] font-semibold text-green-400/70">{tokenLabel}</span>
+                          {fillUsdVal && <span className="text-[10px] text-slate-500 ml-1">≈${fillUsdVal}</span>}
                         </div>
                       </div>
                     </div>
-
-                    {/* Solver + fill time */}
                     {winnerSolver && (
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2 flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
-                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Winning solver</div>
-                          <div className="text-[13px] font-semibold text-slate-200">{winnerSolver}</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
+                          <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Filled by</div>
+                          <div className="text-[12px] font-semibold text-slate-200">{winnerSolver}</div>
                         </div>
                         <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
                           <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Fill time</div>
-                          <div className="text-[13px] font-semibold text-slate-200">{fillTimeSec != null ? `${fillTimeSec}s` : '—'}</div>
+                          <div className="text-[12px] font-semibold text-slate-200">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</div>
                         </div>
                       </div>
                     )}
                   </>
                 )}
 
-                {/* Separator + Recipient + fee */}
+                {/* Recipient + fee */}
                 <div className="border-t border-white/5 pt-3 space-y-2">
                   <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
                   <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
                     {intent.recipientAddress}
                   </div>
-                  <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-500">Network fee</span>
-                    <span className="text-[11px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                    <span className="text-[10px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
                   </div>
                 </div>
+
+                {/* TX Receipts — complete state, in left column (uses srcTxHash/destTxHash which fall back to localStorage) */}
+                {isComplete && (srcTxHash || destTxHash) && (
+                  <div className="rounded-xl border border-white/5 overflow-hidden">
+                    <div className="px-3 py-2 bg-white/[0.02] border-b border-white/5">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Transaction receipts</span>
+                    </div>
+                    {srcTxHash && (
+                      <div className="px-3 py-2 flex items-center justify-between border-b border-white/5 last:border-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="size-5 rounded-full bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0">
+                            <span className="text-[8px] font-bold text-blue-400">B</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[8px] text-slate-600 leading-none mb-0.5">Base Sepolia</div>
+                            <div className="font-mono text-[9px] text-slate-400 truncate">
+                              {`${srcTxHash.slice(0, 10)}…${srcTxHash.slice(-6)}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <a href={`https://sepolia.basescan.org/tx/${srcTxHash}`} target="_blank" rel="noreferrer"
+                            className="text-slate-700 hover:text-[#0df2df] transition-colors" title="BaseScan">
+                            <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                          </a>
+                          <button onClick={() => navigator.clipboard.writeText(srcTxHash!)}
+                            className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
+                            <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {destTxHash && (
+                      <div className="px-3 py-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="size-5 rounded-full bg-purple-500/15 border border-purple-500/20 flex items-center justify-center shrink-0">
+                            <span className="text-[8px] font-bold text-purple-400">S</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[8px] text-slate-600 leading-none mb-0.5">Solana Devnet</div>
+                            <div className="font-mono text-[9px] text-slate-400 truncate">
+                              {`${destTxHash.slice(0, 8)}…${destTxHash.slice(-4)}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <a href={`https://explorer.solana.com/tx/${destTxHash}?cluster=devnet`} target="_blank" rel="noreferrer"
+                            className="text-slate-700 hover:text-[#9945FF] transition-colors" title="Solana Explorer">
+                            <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                          </a>
+                          <button onClick={() => navigator.clipboard.writeText(destTxHash!)}
+                            className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
+                            <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* RIGHT: progress tracker + tx references */}
-              <div className="w-[210px] shrink-0 p-5 flex flex-col gap-3">
-                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Progress</div>
+              {/* RIGHT column — progress stepper */}
+              <div className="w-[220px] shrink-0 p-4 flex flex-col gap-2">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">Progress</div>
+
                 {progress.length === 0 ? (
                   <div className="flex items-center gap-2 text-[11px] text-slate-500">
                     <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin shrink-0" />
                     Submitting to network…
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-0">
+                  <div className="flex flex-col">
                     {progress.map((step, idx) => {
                       const isLast = idx === progress.length - 1;
-
-                      // Per-step icon when done (active shows spinner, pending shows dot)
-                      const StepIcon = (() => {
-                        switch (step.key) {
-                          case 'signed':        return CheckCircle2;
-                          case 'rfq':           return Radio;
-                          case 'winner':        return Trophy;
-                          case 'evm_submitted': return Link;
-                          case 'sol_sent':      return Send;
-                          case 'vaa_ready':     return Shield;
-                          case 'settled':       return Sparkles;
-                          default:              return CheckCircle2;
-                        }
-                      })();
+                      const StepIcon = getStepIcon(step.key);
+                      const chip = stepTxChip(step);
 
                       return (
-                        <div key={step.key} className="flex gap-2.5">
-                          <div className="flex flex-col items-center shrink-0 w-5">
-                            <div className="relative z-10 shrink-0">
+                        <div key={step.key} className="flex gap-2">
+                          {/* Icon + connector */}
+                          <div className="flex flex-col items-center shrink-0 w-[18px]">
+                            <div className="shrink-0 z-10">
                               {step.done ? (
-                                <div className="size-5 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
-                                  <StepIcon size={11} className="text-green-400" />
+                                <div className="size-[18px] rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                                  <StepIcon size={9} className="text-green-400" />
                                 </div>
                               ) : step.active ? (
-                                <div className="size-5 rounded-full bg-[#0df2df]/15 border border-[#0df2df]/30 flex items-center justify-center">
-                                  <div className="w-2.5 h-2.5 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                                <div className="size-[18px] rounded-full bg-[#0df2df]/15 border border-[#0df2df]/30 flex items-center justify-center">
+                                  <div className="w-2 h-2 rounded-full border border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
                                 </div>
                               ) : (
-                                <div className="size-5 rounded-full bg-white/4 border border-white/8 flex items-center justify-center">
-                                  <div className="size-1.5 rounded-full bg-slate-700" />
+                                <div className="size-[18px] rounded-full bg-white/3 border border-white/6 flex items-center justify-center">
+                                  <div className="size-1 rounded-full bg-slate-800" />
                                 </div>
                               )}
                             </div>
                             {!isLast && (
-                              <div className={`w-px flex-1 min-h-[18px] mt-0.5 ${step.done ? 'bg-green-500/30' : 'bg-white/8'}`} />
+                              <div className={`w-px mt-0.5 ${step.done ? 'bg-green-500/25' : 'bg-white/6'}`}
+                                style={{ minHeight: chip ? 28 : step.active && step.detail ? 26 : 16 }} />
                             )}
                           </div>
-                          <div className={`flex flex-col ${isLast ? 'pb-0' : 'pb-3'}`}>
-                            <span className={`text-[11px] font-medium leading-tight ${
-                              step.done ? 'text-green-400' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
+
+                          {/* Text content */}
+                          <div className={`flex flex-col min-w-0 ${isLast ? 'pb-0' : 'pb-0'}`}
+                            style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
+                            <span className={`text-[10px] font-medium leading-tight ${
+                              step.done ? 'text-green-400' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
                             }`}>
                               {step.label}
                             </span>
-                            {step.detail && (
-                              <span className={`text-[9px] mt-0.5 leading-snug ${
-                                step.done ? 'text-green-400/50' : step.active ? 'text-[#0df2df]/50' : 'text-slate-700'
-                              }`}>
-                                {step.detail}
-                              </span>
+
+                            {/* Active step detail */}
+                            {step.active && step.detail && (
+                              <span className="text-[8.5px] text-[#0df2df]/50 mt-0.5 leading-snug">{step.detail}</span>
+                            )}
+
+                            {/* Inline tx hash chip */}
+                            {chip && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="font-mono text-[8px] text-slate-500">{chip.short}</span>
+                                <a href={chip.href} target="_blank" rel="noreferrer"
+                                  className="text-slate-700 hover:text-[#0df2df] transition-colors" title={chip.label}>
+                                  <span className="material-symbols-outlined text-[9px]">open_in_new</span>
+                                </a>
+                                <button onClick={() => navigator.clipboard.writeText(step.txHash!)}
+                                  className="text-slate-700 hover:text-slate-400 transition-colors" title="Copy">
+                                  <span className="material-symbols-outlined text-[9px]">content_copy</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Done step detail (e.g. "VAA verified") — only if no txHash */}
+                            {step.done && step.detail && !chip && (
+                              <span className="text-[8.5px] text-green-400/40 mt-0.5 leading-snug">{step.detail}</span>
                             )}
                           </div>
                         </div>
@@ -1177,83 +1350,19 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                   </div>
                 )}
 
-                {/* TX references */}
-                {(activeIntent?.intentId || activeIntent?.sourceTxHash || activeIntent?.destinationTxHash) && (
-                  <div className="border-t border-white/5 pt-3 space-y-2 mt-1">
-                    <div className="text-[9px] text-slate-600 uppercase tracking-widest font-bold">References</div>
-                    {activeIntent.intentId && (
-                      <div className="space-y-0.5">
-                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Intent ID</div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-[8px] text-slate-500 truncate">
-                            {activeIntent.intentId.length > 20
-                              ? `${activeIntent.intentId.slice(0, 10)}…${activeIntent.intentId.slice(-8)}`
-                              : activeIntent.intentId}
-                          </span>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(activeIntent.intentId)}
-                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
-                            title="Copy Intent ID"
-                          >
-                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {activeIntent.sourceTxHash && (
-                      <div className="space-y-0.5">
-                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Source Tx (Base)</div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-[8px] text-slate-500 truncate">
-                            {`${activeIntent.sourceTxHash.slice(0, 10)}…${activeIntent.sourceTxHash.slice(-6)}`}
-                          </span>
-                          <a
-                            href={`https://sepolia.basescan.org/tx/${activeIntent.sourceTxHash}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
-                            title="View on BaseScan"
-                          >
-                            <span className="material-symbols-outlined text-[10px]">open_in_new</span>
-                          </a>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(activeIntent.sourceTxHash!)}
-                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
-                            title="Copy"
-                          >
-                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {activeIntent.destinationTxHash && (
-                      <div className="space-y-0.5">
-                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Solana Tx</div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-[8px] text-slate-500 truncate">
-                            {activeIntent.destinationTxHash.length > 16
-                              ? `${activeIntent.destinationTxHash.slice(0, 10)}…${activeIntent.destinationTxHash.slice(-6)}`
-                              : activeIntent.destinationTxHash}
-                          </span>
-                          <a
-                            href={`https://explorer.solana.com/tx/${activeIntent.destinationTxHash}?cluster=devnet`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
-                            title="View on Solana Explorer"
-                          >
-                            <span className="material-symbols-outlined text-[10px]">open_in_new</span>
-                          </a>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(activeIntent.destinationTxHash!)}
-                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
-                            title="Copy"
-                          >
-                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                {/* Intent ID — small reference at bottom */}
+                {activeIntent?.intentId && (
+                  <div className="mt-auto pt-3 border-t border-white/5">
+                    <div className="text-[8px] text-slate-700 uppercase tracking-wider mb-0.5">Intent ID</div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-[8px] text-slate-600 truncate">
+                        {`${activeIntent.intentId.slice(0, 10)}…${activeIntent.intentId.slice(-6)}`}
+                      </span>
+                      <button onClick={() => navigator.clipboard.writeText(activeIntent.intentId)}
+                        className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors" title="Copy Intent ID">
+                        <span className="material-symbols-outlined text-[9px]">content_copy</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

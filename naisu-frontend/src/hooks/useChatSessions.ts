@@ -116,7 +116,8 @@ export function useChatSessions(walletAddress: string) {
     saveSessions(sessionsKey, next);
   }, [sessionsKey]);
 
-  /** Create a brand-new empty session and switch to it */
+  /** Create a brand-new empty session and switch to it.
+   *  Prunes previous empty sessions so stale ghosts don't accumulate. */
   const createSession = useCallback(() => {
     const session: ChatSession = {
       id: generateId(), title: 'New Chat',
@@ -124,7 +125,9 @@ export function useChatSessions(walletAddress: string) {
       intentCount: 0, fulfilledCount: 0,
     };
     setSessions(prev => {
-      const next = [...prev, session];
+      // Prune any existing empty sessions before adding the new one
+      const withContent = prev.filter(s => (s.messages?.length ?? 0) > 0);
+      const next = [...withContent, session];
       saveSessions(sessionsKey, next);
       return next;
     });

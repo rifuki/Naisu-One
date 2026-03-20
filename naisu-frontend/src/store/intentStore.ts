@@ -9,12 +9,14 @@ export interface ProgressStep {
   key: string;
   label: string;
   detail?: string;
+  txHash?: string;  // Inline tx hash shown in progress step (optional)
   done: boolean;
   active: boolean;
 }
 
 export interface ActiveIntent {
   intentId: string;
+  sessionId?: string;          // Chat session this intent belongs to (for cross-session isolation)
   contractOrderId?: string;
   sourceTxHash?: string;       // EVM tx hash on Base Sepolia (creation tx)
   destinationTxHash?: string;  // Destination chain tx hash (e.g. Solana)
