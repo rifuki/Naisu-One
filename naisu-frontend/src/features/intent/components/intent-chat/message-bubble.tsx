@@ -1284,8 +1284,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* TX Receipts — complete state */}
                 {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
-                    <div className="px-2.5 py-1.5 bg-white/[0.02] border-b border-white/[0.08]">
-                      <span className="text-[8px] text-slate-600 uppercase tracking-widest font-bold">Transaction Receipts</span>
+                    <div className="px-2.5 py-1 bg-white/[0.04] border-b border-white/[0.08]">
+                      <span className="text-[8px] text-slate-500 uppercase tracking-widest font-bold">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
                       <TxReceiptRow
