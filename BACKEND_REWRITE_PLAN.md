@@ -211,12 +211,12 @@ RFQ:
 - [x] Add health feature (keep from aksara)
 - [x] Verify: `cargo build` clean
 
-### Phase 2 — Intent Store + REST (no SSE yet)
-- [ ] `feature/intent/model.rs` — all types ported from TS
-- [ ] `feature/intent/store.rs` — DashMap store + nonce map
-- [ ] `feature/intent/orderbook.rs` — state machine
-- [ ] `feature/intent/handlers.rs` — GET /orders, GET /nonce, PATCH /cancel
-- [ ] State wired to AppState
+### Phase 2 — Intent Store + REST (no SSE yet) ✅ DONE
+- [x] `feature/intent/model.rs` — all types ported from TS
+- [x] `feature/intent/store.rs` — DashMap store + nonce map
+- [x] `feature/intent/orderbook.rs` — state machine
+- [x] `feature/intent/handlers.rs` — GET /orders, GET /nonce, PATCH /cancel
+- [x] State wired to AppState
 
 ### Phase 3 — SSE Watch Endpoint
 - [ ] `broadcast::channel` in AppState
