@@ -1213,7 +1213,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       <span className="text-[8.5px] text-slate-600">Floor price</span>
                       <span className="text-[8.5px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
                     </div>
-                    {/* Filled by / fill time / fee row */}
+                    {/* Filled by / fill time / auction duration / fee row */}
                     <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center gap-3">
                       {winnerSolver && (
                         <>
@@ -1223,8 +1223,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           </div>
                           <span className="text-slate-700">·</span>
                           <div className="flex items-center gap-1">
-                            <span className="text-[8px] text-slate-600">Time</span>
+                            <span className="text-[8px] text-slate-600">Fill time</span>
                             <span className="text-[8.5px] font-semibold text-slate-300">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
+                          </div>
+                          <span className="text-slate-700">·</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[8px] text-slate-600">Auction</span>
+                            <span className="text-[8.5px] font-semibold text-slate-300">{Math.round(intent.durationSeconds / 60)} min</span>
                           </div>
                           <span className="text-slate-700">·</span>
                         </>
@@ -1339,21 +1344,22 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           {/* Text content */}
                           <div className={`flex flex-col flex-1 min-w-0`}
                             style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
+                            {/* Step label: white when done (clear), teal when active, dim when pending */}
                             <span className={`text-[10px] font-medium leading-tight ${
-                              step.done ? 'text-green-400' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
+                              step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
                             }`}>
                               {step.label}
                             </span>
 
                             {/* Active step detail */}
                             {step.active && step.detail && (
-                              <span className="text-[8.5px] text-[#0df2df]/50 mt-0.5 leading-snug">{step.detail}</span>
+                              <span className="text-[8.5px] text-slate-500 mt-0.5 leading-snug">{step.detail}</span>
                             )}
 
                             {/* Inline tx hash — styled as detail line, not a card */}
                             {chip && (
                               <div className="flex items-center gap-1 mt-0.5 w-full min-w-0 group/chip">
-                                <span className="material-symbols-outlined text-[8px] shrink-0 text-green-400/30 group-hover/chip:text-green-400/60 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
+                                <span className="material-symbols-outlined text-[8px] shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
                                 <a
                                   href={chip.href}
                                   target="_blank"
@@ -1363,11 +1369,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                 >
                                   <DynamicHash
                                     hash={step.txHash!}
-                                    className={`font-mono text-[8.5px] leading-snug overflow-hidden whitespace-nowrap relative transition-colors ${
-                                      step.done
-                                        ? 'text-green-400/50 group-hover/chip:text-green-400/80'
-                                        : 'text-[#0df2df]/50 group-hover/chip:text-[#0df2df]/80'
-                                    }`}
+                                    className="font-mono text-[8.5px] leading-snug overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
                                   />
                                 </a>
                                 <button
@@ -1384,7 +1386,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Done step detail (e.g. "VAA verified") — only if no txHash */}
                             {step.done && step.detail && !chip && (
-                              <span className="text-[8.5px] text-green-400/40 mt-0.5 leading-snug">{step.detail}</span>
+                              <span className="text-[8.5px] text-slate-600 mt-0.5 leading-snug">{step.detail}</span>
                             )}
                           </div>
                         </div>
