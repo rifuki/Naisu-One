@@ -37,7 +37,7 @@ const AppContent: React.FC = () => {
               <div className="size-6 rounded bg-slate-800 flex items-center justify-center text-slate-500">
                 <span className="material-symbols-outlined text-[14px]">diamond</span>
               </div>
-              <span className="text-sm">© 2024 Naisu1 Labs</span>
+              <span className="text-sm">© 2024 Naisu Labs</span>
             </div>
             <div className="flex gap-6">
               <a href="#" className="text-slate-500 hover:text-white transition-colors">
