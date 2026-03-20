@@ -91,7 +91,7 @@ export function IntentChat({
   const isEmpty = messages.length === 0 && !isLoading && !pendingSignIntent;
 
   const handleSuggestionClick = (text: string) => {
-    onSend(text);
+    onInputChange(text);
   };
 
   return (
@@ -120,12 +120,12 @@ export function IntentChat({
         <div className="max-w-3xl mx-auto">
           {/* Suggestion chips — only when chat is empty */}
           {isEmpty && (
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
               {SUGGESTIONS.map((text) => (
                 <button
                   key={text}
                   onClick={() => handleSuggestionClick(text)}
-                  className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-400 hover:text-white text-xs font-medium transition-all hover:-translate-y-0.5"
+                  className="px-3.5 py-1.5 rounded-full bg-[#0A0A0A]/80 border border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-300 hover:text-white text-[13px] font-medium transition-all hover:-translate-y-0.5 shadow-md"
                 >
                   {text}
                 </button>

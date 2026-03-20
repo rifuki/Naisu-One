@@ -105,6 +105,10 @@ export function useChatSessions(walletAddress: string) {
     return all[all.length - 1].id;
   });
 
+  // Keep activeSessionId in a stable ref to prevent closure staleness in callbacks
+  const activeSessionIdRef = useRef<string>(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+
   // Sync ref
   sessionsRef.current = sessions;
 
@@ -146,8 +150,11 @@ export function useChatSessions(walletAddress: string) {
   const updateActiveSession = useCallback((
     updates: Partial<Pick<ChatSession, 'messages' | 'backendSessionId' | 'title'>>
   ) => {
+    // Read from stable ref to prevent activeSessionId closure bugs
+    const currentActiveId = activeSessionIdRef.current;
+    
     setSessions(prev => {
-      const current = prev.find(s => s.id === activeSessionId);
+      const current = prev.find(s => s.id === currentActiveId);
       const isNewSession = current && current.title === 'New Chat' && current.messages.length === 0;
       
       // Auto-generate title if this is first message in new session
@@ -156,14 +163,15 @@ export function useChatSessions(walletAddress: string) {
         : updates.title;
       
       const next = prev.map(s =>
-        s.id === activeSessionId
+        s.id === currentActiveId
           ? { ...s, ...updates, ...(newTitle ? { title: newTitle } : {}), updatedAt: Date.now() }
           : s
       );
       saveSessions(sessionsKey, next);
+      sessionsRef.current = next;
       return next;
     });
-  }, [activeSessionId, sessionsKey]);
+  }, [sessionsKey]);
 
   /** Update intent counts for tracking stats */
   const updateIntentCount = useCallback((sessionId: string, fulfilled: boolean) => {
@@ -185,28 +193,27 @@ export function useChatSessions(walletAddress: string) {
 
   /** Delete a session; switches to the previous one or creates a new one */
   const deleteSession = useCallback((id: string) => {
-    setSessions(prev => {
-      let next = prev.filter(s => s.id !== id);
-      
-      // Prevent sessions from becoming fully empty
-      if (next.length === 0) {
-        const fallback: ChatSession = {
-          id: generateId(), title: 'New Chat',
-          messages: [], createdAt: Date.now(), updatedAt: Date.now(),
-          intentCount: 0, fulfilledCount: 0,
-        };
-        next = [fallback];
-      }
-      
-      saveSessions(sessionsKey, next);
-      
-      if (activeSessionId === id && next.length > 0) {
-        const fallback = next[next.length - 1];
-        setActiveSessionId(fallback.id);
-        try { localStorage.setItem(activeKey, fallback.id); } catch { /* ignore */ }
-      }
-      return next;
-    });
+    let next = sessionsRef.current.filter(s => s.id !== id);
+
+    if (next.length === 0) {
+      const fallback: ChatSession = {
+        id: generateId(), title: 'New Chat',
+        messages: [], createdAt: Date.now(), updatedAt: Date.now(),
+        intentCount: 0, fulfilledCount: 0,
+      };
+      next = [fallback];
+    }
+
+    sessionsRef.current = next;
+    saveSessions(sessionsKey, next);
+    setSessions(next);
+
+    if (activeSessionIdRef.current === id || activeSessionId === id) {
+      const newActive = next[next.length - 1];
+      setActiveSessionId(newActive.id);
+      activeSessionIdRef.current = newActive.id;
+      try { localStorage.setItem(activeKey, newActive.id); } catch { /* ignore */ }
+    }
   }, [activeSessionId, sessionsKey, activeKey]);
 
   /** Export all sessions to JSON file */

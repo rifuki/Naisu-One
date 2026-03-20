@@ -1,4 +1,5 @@
 import { ReactNode, useRef, useEffect } from 'react';
+import { Bot } from 'lucide-react';
 import { ChatMessage, MessageBubble } from './message-bubble';
 import { SignIntentMessage } from './sign-intent-message';
 import type { WidgetConfirmPayload } from '../widgets';
@@ -67,6 +68,20 @@ export function MessageList({
       className="flex-1 overflow-y-auto py-6 px-4 sm:px-8 space-y-6 flex flex-col items-center no-scrollbar relative z-10"
     >
       <div className="w-full max-w-3xl space-y-6">
+        {messages.length === 0 && !isLoading && !pendingSignIntent && (
+          <div className="flex flex-col items-center justify-center min-h-[55vh] text-center space-y-6 opacity-0 animate-fade-in-up pointer-events-none">
+            <div className="w-16 h-16 rounded-[22px] bg-gradient-to-br from-primary/10 to-indigo-500/10 border border-white/5 flex items-center justify-center shadow-2xl relative overflow-hidden">
+              <div className="absolute inset-0 bg-white/5 backdrop-blur-3xl" />
+              <Bot className="w-8 h-8 text-primary relative z-10 opacity-90" strokeWidth={1.5} />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-semibold text-white tracking-tight">How can I help you today?</h2>
+              <p className="text-slate-400 text-[15px] font-light max-w-[320px] leading-relaxed mx-auto">
+                I can assist you with cross-chain bridging, zero-gas intents, and seamlessly navigating the DeFi ecosystem.
+              </p>
+            </div>
+          </div>
+        )}
         {messages.map((msg, idx) => {
           if (msg.role === 'user' && (msg.content.startsWith('[System]') || msg.content.startsWith('[Widget confirm]'))) return null;
 

@@ -215,8 +215,10 @@ export function useAgent(
   onMessagesChangeRef.current = opts?.onMessagesChange;
 
   // Keep sessionIdRef in sync when caller switches sessions
-  if (opts?.backendSessionId !== undefined && opts.backendSessionId !== sessionIdRef.current) {
-    sessionIdRef.current = opts.backendSessionId;
+  if (opts) {
+    if (opts.backendSessionId !== sessionIdRef.current) {
+      sessionIdRef.current = opts.backendSessionId;
+    }
   }
 
   const messages = opts ? opts.messages : internalMessages;
