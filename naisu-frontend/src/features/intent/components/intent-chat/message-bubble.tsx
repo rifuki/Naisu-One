@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
 
@@ -403,6 +403,43 @@ const SLIPPAGE_OPTIONS = [
   { label: '20%', pct: 20, hint: 'Fastest fill' },
 ];
 
+function DynamicHash({ hash, className }: { hash: string; className?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [displayHash, setDisplayHash] = useState(hash);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+
+    const compute = () => {
+      const available = container.clientWidth;
+      const natural = measure.scrollWidth;
+      if (natural <= available) {
+        setDisplayHash(hash);
+      } else {
+        const ratio = available / natural;
+        const availableChars = Math.floor(hash.length * ratio) - 1;
+        const half = Math.max(4, Math.floor(availableChars / 2));
+        setDisplayHash(`${hash.slice(0, half)}…${hash.slice(-half)}`);
+      }
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [hash]);
+
+  return (
+    <div ref={containerRef} className={`w-full overflow-hidden whitespace-nowrap relative ${className ?? 'font-mono text-[9px] text-slate-400'}`}>
+      <span ref={measureRef} className="absolute invisible whitespace-nowrap pointer-events-none">{hash}</span>
+      {displayHash}
+    </div>
+  );
+}
+
 function TxReceiptRow({
   label, badge, badgeClass, hash, href, copiedKey, copyKey, onCopy,
 }: {
@@ -416,9 +453,7 @@ function TxReceiptRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[7.5px] text-slate-700 leading-none mb-0.5">{label}</div>
-        <div className="font-mono text-[9px] text-slate-400 truncate">
-          {hash.length > 66 ? `${hash.slice(0, 20)}…${hash.slice(-14)}` : hash}
-        </div>
+        <DynamicHash hash={hash} />
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
@@ -1026,9 +1061,6 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       if (!step.txHash) return null;
       const isSolana = step.key === 'sol_sent';
       return {
-        short: isSolana
-          ? `${step.txHash.slice(0, 6)}…${step.txHash.slice(-5)}`
-          : `${step.txHash.slice(0, 8)}…${step.txHash.slice(-6)}`,
         href: isSolana
           ? `https://solscan.io/tx/${step.txHash}?cluster=devnet`
           : `https://sepolia.basescan.org/tx/${step.txHash}`,
@@ -1305,7 +1337,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           </div>
 
                           {/* Text content */}
-                          <div className={`flex flex-col min-w-0 ${isLast ? 'pb-0' : 'pb-0'}`}
+                          <div className={`flex flex-col flex-1 min-w-0`}
                             style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
                             <span className={`text-[10px] font-medium leading-tight ${
                               step.done ? 'text-green-400' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
@@ -1318,20 +1350,32 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                               <span className="text-[8.5px] text-[#0df2df]/50 mt-0.5 leading-snug">{step.detail}</span>
                             )}
 
-                            {/* Inline tx hash chip */}
+                            {/* Inline tx hash — styled as detail line, not a card */}
                             {chip && (
-                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-full overflow-hidden">
-                                <span className="font-mono text-[9px] text-slate-400 leading-none flex-1 whitespace-nowrap">{chip.short}</span>
-                                <a href={chip.href} target="_blank" rel="noreferrer"
-                                  className="text-slate-600 hover:text-[#0df2df] transition-colors shrink-0" title={chip.label}>
-                                  <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                              <div className="flex items-center gap-1 mt-0.5 w-full min-w-0 group/chip">
+                                <span className="material-symbols-outlined text-[8px] shrink-0 text-green-400/30 group-hover/chip:text-green-400/60 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
+                                <a
+                                  href={chip.href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={chip.label}
+                                  className="flex-1 min-w-0 block"
+                                >
+                                  <DynamicHash
+                                    hash={step.txHash!}
+                                    className={`font-mono text-[8.5px] leading-snug overflow-hidden whitespace-nowrap relative transition-colors ${
+                                      step.done
+                                        ? 'text-green-400/50 group-hover/chip:text-green-400/80'
+                                        : 'text-[#0df2df]/50 group-hover/chip:text-[#0df2df]/80'
+                                    }`}
+                                  />
                                 </a>
                                 <button
                                   onClick={() => copyToClipboard(step.txHash!, step.key)}
-                                  className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
+                                  className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                                   title={copiedKey === step.key ? 'Copied!' : 'Copy'}
                                 >
-                                  <span className="material-symbols-outlined text-[10px]">
+                                  <span className="material-symbols-outlined text-[8px]">
                                     {copiedKey === step.key ? 'check' : 'content_copy'}
                                   </span>
                                 </button>
