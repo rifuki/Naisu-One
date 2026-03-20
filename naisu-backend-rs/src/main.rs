@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use naisu_backend_rs::{
     AppState, app_routes,
@@ -31,6 +31,18 @@ async fn main() -> Result<()> {
     let port = config.server.port;
     let state = AppState::new(config);
     info!("Application state initialized");
+
+    // Background: mark solvers offline if they miss heartbeats (check every 30s)
+    {
+        let registry = state.solver_registry.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                registry.mark_stale_offline();
+            }
+        });
+    }
 
     let cors = build_cors_layer(&state.config);
     let app = app_routes(state)

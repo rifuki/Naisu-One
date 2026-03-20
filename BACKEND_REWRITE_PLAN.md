@@ -225,12 +225,12 @@ RFQ:
 - [x] Ping heartbeat every 30s
 - [x] 10-min auto-close
 
-### Phase 4 — Solver WebSocket
-- [ ] `feature/solver/model.rs`
-- [ ] `feature/solver/registry.rs` — DashMap sessions
-- [ ] `feature/solver/handlers.rs` — WS upgrade, message loop
-- [ ] Register/heartbeat/rfq_quote handling
-- [ ] Heartbeat cron (check 60s timeout)
+### Phase 4 — Solver WebSocket ✅ DONE
+- [x] `feature/solver/model.rs`
+- [x] `feature/solver/registry.rs` — DashMap sessions
+- [x] `feature/solver/ws.rs` — WS upgrade, message loop
+- [x] Register/heartbeat/rfq_quote handling
+- [x] Heartbeat cron (check 60s timeout)
 
 ### Phase 5 — RFQ Auction Engine
 - [ ] `feature/solver/auction.rs` — scoring, winner selection
