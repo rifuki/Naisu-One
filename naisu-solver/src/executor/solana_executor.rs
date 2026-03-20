@@ -722,7 +722,7 @@ async fn solve_and_prove_inner(
             seq
         }
         None => {
-            // Fallback: baca dari on-chain account (less safe tapi mencegah hard failure)
+            // Fallback: read from on-chain account (less safe but prevents hard failure)
             warn!(
                 signature = %sig,
                 "Could not parse Wormhole sequence from logs — falling back to account read.\n\
@@ -731,7 +731,7 @@ async fn solve_and_prove_inner(
             get_account_sequence(&config.solana_rpc_url, &wormhole_sequence_pda)
                 .await
                 .unwrap_or(0)
-                .saturating_sub(1) // account holds *next* sequence; kita pakai yang baru saja dipakai
+                .saturating_sub(1) // account holds *next* sequence; subtract 1 to get the one just used
         }
     };
 
