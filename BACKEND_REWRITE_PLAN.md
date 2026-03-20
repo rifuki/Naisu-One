@@ -1,6 +1,6 @@
 # Naisu Backend Rewrite — TypeScript → Rust
 
-> Status: PHASE 1 COMPLETE
+> Status: PHASE 5 COMPLETE — Phase 6 (EVM indexer) is next
 > Last updated: 2026-03-20
 
 ---
