@@ -383,7 +383,7 @@ export function MessageBubble({
         intent={parsed.widget}
         onSignIntent={onSignIntentConfirm}
         signStatus={signIntentStatus}
-        isSigning={isSignIntentFailed || isSignIntentSuccess}
+        isSignFailed={isSignIntentFailed}
         onDutchPlanConfirm={onDutchPlanConfirm}
       />
     );
@@ -479,16 +479,19 @@ const isBubbleTracking = () => _bubbleTracking;
 interface UnifiedIntentBubbleProps {
   intent: GaslessIntentData;
   onSignIntent?: () => void;
-  signStatus?: string | null;
-  isSigning?: boolean;
+  signStatus?: string | null;  // Error/status message from parent
+  isSignFailed?: boolean;      // True when signing failed (MetaMask cancel, etc.)
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
 }
 
-function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
+function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
   const [phase, setPhase] = useState<'plan' | 'sign' | 'tracking' | 'done'>('plan');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
   const [slippagePct, setSlippagePct] = useState(10);
+  // Local signing state — stays in sign phase until activeIntent appears or error occurs
+  const [localSigning, setLocalSigning] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
   // 1-second ticker for live auction price (only active in tracking phase)
   const [now, setNow] = useState(Date.now());
 
@@ -515,6 +518,27 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [phase]);
+
+  // Sign error recovery: when parent reports failure, go back to sign + show error
+  useEffect(() => {
+    if (isSignFailed && localSigning) {
+      setLocalSigning(false);
+      setSignError(signStatus ?? 'Signature rejected. Please try again.');
+    }
+  }, [isSignFailed, signStatus, localSigning]);
+
+  // Sign success: when activeIntent appears in store while signing, transition to tracking
+  useEffect(() => {
+    if (activeIntent && localSigning) {
+      setLocalSigning(false);
+      setSignError(null);
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setPhase('tracking');
+        setIsTransitioning(false);
+      }, 200);
+    }
+  }, [activeIntent, localSigning]);
 
   const { fromUsd, toUsd } = usePythPrices(intent.amount, intent.destinationChain, intent.fromUsd, intent.toUsd);
 
@@ -809,25 +833,31 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                   </div>
                 </div>
 
-                {signStatus && (
-                  <div className="text-[10px] text-primary text-center px-2">{signStatus}</div>
+                {/* Error banner — MetaMask cancel or other signing errors */}
+                {signError && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/8 border border-red-500/20">
+                    <span className="text-red-400 text-[13px] shrink-0 mt-px">✕</span>
+                    <p className="text-[10px] text-red-400 leading-snug">{signError}</p>
+                  </div>
                 )}
 
                 {/* Buttons */}
                 <div className="mt-auto flex flex-col gap-2 pt-2">
                   <button
                     onClick={() => {
+                      setSignError(null);
+                      setLocalSigning(true);
                       onSignIntent?.();
-                      transitionTo('tracking');
+                      // Transition happens via useEffect when activeIntent appears in store
                     }}
-                    disabled={isSigning}
+                    disabled={localSigning}
                     className="w-full py-3 rounded-[13px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:opacity-90 disabled:opacity-50 text-black text-[12px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_16px_rgba(13,242,223,0.12)] flex items-center justify-center gap-1.5"
                   >
-                    {isSigning ? (
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
+                    {localSigning ? (
+                      <>
+                        <div className="w-3.5 h-3.5 rounded-full border-2 border-black/20 border-t-black animate-spin" />
+                        Waiting for signature…
+                      </>
                     ) : (
                       <>
                         Sign & Submit
@@ -836,8 +866,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                     )}
                   </button>
                   <button
-                    onClick={() => transitionTo('plan')}
-                    className="w-full py-2 rounded-[10px] bg-white/3 hover:bg-white/8 border border-white/5 text-slate-400 hover:text-white text-[11px] font-medium transition-colors"
+                    onClick={() => { setSignError(null); transitionTo('plan'); }}
+                    disabled={localSigning}
+                    className="w-full py-2 rounded-[10px] bg-white/3 hover:bg-white/8 border border-white/5 text-slate-400 hover:text-white disabled:opacity-30 text-[11px] font-medium transition-colors"
                   >
                     ← Back
                   </button>
@@ -1030,7 +1061,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                 </div>
               </div>
 
-              {/* RIGHT: progress tracker */}
+              {/* RIGHT: progress tracker + tx references */}
               <div className="w-[210px] shrink-0 p-5 flex flex-col gap-3">
                 <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Progress</div>
                 {progress.length === 0 ? (
@@ -1081,6 +1112,62 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* TX references */}
+                {(activeIntent?.intentId || activeIntent?.contractOrderId) && (
+                  <div className="border-t border-white/5 pt-3 space-y-2 mt-1">
+                    <div className="text-[9px] text-slate-600 uppercase tracking-widest font-bold">References</div>
+                    {activeIntent.intentId && (
+                      <div className="space-y-0.5">
+                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Intent ID</div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-[8px] text-slate-500 truncate">
+                            {activeIntent.intentId.length > 20
+                              ? `${activeIntent.intentId.slice(0, 10)}…${activeIntent.intentId.slice(-8)}`
+                              : activeIntent.intentId}
+                          </span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(activeIntent.intentId)}
+                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
+                            title="Copy Intent ID"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {activeIntent.contractOrderId && (
+                      <div className="space-y-0.5">
+                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Source Tx</div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-[8px] text-slate-500 truncate">
+                            {activeIntent.contractOrderId.startsWith('0x')
+                              ? `${activeIntent.contractOrderId.slice(0, 10)}…${activeIntent.contractOrderId.slice(-6)}`
+                              : `${activeIntent.contractOrderId.slice(0, 12)}…`}
+                          </span>
+                          {activeIntent.contractOrderId.startsWith('0x') && activeIntent.contractOrderId.length === 66 && (
+                            <a
+                              href={`https://sepolia.basescan.org/tx/${activeIntent.contractOrderId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
+                              title="View on BaseScan"
+                            >
+                              <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                            </a>
+                          )}
+                          <button
+                            onClick={() => navigator.clipboard.writeText(activeIntent.contractOrderId!)}
+                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
+                            title="Copy"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
