@@ -218,12 +218,12 @@ RFQ:
 - [x] `feature/intent/handlers.rs` — GET /orders, GET /nonce, PATCH /cancel
 - [x] State wired to AppState
 
-### Phase 3 — SSE Watch Endpoint
-- [ ] `broadcast::channel` in AppState
-- [ ] `GET /intent/watch` — axum SSE handler
-- [ ] Snapshot on connect (current orders for user)
-- [ ] Ping heartbeat every 30s
-- [ ] 10-min auto-close
+### Phase 3 — SSE Watch Endpoint ✅ DONE
+- [x] `broadcast::channel` in AppState
+- [x] `GET /intent/watch` — axum SSE handler
+- [x] Snapshot on connect (current orders for user)
+- [x] Ping heartbeat every 30s
+- [x] 10-min auto-close
 
 ### Phase 4 — Solver WebSocket
 - [ ] `feature/solver/model.rs`
