@@ -1,8 +1,45 @@
 /**
  * DutchAuctionPlanWidget - Clean Dutch auction plan with premium UI
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Zap, ShieldCheck, Check, ArrowRight, Clock } from 'lucide-react';
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
+function usePythPrices(
+  amount: string,
+  destinationChain: string,
+  fromUsdProp: number | null | undefined,
+  toUsdProp: number | null | undefined,
+) {
+  const [fromUsd, setFromUsd] = useState<number | null>(fromUsdProp ?? null);
+  const [toUsd, setToUsd]   = useState<number | null>(toUsdProp ?? null);
+
+  useEffect(() => {
+    if (fromUsdProp != null && toUsdProp != null) {
+      setFromUsd(fromUsdProp);
+      setToUsd(toUsdProp);
+      return;
+    }
+    const toChain = destinationChain === 'solana' ? 'solana' : 'sui';
+    const ac = new AbortController();
+    fetch(
+      `${BACKEND_URL}/api/v1/intent/quote?fromChain=evm-base&toChain=${toChain}&token=native&amount=${amount}`,
+      { signal: ac.signal },
+    )
+      .then(r => r.json())
+      .then((data: { success?: boolean; data?: { fromUsd?: number | null; toUsd?: number | null } }) => {
+        if (data.success && data.data) {
+          setFromUsd(data.data.fromUsd ?? null);
+          setToUsd(data.data.toUsd ?? null);
+        }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, [amount, destinationChain, fromUsdProp, toUsdProp]);
+
+  return { fromUsd, toUsd };
+}
 
 interface DutchAuctionPlanWidgetProps {
   amount: string;
@@ -42,6 +79,8 @@ export function DutchAuctionPlanWidget({
   const [selectedDuration, setSelectedDuration] = useState(initialDuration);
   const [slippagePct, setSlippagePct] = useState(10);
 
+  const { fromUsd: resolvedFromUsd, toUsd: resolvedToUsd } = usePythPrices(amount, destinationChain, fromUsd, toUsd);
+
   const startSol = formatSol(startPrice);
   const adjustedFloorPrice = (() => {
     try { return (BigInt(startPrice) * BigInt(100 - slippagePct) / 100n).toString(); } catch { return _floorPrice; }
@@ -50,9 +89,9 @@ export function DutchAuctionPlanWidget({
   const destLabel = DEST_LABELS[destinationChain] ?? destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[outputToken] ?? outputToken.toUpperCase();
 
-  const inputUsd = fromUsd != null ? (parseFloat(amount) * fromUsd).toFixed(2) : null;
-  const outputUsd = toUsd != null ? (parseFloat(startSol) * toUsd).toFixed(2) : null;
-  const minOutputUsd = toUsd != null ? (parseFloat(floorSol) * toUsd).toFixed(2) : null;
+  const inputUsd = resolvedFromUsd != null ? (parseFloat(amount) * resolvedFromUsd).toFixed(2) : null;
+  const outputUsd = resolvedToUsd != null ? (parseFloat(startSol) * resolvedToUsd).toFixed(2) : null;
+  const minOutputUsd = resolvedToUsd != null ? (parseFloat(floorSol) * resolvedToUsd).toFixed(2) : null;
   const exchangeRate = parseFloat(amount) > 0 ? (parseFloat(startSol) / parseFloat(amount)).toFixed(2) : '0';
 
   return (

@@ -1,4 +1,43 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
+/** Fetch ETH and destination-token USD prices from backend quote endpoint */
+function usePythPrices(
+  amount: string,
+  destinationChain: string,
+  fromUsdProp: number | null | undefined,
+  toUsdProp: number | null | undefined,
+) {
+  const [fromUsd, setFromUsd] = useState<number | null>(fromUsdProp ?? null);
+  const [toUsd, setToUsd]   = useState<number | null>(toUsdProp ?? null);
+
+  useEffect(() => {
+    // If props already have data, use them and skip fetch
+    if (fromUsdProp != null && toUsdProp != null) {
+      setFromUsd(fromUsdProp);
+      setToUsd(toUsdProp);
+      return;
+    }
+    const toChain = destinationChain === 'solana' ? 'solana' : 'sui';
+    const ac = new AbortController();
+    fetch(
+      `${BACKEND_URL}/api/v1/intent/quote?fromChain=evm-base&toChain=${toChain}&token=native&amount=${amount}`,
+      { signal: ac.signal },
+    )
+      .then(r => r.json())
+      .then((data: { success?: boolean; data?: { fromUsd?: number | null; toUsd?: number | null } }) => {
+        if (data.success && data.data) {
+          setFromUsd(data.data.fromUsd ?? null);
+          setToUsd(data.data.toUsd ?? null);
+        }
+      })
+      .catch(() => { /* silent — USD display is non-critical */ });
+    return () => ac.abort();
+  }, [amount, destinationChain, fromUsdProp, toUsdProp]);
+
+  return { fromUsd, toUsd };
+}
 import { Zap, ShieldCheck, Check, ArrowRight, Clock } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
@@ -441,6 +480,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
   const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
   const [slippagePct, setSlippagePct] = useState(10);
 
+  const { fromUsd, toUsd } = usePythPrices(intent.amount, intent.destinationChain, intent.fromUsd, intent.toUsd);
+
   const destLabel = intent.destinationChain === 'solana' ? 'Solana' : intent.destinationChain;
   const tokenLabel = intent.outputToken === 'sol' ? 'SOL' : intent.outputToken === 'msol' ? 'mSOL' : intent.outputToken.toUpperCase();
 
@@ -455,9 +496,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
   const adjustedFloorSol = formatSol(adjustedFloorPrice);
   const currentOption = DURATION_OPTIONS_BUBBLE.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS_BUBBLE[1];
 
-  const inputUsd = intent.fromUsd != null ? (parseFloat(intent.amount) * intent.fromUsd).toFixed(2) : null;
-  const outputUsd = intent.toUsd != null ? (parseFloat(startSol) * intent.toUsd).toFixed(2) : null;
-  const minOutputUsd = intent.toUsd != null ? (parseFloat(adjustedFloorSol) * intent.toUsd).toFixed(2) : null;
+  const inputUsd = fromUsd != null ? (parseFloat(intent.amount) * fromUsd).toFixed(2) : null;
+  const outputUsd = toUsd != null ? (parseFloat(startSol) * toUsd).toFixed(2) : null;
+  const minOutputUsd = toUsd != null ? (parseFloat(adjustedFloorSol) * toUsd).toFixed(2) : null;
   const exchangeRate = parseFloat(intent.amount) > 0 ? (parseFloat(startSol) / parseFloat(intent.amount)).toFixed(2) : '0';
 
   // Plan Phase
