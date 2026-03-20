@@ -501,7 +501,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
   const minOutputUsd = toUsd != null ? (parseFloat(adjustedFloorSol) * toUsd).toFixed(2) : null;
   const exchangeRate = parseFloat(intent.amount) > 0 ? (parseFloat(startSol) / parseFloat(intent.amount)).toFixed(2) : '0';
 
-  // Plan Phase
+  // Plan Phase — horizontal 2-column layout for desktop/laptop/tablet
   if (phase === 'plan') {
     return (
       <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
@@ -512,182 +512,160 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDu
             </svg>
           </div>
         </div>
-        <div className="flex-1 max-w-md">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[12px] font-semibold text-white">Nesu</span>
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
-          
-          <div className="w-full max-w-lg rounded-[24px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans">
+
+          <div className="rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans">
             {/* Header */}
-            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Zap size={14} className="text-[#0df2df] fill-[#0df2df]" />
-                <span className="text-[13px] font-semibold text-white tracking-wide">Live Quote</span>
+                <Zap size={13} className="text-[#0df2df] fill-[#0df2df]" />
+                <span className="text-[12px] font-semibold text-white tracking-wide">Live Quote</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#0df2df]" />
                 <span>Pyth Oracle • 5.0% conf</span>
               </div>
             </div>
 
-            <div className="p-6 space-y-7">
-              
-              {/* Main Conversion */}
-              <div className="flex flex-col items-center justify-center space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-[36px] font-bold text-white tracking-tight leading-none">{intent.amount} <span className="text-[18px] font-medium text-slate-400 ml-1">ETH</span></span>
-                  <ArrowRight size={24} className="text-[#0df2df]" />
-                  <span className="text-[36px] font-bold text-[#0df2df] tracking-tight leading-none">~{startSol} <span className="text-[18px] font-medium ml-1">{tokenLabel}</span></span>
-                </div>
-                <div className="text-[14px] text-slate-500 font-medium tracking-wide">
-                  on {destLabel}
-                </div>
-                
-                {/* USD Pill */}
-                {inputUsd != null && outputUsd != null && (
-                  <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
-                    <span>≈${inputUsd} USD</span>
-                    <span className="opacity-50">→</span>
-                    <span>≈${outputUsd} USD</span>
+            {/* Body — 2 columns */}
+            <div className="flex">
+              {/* LEFT: quote info */}
+              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5">
+                {/* Conversion */}
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
+                    <span className="text-[13px] text-slate-400 font-medium">ETH</span>
+                    <ArrowRight size={18} className="text-[#0df2df] shrink-0" />
+                    <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
+                    <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
                   </div>
-                )}
-              </div>
+                  <div className="text-[11px] text-slate-500 mt-1">on {destLabel}</div>
+                  {inputUsd != null && outputUsd != null && (
+                    <div className="mt-2 inline-flex items-center gap-2 bg-white/[0.03] border border-white/5 rounded-full px-3 py-1 text-[11px] text-slate-400">
+                      <span>≈${inputUsd}</span>
+                      <span className="opacity-40">→</span>
+                      <span>≈${outputUsd}</span>
+                    </div>
+                  )}
+                </div>
 
-              {/* Rate & Min Receive Cards */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Rate Card */}
-                <div className="p-4 rounded-2xl bg-[#0F0F0F] border border-white/5 flex flex-col justify-between">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-3">Rate</div>
-                  <div>
-                    <div className="text-[16px] font-bold text-white font-mono leading-none mb-1">
+                {/* Rate & Min Receive — compact grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/5 flex flex-col gap-1.5">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Rate</div>
+                    <div className="text-[13px] font-bold text-white font-mono leading-tight">
                       1 ETH = {exchangeRate} {tokenLabel}
                     </div>
+                    <div className="text-[9px] text-slate-600 mt-auto">Powered by Pyth Network</div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
-                    Powered by Pyth Network
-                  </div>
-                </div>
-                
-                {/* Min Receive Card */}
-                <div className="p-4 rounded-2xl bg-[#0F0F0F] border border-green-500/20 flex flex-col justify-between relative overflow-hidden">
-                  <div className="absolute top-2 right-2 opacity-[0.04]">
-                    <ShieldCheck size={48} className="text-[#0df2df]" />
-                  </div>
-                  <div className="flex items-center gap-1.5 mb-2 relative z-10">
-                    <ShieldCheck size={14} className="text-green-500" />
-                    <div className="text-[10px] text-green-500 uppercase tracking-widest font-bold">Min. Receive</div>
-                    <div className="ml-auto">
-                      <ShieldCheck size={16} className="text-green-500/30" />
+                  <div className="p-3 rounded-xl bg-[#0F0F0F] border border-green-500/20 flex flex-col gap-1.5 relative overflow-hidden">
+                    <div className="absolute top-1.5 right-1.5 opacity-[0.05]">
+                      <ShieldCheck size={36} className="text-[#0df2df]" />
                     </div>
-                  </div>
-                  <div className="relative z-10">
-                    <div className="text-[20px] font-bold text-green-400 font-mono leading-none mb-1">
-                      {adjustedFloorSol} <span className="text-[13px] font-semibold">{tokenLabel}</span>
+                    <div className="flex items-center gap-1 relative z-10">
+                      <ShieldCheck size={10} className="text-green-500" />
+                      <div className="text-[9px] text-green-500 uppercase tracking-widest font-bold">Min. Receive</div>
+                    </div>
+                    <div className="text-[16px] font-bold text-green-400 font-mono leading-none relative z-10">
+                      {adjustedFloorSol} <span className="text-[10px] font-semibold">{tokenLabel}</span>
                     </div>
                     {minOutputUsd != null && (
-                      <div className="text-[12px] text-slate-400 font-medium mb-3">
-                        ≈${minOutputUsd} USD
-                      </div>
+                      <div className="text-[10px] text-slate-400 relative z-10">≈${minOutputUsd}</div>
                     )}
+                    <div className="text-[8px] text-green-500/50 uppercase tracking-widest font-bold mt-auto relative z-10">
+                      Guaranteed On-Chain
+                    </div>
                   </div>
-                  <div className="text-[9px] text-green-500/70 uppercase tracking-widest font-bold relative z-10">
-                    Guaranteed On-Chain
+                </div>
+              </div>
+
+              {/* RIGHT: settings + action */}
+              <div className="w-[240px] shrink-0 p-5 flex flex-col gap-4">
+                {/* Duration */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Clock size={11} className="text-[#0df2df]" />
+                      <span className="text-[11px] font-semibold text-white">Auction Duration</span>
+                    </div>
+                    <span className="text-[9px] text-slate-500">Longer = better</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {DURATION_OPTIONS_BUBBLE.map((opt) => {
+                      const isSelected = selectedDuration === opt.seconds;
+                      return (
+                        <button
+                          key={opt.seconds}
+                          onClick={() => setSelectedDuration(opt.seconds)}
+                          className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 ${
+                            isSelected
+                              ? 'bg-[#0df2df] text-black shadow-[0_2px_8px_rgba(13,242,223,0.2)]'
+                              : 'bg-[#111] border border-white/5 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
 
-              <div className="h-px w-full bg-white/5" />
-
-              {/* Duration selector */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-[#0df2df]" />
-                    <span className="text-[13px] font-semibold text-white">Auction Duration</span>
+                {/* Slippage */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-white">Slippage</span>
+                    <span className="text-[9px] text-slate-500">Higher = faster fill</span>
                   </div>
-                  <span className="text-[11px] text-slate-500 font-medium">Longer = better rates</span>
+                  <div className="flex gap-1.5">
+                    {SLIPPAGE_OPTIONS.map((opt) => {
+                      const isSelected = slippagePct === opt.pct;
+                      return (
+                        <button
+                          key={opt.pct}
+                          onClick={() => setSlippagePct(opt.pct)}
+                          className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
+                            isSelected
+                              ? 'bg-[#0df2df] text-black shadow-[0_2px_8px_rgba(13,242,223,0.2)]'
+                              : 'bg-[#111] border border-white/5 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          <span className={`text-[8px] ${isSelected ? 'text-black/50' : 'text-slate-600'}`}>{opt.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between px-0.5 text-[10px]">
+                    <span className="text-slate-600">Min: <span className="text-green-400 font-semibold">{adjustedFloorSol} {tokenLabel}</span></span>
+                    <span className="text-slate-700">−{slippagePct}%</span>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  {DURATION_OPTIONS_BUBBLE.map((opt) => {
-                    const isSelected = selectedDuration === opt.seconds;
-                    return (
-                      <button
-                        key={opt.seconds}
-                        onClick={() => setSelectedDuration(opt.seconds)}
-                        className={`flex-1 py-3 rounded-[12px] text-[13px] font-bold transition-all duration-200 ${
-                          isSelected
-                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
-                            : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+
+                {/* Recipient */}
+                <div className="space-y-1.5">
+                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#111] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
+                    {intent.recipientAddress}
+                  </div>
                 </div>
+
+                {/* CTA */}
+                <button
+                  onClick={() => {
+                    onDutchPlanConfirm?.({ ...intent, floorPrice: adjustedFloorPrice, durationSeconds: selectedDuration });
+                    setPhase('sign');
+                  }}
+                  className="mt-auto w-full py-3 rounded-[13px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:opacity-90 text-black text-[12px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_16px_rgba(13,242,223,0.12)] flex items-center justify-center gap-1.5"
+                >
+                  <Check size={14} className="stroke-[3]" />
+                  Looks good — prepare my intent
+                </button>
               </div>
-
-              {/* Slippage tolerance */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
-                  <span className="text-[11px] text-slate-500 font-medium">Higher = faster fill</span>
-                </div>
-                <div className="flex gap-2">
-                  {SLIPPAGE_OPTIONS.map((opt) => {
-                    const isSelected = slippagePct === opt.pct;
-                    return (
-                      <button
-                        key={opt.pct}
-                        onClick={() => setSlippagePct(opt.pct)}
-                        className={`flex-1 py-2.5 rounded-[12px] text-[13px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
-                          isSelected
-                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
-                            : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
-                        }`}
-                      >
-                        <span>{opt.label}</span>
-                        <span className={`text-[9px] font-medium ${isSelected ? 'text-black/60' : 'text-slate-600'}`}>{opt.hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center justify-between px-1 text-[11px] text-slate-600">
-                  <span>Min. receive: <span className="text-green-400 font-semibold">{adjustedFloorSol} {tokenLabel}</span></span>
-                  <span className="text-slate-700">−{slippagePct}% from market</span>
-                </div>
-              </div>
-
-              <div className="h-px w-full bg-white/5" />
-
-              {/* Recipient */}
-              <div className="space-y-2">
-                <div className="text-[11px] text-slate-500 font-medium">Recipient on {destLabel}</div>
-                <div className="font-mono text-[13px] text-slate-300 bg-[#0F0F0F] px-4 py-3.5 rounded-xl border border-white/5 truncate select-all">
-                  {intent.recipientAddress}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 pb-6 pt-1">
-              <button
-                onClick={() => {
-                  onDutchPlanConfirm?.({
-                    ...intent,
-                    floorPrice: adjustedFloorPrice,
-                    durationSeconds: selectedDuration,
-                  });
-                  setPhase('sign');
-                }}
-                className="group relative w-full py-4 rounded-[16px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:bg-[linear-gradient(135deg,_#33ffff_93%,_#99fbf3_93%)] text-black text-[15px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_20px_rgba(13,242,223,0.15)] flex items-center justify-center gap-2 overflow-hidden"
-              >
-                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-black/[0.03]" />
-                <Check size={18} className="relative z-10 stroke-[3]" />
-                <span className="relative z-10">Looks good — prepare my intent</span>
-              </button>
             </div>
           </div>
         </div>
