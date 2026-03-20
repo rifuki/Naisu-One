@@ -1372,11 +1372,28 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           <div className={`flex flex-col flex-1 min-w-0`}
                             style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
                             {/* Step label: white when done (clear), teal when active, dim when pending */}
-                            <span className={`text-[10px] font-medium leading-tight mt-[3px] ${
-                              step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
-                            }`}>
-                              {step.label}
-                            </span>
+                            {step.key === 'winner' && step.label.includes(': ') ? (
+                              <span className={`flex items-center gap-1.5 leading-tight mt-[3px] ${
+                                step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'
+                              }`}>
+                                <span className="text-[10px] font-medium">Winner</span>
+                                <code className={`text-[9px] font-mono px-1 py-px rounded ${
+                                  step.done
+                                    ? 'bg-white/[0.07] text-slate-300 border border-white/10'
+                                    : step.active
+                                    ? 'bg-[#0df2df]/10 text-[#0df2df] border border-[#0df2df]/20'
+                                    : 'bg-white/[0.04] text-slate-500'
+                                }`}>
+                                  {step.label.split(': ')[1]}
+                                </code>
+                              </span>
+                            ) : (
+                              <span className={`text-[10px] font-medium leading-tight mt-[3px] ${
+                                step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
+                              }`}>
+                                {step.label}
+                              </span>
+                            )}
 
                             {/* Active step detail */}
                             {step.active && step.detail && (
