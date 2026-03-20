@@ -714,7 +714,7 @@ async fn solve_and_prove_inner(
 
     let sig = send_and_confirm_transaction(&config.solana_rpc_url, &tx_b64).await?;
 
-    // M2: Parse sequence dari logs post-tx (lebih aman dari pre-read untuk concurrent tasks)
+    // Parse sequence from transaction logs post-submit (safer than pre-reading for concurrent tasks).
     let tx_logs = fetch_transaction_logs(&config.solana_rpc_url, &sig).await;
     let wormhole_sequence = match parse_sequence_from_logs(&tx_logs) {
         Some(seq) => {
@@ -957,14 +957,13 @@ pub async fn solve_and_marginfi(
     Ok((sig, wh_seq))
 }
 
-/// M2: Parse Wormhole sequence number dari program logs transaksi yang sudah dikonfirmasi.
+/// Parse the Wormhole sequence number from confirmed transaction logs.
 ///
-/// Wormhole Anchor SDK v0.30.x emit log:
-/// "Program log: wormhole_sequence: N"
-/// atau via msg!() dari program kita sendiri.
+/// Wormhole Anchor SDK v0.30.x emits: "Program log: wormhole_sequence: N"
+/// or via msg!() from our own program.
 ///
-/// Fallback: jika tidak ditemukan di logs, kembalikan None → caller bisa
-/// baca dari on-chain sequence account (kurang aman, tapi better than nothing).
+/// Returns None if not found — caller can fall back to reading the on-chain
+/// sequence account (less reliable, but better than nothing).
 fn parse_sequence_from_logs(logs: &str) -> Option<u64> {
     for line in logs.lines() {
         let lower = line.to_lowercase();

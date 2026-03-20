@@ -25,10 +25,10 @@ pub async fn fetch_vaa(
 
     let client = reqwest::Client::new();
     let mut attempts = 0u32;
-    let max_attempts = 180; // ~30 min total dengan exponential backoff
+    let max_attempts = 180; // ~30 min total with exponential backoff
     let start = std::time::Instant::now();
 
-    // M1: Exponential backoff: mulai 3s, ×1.5 per retry, cap 30s
+    // Exponential backoff: start 3s, ×1.5 per retry, capped at 30s
     let base_delay_secs: u64 = 3;
     let max_delay_secs: u64 = 30;
     let mut delay_secs = base_delay_secs;

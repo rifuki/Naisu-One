@@ -20,7 +20,7 @@ use tui::{AppEvent, Chain};
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // TUI aktif by default, set SOLVER_TUI=false untuk plain logs
+    // TUI is enabled by default; set SOLVER_TUI=false for plain log output.
     let use_tui = std::env::var("SOLVER_TUI")
         .map(|v| !matches!(v.to_lowercase().as_str(), "0" | "false" | "no"))
         .unwrap_or(true);
