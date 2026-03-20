@@ -1125,7 +1125,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <div className="flex">
 
               {/* LEFT column */}
-              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/[0.08]">
+              <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/[0.08]">
 
                 {/* Amount row — always shown */}
                 <div className="flex items-center gap-3">
