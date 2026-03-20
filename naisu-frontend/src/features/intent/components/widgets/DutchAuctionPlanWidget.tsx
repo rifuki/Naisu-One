@@ -12,6 +12,8 @@ interface DutchAuctionPlanWidgetProps {
   destinationChain: string;
   outputToken: string;
   recipientAddress?: string;
+  fromUsd?: number | null;
+  toUsd?: number | null;
   onConfirm?: (plan: { durationSeconds: number; startPrice: string; floorPrice: string }) => void;
   isConfirmed?: boolean;
 }
@@ -23,27 +25,34 @@ const DURATION_OPTIONS = [
   { label: '5 min', seconds: 300 },
   { label: '10 min', seconds: 600 },
 ];
+const SLIPPAGE_OPTIONS = [
+  { label: '5%',  pct: 5,  hint: 'Slower fill' },
+  { label: '10%', pct: 10, hint: 'Balanced' },
+  { label: '20%', pct: 20, hint: 'Fastest fill' },
+];
 
 function formatSol(lamports: string): string {
   try { return (Number(BigInt(lamports)) / 1e9).toFixed(4); } catch { return lamports; }
 }
 
 export function DutchAuctionPlanWidget({
-  amount, startPrice, floorPrice, durationSeconds: initialDuration,
-  destinationChain, outputToken, recipientAddress, onConfirm, isConfirmed,
+  amount, startPrice, floorPrice: _floorPrice, durationSeconds: initialDuration,
+  destinationChain, outputToken, recipientAddress, fromUsd, toUsd, onConfirm, isConfirmed,
 }: DutchAuctionPlanWidgetProps) {
   const [selectedDuration, setSelectedDuration] = useState(initialDuration);
-  
+  const [slippagePct, setSlippagePct] = useState(10);
+
   const startSol = formatSol(startPrice);
-  const floorSol = formatSol(floorPrice);
+  const adjustedFloorPrice = (() => {
+    try { return (BigInt(startPrice) * BigInt(100 - slippagePct) / 100n).toString(); } catch { return _floorPrice; }
+  })();
+  const floorSol = formatSol(adjustedFloorPrice);
   const destLabel = DEST_LABELS[destinationChain] ?? destinationChain;
   const tokenLabel = OUTPUT_TOKEN_LABELS[outputToken] ?? outputToken.toUpperCase();
 
-  const ethUsd = 3100;
-  const solUsd = 150;
-  const inputUsd = (parseFloat(amount) * ethUsd).toFixed(2);
-  const outputUsd = (parseFloat(startSol) * solUsd).toFixed(2);
-  const minOutputUsd = (parseFloat(floorSol) * solUsd).toFixed(2);
+  const inputUsd = fromUsd != null ? (parseFloat(amount) * fromUsd).toFixed(2) : null;
+  const outputUsd = toUsd != null ? (parseFloat(startSol) * toUsd).toFixed(2) : null;
+  const minOutputUsd = toUsd != null ? (parseFloat(floorSol) * toUsd).toFixed(2) : null;
   const exchangeRate = parseFloat(amount) > 0 ? (parseFloat(startSol) / parseFloat(amount)).toFixed(2) : '0';
 
   return (
@@ -74,11 +83,13 @@ export function DutchAuctionPlanWidget({
           </div>
           
           {/* USD Pill */}
-          <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
-            <span>≈${inputUsd} USD</span>
-            <span className="opacity-50">→</span>
-            <span>≈${outputUsd} USD</span>
-          </div>
+          {inputUsd != null && outputUsd != null && (
+            <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
+              <span>≈${inputUsd} USD</span>
+              <span className="opacity-50">→</span>
+              <span>≈${outputUsd} USD</span>
+            </div>
+          )}
         </div>
 
         {/* Rate & Min Receive Cards */}
@@ -112,9 +123,11 @@ export function DutchAuctionPlanWidget({
               <div className="text-[20px] font-bold text-green-400 font-mono leading-none mb-1">
                 {floorSol} <span className="text-[13px] font-semibold">{tokenLabel}</span>
               </div>
-              <div className="text-[12px] text-slate-400 font-medium mb-3">
-                ≈${parseFloat(minOutputUsd) > 0 ? minOutputUsd : (parseFloat(floorSol) * solUsd).toFixed(2)} USD
-              </div>
+              {minOutputUsd != null && (
+                <div className="text-[12px] text-slate-400 font-medium mb-3">
+                  ≈${minOutputUsd} USD
+                </div>
+              )}
             </div>
             <div className="text-[9px] text-green-500/70 uppercase tracking-widest font-bold relative z-10">
               Guaranteed On-Chain
@@ -124,35 +137,67 @@ export function DutchAuctionPlanWidget({
 
         <div className="h-px w-full bg-white/5" />
 
-        {/* Duration selector */}
+        {/* Duration + Slippage selectors */}
         {onConfirm && !isConfirmed && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Clock size={14} className="text-[#0df2df]" />
-                <span className="text-[13px] font-semibold text-white">Auction Duration</span>
+          <>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Clock size={14} className="text-[#0df2df]" />
+                  <span className="text-[13px] font-semibold text-white">Auction Duration</span>
+                </div>
+                <span className="text-[11px] text-slate-500 font-medium">Longer = better rates</span>
               </div>
-              <span className="text-[11px] text-slate-500 font-medium">Longer = better rates</span>
+              <div className="flex gap-2">
+                {DURATION_OPTIONS.map((opt) => {
+                  const isSelected = selectedDuration === opt.seconds;
+                  return (
+                    <button
+                      key={opt.seconds}
+                      onClick={() => setSelectedDuration(opt.seconds)}
+                      className={`flex-1 py-3 rounded-[12px] text-[13px] font-bold transition-all duration-200 ${
+                        isSelected
+                          ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
+                          : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {DURATION_OPTIONS.map((opt) => {
-                const isSelected = selectedDuration === opt.seconds;
-                return (
-                  <button
-                    key={opt.seconds}
-                    onClick={() => setSelectedDuration(opt.seconds)}
-                    className={`flex-1 py-3 rounded-[12px] text-[13px] font-bold transition-all duration-200 ${
-                      isSelected 
-                        ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]' 
-                        : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
+                <span className="text-[11px] text-slate-500 font-medium">Higher = faster fill</span>
+              </div>
+              <div className="flex gap-2">
+                {SLIPPAGE_OPTIONS.map((opt) => {
+                  const isSelected = slippagePct === opt.pct;
+                  return (
+                    <button
+                      key={opt.pct}
+                      onClick={() => setSlippagePct(opt.pct)}
+                      className={`flex-1 py-2.5 rounded-[12px] text-[13px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
+                        isSelected
+                          ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
+                          : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className={`text-[9px] font-medium ${isSelected ? 'text-black/60' : 'text-slate-600'}`}>{opt.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between px-1 text-[11px] text-slate-600">
+                <span>Min. receive: <span className="text-green-400 font-semibold">{floorSol} {tokenLabel}</span></span>
+                <span className="text-slate-700">−{slippagePct}% from market</span>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         <div className="h-px w-full bg-white/5" />
@@ -173,7 +218,7 @@ export function DutchAuctionPlanWidget({
       {onConfirm && !isConfirmed ? (
         <div className="px-6 pb-6 pt-1">
           <button
-            onClick={() => onConfirm?.({ durationSeconds: selectedDuration, startPrice, floorPrice })}
+            onClick={() => onConfirm?.({ durationSeconds: selectedDuration, startPrice, floorPrice: adjustedFloorPrice })}
             className="group relative w-full py-4 rounded-[16px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:bg-[linear-gradient(135deg,_#33ffff_93%,_#99fbf3_93%)] text-black text-[15px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_20px_rgba(13,242,223,0.15)] flex items-center justify-center gap-2 overflow-hidden"
           >
             <div className="absolute inset-x-0 bottom-0 h-1/2 bg-black/[0.03]" />

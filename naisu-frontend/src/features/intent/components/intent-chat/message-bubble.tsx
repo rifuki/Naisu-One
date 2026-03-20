@@ -46,6 +46,8 @@ interface GaslessIntentData {
   floorPrice: string;
   durationSeconds: number;
   nonce: number;
+  fromUsd?: number | null;
+  toUsd?: number | null;
   solverWarning?: string;
 }
 
@@ -335,11 +337,12 @@ export function MessageBubble({
   // For gasless_intent widget, unified card with internal phase state
   if (parsed?.kind === 'gasless_intent') {
     return (
-      <UnifiedIntentBubble 
+      <UnifiedIntentBubble
         intent={parsed.widget}
         onSignIntent={onSignIntentConfirm}
         signStatus={signIntentStatus}
         isSigning={isSignIntentFailed || isSignIntentSuccess}
+        onDutchPlanConfirm={onDutchPlanConfirm}
       />
     );
   }
@@ -412,49 +415,49 @@ export function MessageBubble({
 }
 
 
+const DURATION_OPTIONS_BUBBLE = [
+  { label: '2 min', seconds: 120 },
+  { label: '5 min', seconds: 300 },
+  { label: '10 min', seconds: 600 },
+];
+
+const SLIPPAGE_OPTIONS = [
+  { label: '5%',  pct: 5,  hint: 'Slower fill' },
+  { label: '10%', pct: 10, hint: 'Balanced' },
+  { label: '20%', pct: 20, hint: 'Fastest fill' },
+];
+
 // Internal component for unified intent flow with phase state
 interface UnifiedIntentBubbleProps {
-  intent: {
-    recipientAddress: string;
-    destinationChain: string;
-    amount: string;
-    outputToken: string;
-    startPrice: string;
-    floorPrice: string;
-    durationSeconds: number;
-    nonce: number;
-  };
+  intent: GaslessIntentData;
   onSignIntent?: () => void;
   signStatus?: string | null;
   isSigning?: boolean;
+  onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
 }
 
-function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: UnifiedIntentBubbleProps) {
+function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning, onDutchPlanConfirm }: UnifiedIntentBubbleProps) {
   const [phase, setPhase] = useState<'plan' | 'sign' | 'done'>('plan');
   const [selectedDuration, setSelectedDuration] = useState(intent.durationSeconds);
-  const [showDurationPicker, setShowDurationPicker] = useState(false);
-  
+  const [slippagePct, setSlippagePct] = useState(10);
+
   const destLabel = intent.destinationChain === 'solana' ? 'Solana' : intent.destinationChain;
   const tokenLabel = intent.outputToken === 'sol' ? 'SOL' : intent.outputToken === 'msol' ? 'mSOL' : intent.outputToken.toUpperCase();
-  
+
   const formatSol = (lamports: string) => {
     try { return (Number(BigInt(lamports)) / 1e9).toFixed(4); } catch { return lamports; }
   };
-  
-  const startSol = formatSol(intent.startPrice);
-  const floorSol = formatSol(intent.floorPrice);
-  const DURATION_OPTIONS = [
-    { label: '2 min', seconds: 120 },
-    { label: '5 min', seconds: 300 },
-    { label: '10 min', seconds: 600 },
-  ];
-  const currentOption = DURATION_OPTIONS.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS[1];
 
-  const ethUsd = 3100;
-  const solUsd = 150;
-  const inputUsd = (parseFloat(intent.amount) * ethUsd).toFixed(2);
-  const outputUsd = (parseFloat(startSol) * solUsd).toFixed(2);
-  const minOutputUsd = (parseFloat(floorSol) * solUsd).toFixed(2);
+  const startSol = formatSol(intent.startPrice);
+  const adjustedFloorPrice = (() => {
+    try { return (BigInt(intent.startPrice) * BigInt(100 - slippagePct) / 100n).toString(); } catch { return intent.floorPrice; }
+  })();
+  const adjustedFloorSol = formatSol(adjustedFloorPrice);
+  const currentOption = DURATION_OPTIONS_BUBBLE.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS_BUBBLE[1];
+
+  const inputUsd = intent.fromUsd != null ? (parseFloat(intent.amount) * intent.fromUsd).toFixed(2) : null;
+  const outputUsd = intent.toUsd != null ? (parseFloat(startSol) * intent.toUsd).toFixed(2) : null;
+  const minOutputUsd = intent.toUsd != null ? (parseFloat(adjustedFloorSol) * intent.toUsd).toFixed(2) : null;
   const exchangeRate = parseFloat(intent.amount) > 0 ? (parseFloat(startSol) / parseFloat(intent.amount)).toFixed(2) : '0';
 
   // Plan Phase
@@ -501,11 +504,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                 </div>
                 
                 {/* USD Pill */}
-                <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
-                  <span>≈${inputUsd} USD</span>
-                  <span className="opacity-50">→</span>
-                  <span>≈${outputUsd} USD</span>
-                </div>
+                {inputUsd != null && outputUsd != null && (
+                  <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
+                    <span>≈${inputUsd} USD</span>
+                    <span className="opacity-50">→</span>
+                    <span>≈${outputUsd} USD</span>
+                  </div>
+                )}
               </div>
 
               {/* Rate & Min Receive Cards */}
@@ -537,11 +542,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                   </div>
                   <div className="relative z-10">
                     <div className="text-[20px] font-bold text-green-400 font-mono leading-none mb-1">
-                      {floorSol} <span className="text-[13px] font-semibold">{tokenLabel}</span>
+                      {adjustedFloorSol} <span className="text-[13px] font-semibold">{tokenLabel}</span>
                     </div>
-                    <div className="text-[12px] text-slate-400 font-medium mb-3">
-                      ≈${parseFloat(minOutputUsd) > 0 ? minOutputUsd : (parseFloat(floorSol) * solUsd).toFixed(2)} USD
-                    </div>
+                    {minOutputUsd != null && (
+                      <div className="text-[12px] text-slate-400 font-medium mb-3">
+                        ≈${minOutputUsd} USD
+                      </div>
+                    )}
                   </div>
                   <div className="text-[9px] text-green-500/70 uppercase tracking-widest font-bold relative z-10">
                     Guaranteed On-Chain
@@ -561,15 +568,15 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                   <span className="text-[11px] text-slate-500 font-medium">Longer = better rates</span>
                 </div>
                 <div className="flex gap-2">
-                  {DURATION_OPTIONS.map((opt) => {
+                  {DURATION_OPTIONS_BUBBLE.map((opt) => {
                     const isSelected = selectedDuration === opt.seconds;
                     return (
                       <button
                         key={opt.seconds}
                         onClick={() => setSelectedDuration(opt.seconds)}
                         className={`flex-1 py-3 rounded-[12px] text-[13px] font-bold transition-all duration-200 ${
-                          isSelected 
-                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]' 
+                          isSelected
+                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
                             : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
                         }`}
                       >
@@ -577,6 +584,37 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Slippage tolerance */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
+                  <span className="text-[11px] text-slate-500 font-medium">Higher = faster fill</span>
+                </div>
+                <div className="flex gap-2">
+                  {SLIPPAGE_OPTIONS.map((opt) => {
+                    const isSelected = slippagePct === opt.pct;
+                    return (
+                      <button
+                        key={opt.pct}
+                        onClick={() => setSlippagePct(opt.pct)}
+                        className={`flex-1 py-2.5 rounded-[12px] text-[13px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
+                          isSelected
+                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]'
+                            : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className={`text-[9px] font-medium ${isSelected ? 'text-black/60' : 'text-slate-600'}`}>{opt.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between px-1 text-[11px] text-slate-600">
+                  <span>Min. receive: <span className="text-green-400 font-semibold">{adjustedFloorSol} {tokenLabel}</span></span>
+                  <span className="text-slate-700">−{slippagePct}% from market</span>
                 </div>
               </div>
 
@@ -595,7 +633,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
             {/* Footer */}
             <div className="px-6 pb-6 pt-1">
               <button
-                onClick={() => setPhase('sign')}
+                onClick={() => {
+                  onDutchPlanConfirm?.({
+                    ...intent,
+                    floorPrice: adjustedFloorPrice,
+                    durationSeconds: selectedDuration,
+                  });
+                  setPhase('sign');
+                }}
                 className="group relative w-full py-4 rounded-[16px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:bg-[linear-gradient(135deg,_#33ffff_93%,_#99fbf3_93%)] text-black text-[15px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_20px_rgba(13,242,223,0.15)] flex items-center justify-center gap-2 overflow-hidden"
               >
                 <div className="absolute inset-x-0 bottom-0 h-1/2 bg-black/[0.03]" />
@@ -640,13 +685,21 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
                 <div className="text-lg text-slate-300">Bridge</div>
                 <div className="text-2xl font-bold text-white">{intent.amount} ETH</div>
                 <div className="text-sm text-slate-400">→</div>
-                <div className="text-xl font-semibold text-primary">{floorSol} - {startSol} {tokenLabel}</div>
+                <div className="text-xl font-semibold text-primary">{adjustedFloorSol} – {startSol} {tokenLabel}</div>
               </div>
 
               <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-2">
                 <div className="flex justify-between text-[11px]">
                   <span className="text-slate-500">Duration</span>
                   <span className="text-slate-300">{currentOption.label}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-500">Slippage</span>
+                  <span className="text-slate-300">{slippagePct}%</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-500">Min. receive</span>
+                  <span className="text-green-400 font-semibold">{adjustedFloorSol} {tokenLabel}</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-slate-500">Recipient</span>

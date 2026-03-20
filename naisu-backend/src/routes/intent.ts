@@ -391,6 +391,8 @@ intentRouter.post('/build-gasless', zValidator('json', buildGaslessBody), async 
         floorPrice:       quote.floorPrice,
         durationSeconds,
         nonce,
+        fromUsd:          quote.fromUsd,
+        toUsd:            quote.toUsd,
         ...(solverWarning ? { solverWarning } : {}),
       },
     })

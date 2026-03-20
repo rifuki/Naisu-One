@@ -107,7 +107,7 @@ User will send `[Widget confirm] outputToken=X duration=Y`. Then call `intent_bu
    - Only output when tool returns `success: true` with `type: "gasless_intent"`.
 
    ```json
-   {"type":"gasless_intent","recipientAddress":"...","destinationChain":"solana","amount":"0.1","outputToken":"sol","startPrice":"14230000000","floorPrice":"13518500000","durationSeconds":300,"nonce":0}
+   {"type":"gasless_intent","recipientAddress":"...","destinationChain":"solana","amount":"0.1","outputToken":"sol","startPrice":"14230000000","floorPrice":"13518500000","durationSeconds":300,"nonce":0,"fromUsd":3100.5,"toUsd":128.4}
    ```
 
    Your intent is ready. Review the card below and click **Sign (Free)** — zero gas cost.

@@ -179,8 +179,9 @@ export default function IntentPage() {
           updateIntentCount(activeSessionId, true);
         }
         // Mark all steps done and set fulfilled flag — card stays permanently as receipt
-        // Mark as fulfilled in Zustand store
-        markFulfilled(fillPrice, winnerSolver);
+        // Mark as fulfilled in Zustand store — read fresh values from store (not stale closure)
+        const { fillPrice: fp, winnerSolver: ws } = useIntentStore.getState().activeIntent ?? {};
+        markFulfilled(fp, ws);
         trackedIntentIdRef.current = null;
         previousIntentIdRef.current = null;
         setPendingGaslessIntent(undefined);

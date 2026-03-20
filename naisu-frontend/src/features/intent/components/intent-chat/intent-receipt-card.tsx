@@ -115,17 +115,33 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
     : progress;
   
   // Use live/completed fulfillment data if available
-  const currentFillPrice = isActive && activeIntent?.fillPrice 
-    ? activeIntent.fillPrice 
+  const currentFillPrice = isActive && activeIntent?.fillPrice
+    ? activeIntent.fillPrice
     : completedIntent?.fillPrice
     ? completedIntent.fillPrice
     : storedFillPrice;
-  
+
   const currentWinnerSolver = isActive && activeIntent?.winnerSolver
     ? activeIntent.winnerSolver
     : completedIntent?.winnerSolver
     ? completedIntent.winnerSolver
     : storedWinnerSolver;
+
+  const currentSignedAt = isActive && activeIntent?.signedAt
+    ? activeIntent.signedAt
+    : completedIntent?.signedAt
+    ? completedIntent.signedAt
+    : data.signedAt;
+
+  const currentFulfilledAt = isActive && activeIntent?.fulfilledAt
+    ? activeIntent.fulfilledAt
+    : completedIntent?.fulfilledAt
+    ? completedIntent.fulfilledAt
+    : data.fulfilledAt;
+
+  const fillTimeSec = currentSignedAt && currentFulfilledAt
+    ? Math.round((currentFulfilledAt - currentSignedAt) / 1000)
+    : null;
   
   // Check if this receipt was already fulfilled
   const wasFulfilled = !!completedIntent || storedFillPrice || storedWinnerSolver || data.fulfilledAt || 
@@ -232,7 +248,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
               </div>
               <div className="flex flex-col px-3 py-2.5 rounded-lg bg-white/3 border border-white/5">
                 <span className="text-[9px] text-slate-600 uppercase tracking-wider mb-0.5">Fill time</span>
-                <span className="text-[12px] font-semibold text-slate-200">~14s</span>
+                <span className="text-[12px] font-semibold text-slate-200">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
               </div>
             </div>
           )}
