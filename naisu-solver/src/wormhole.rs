@@ -57,7 +57,7 @@ pub async fn fetch_vaa(
                     "VAA not ready, retrying..."
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
-                // Exponential backoff: ×1.5, cap di max_delay_secs
+                // Exponential backoff: ×1.5, capped at max_delay_secs
                 delay_secs = (delay_secs * 3 / 2).min(max_delay_secs);
             }
             Err(e) => {

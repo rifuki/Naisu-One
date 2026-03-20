@@ -292,6 +292,12 @@ async fn handle_rfq_message(
         .unwrap_or(0);
     let deadline = msg["deadline"].as_u64().unwrap_or(0);
 
+    // Reject RFQ with invalid/missing prices — quoting 0 would cause a loss if selected.
+    if start_price == 0 || floor_price == 0 {
+        tracing::warn!(order_id = %order_id, start_price, floor_price, "RFQ rejected: invalid prices");
+        return;
+    }
+
     // Reject if order already past deadline
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

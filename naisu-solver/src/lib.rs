@@ -43,11 +43,11 @@ pub async fn run_headless() -> eyre::Result<()> {
         }
     });
 
-    let cfg3 = Arc::clone(&config);
+    let cfg_sol = Arc::clone(&config);
     let solana_to_evm = tokio::spawn(async move {
         loop {
             tracing::info!("Starting Solana -> EVM solver...");
-            if let Err(e) = chains::solana_listener::run(&cfg3).await {
+            if let Err(e) = chains::solana_listener::run(&cfg_sol).await {
                 tracing::error!("Solana listener error: {e} — restarting in 10s...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             }

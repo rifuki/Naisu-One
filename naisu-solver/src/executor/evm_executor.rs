@@ -92,8 +92,13 @@ pub async fn fulfill_and_prove(
     let intent_id_bytes = hex::decode(
         intent.intent_id.trim_start_matches("0x")
     ).map_err(|e| eyre::eyre!("Invalid intent_id hex: {e}"))?;
+    if intent_id_bytes.len() > 32 {
+        return Err(eyre::eyre!(
+            "intent_id decodes to {} bytes, expected ≤32", intent_id_bytes.len()
+        ));
+    }
     let mut intent_id = [0u8; 32];
-    let offset = 32usize.saturating_sub(intent_id_bytes.len());
+    let offset = 32 - intent_id_bytes.len();
     intent_id[offset..].copy_from_slice(&intent_id_bytes);
 
     // Validate recipient is a valid EVM address (20 bytes)
