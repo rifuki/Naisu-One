@@ -11,9 +11,9 @@ use tracing::{debug, info, warn};
 
 type Client = SignerMiddleware<Provider<Http>, LocalWallet>;
 
-/// M4: Ambil nonce berikutnya menggunakan "pending" block tag.
-/// Ini memperhitungkan transaksi yang sudah dikirim tapi belum di-mine,
-/// sehingga lebih aman untuk concurrent submissions dibanding "latest".
+/// Fetch the next nonce using the "pending" block tag.
+/// Accounts for submitted-but-not-yet-mined transactions, making it safer
+/// than "latest" for concurrent submissions.
 async fn get_pending_nonce(client: &Client) -> Result<U256> {
     let addr = client.address();
     client
@@ -23,21 +23,21 @@ async fn get_pending_nonce(client: &Client) -> Result<U256> {
         .map_err(|e| eyre::eyre!("Failed to get pending nonce: {e}"))
 }
 
-/// Hasil dari settle_order / settle_order_urgent.
-/// Digunakan oleh evm_listener untuk menentukan apakah order perlu di-retry atau tidak.
+/// Result of settle_order / settle_order_urgent.
+/// Used by evm_listener to decide whether to retry or give up.
 #[derive(Debug)]
 pub enum SettleOutcome {
-    /// Settlement berhasil — tx_hash
+    /// Settlement succeeded — contains the tx hash.
     Success(String),
-    /// Error permanen — jangan retry, jangan solve_and_prove ulang.
-    /// Contoh: "VAA already processed", "Order not active", on-chain revert.
+    /// Permanent error — do not retry, do not re-run solve_and_prove.
+    /// Examples: "VAA already processed", "Order not active", on-chain revert.
     PermanentSkip(String),
-    /// Error transient — boleh retry di polling berikutnya.
-    /// Contoh: RPC timeout, nonce conflict, network error.
+    /// Transient error — may succeed on next polling attempt.
+    /// Examples: RPC timeout, nonce conflict, network error.
     TransientError(String),
 }
 
-/// Helper — apakah error ini permanen (tidak akan hilang dengan retry)?
+/// Returns true if the error message indicates a permanent on-chain failure.
 fn is_permanent_error(msg: &str) -> bool {
     msg.contains("VAA already processed")
         || msg.contains("Order not active")
@@ -138,18 +138,9 @@ pub async fn fulfill_and_prove(
     let receipt = pending.await?.ok_or_else(|| eyre::eyre!("No receipt"))?;
     let tx_hash = format!("{:?}", receipt.transaction_hash);
 
-    // Parse Wormhole sequence from LogMessagePublished event
-    // event LogMessagePublished(address indexed sender, uint64 sequence, uint32 nonce, bytes payload, uint8 consistencyLevel)
-    // topic[0] = keccak256("LogMessagePublished(address,uint64,uint32,bytes,uint8)")
-    // topic[1] = sender (indexed address)
-    // data     = abi.encode(sequence, nonce, payload_offset, consistencyLevel, payload...)
-    //   data[0..32]    = sequence (uint64, right-aligned)
-    // Actually the cast log shows:
-    // data 0-32: 0 (sequence in the payload above? No, wait)
-    // Wait, the cast log shows data:
-    // 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080  <- wait, this is 128 bytes of zeros? No, the first 32 bytes is 0. Second 32 is 0. Third is 0x80. Fourth is 0xc8.
-    // The sequence is 0 because I used Sequence #0 on a new bridge!
-    // The order of data is: sequence (0), nonce (0), payload_offset (0x80), consistencyLevel (200=0xc8), payload_len (0x60)
+    // Parse Wormhole sequence from LogMessagePublished event.
+    // Data layout: sequence (uint64) | nonce (uint32) | payload_offset | consistencyLevel | payload
+    // The sequence occupies data[0..32] (right-aligned uint64).
     let wh_topic = ethers::utils::keccak256(
         b"LogMessagePublished(address,uint64,uint32,bytes,uint8)"
     );
@@ -176,6 +167,25 @@ pub async fn fulfill_and_prove(
     Ok((tx_hash, sequence))
 }
 
+/// ABI-encode calldata for `settleOrder(bytes encodedVaa)`.
+/// Layout: 4-byte selector | 32-byte offset (=32) | 32-byte length | data (padded to 32-byte boundary)
+fn encode_settle_calldata(vaa: &[u8]) -> Vec<u8> {
+    let selector = &ethers::utils::keccak256(b"settleOrder(bytes)")[..4];
+    let data_len = vaa.len();
+    let padded_len = data_len.div_ceil(32) * 32;
+
+    let mut calldata = selector.to_vec();
+    let mut offset_bytes = [0u8; 32];
+    offset_bytes[31] = 32;
+    calldata.extend_from_slice(&offset_bytes);
+    let mut len_bytes = [0u8; 32];
+    len_bytes[24..].copy_from_slice(&(data_len as u64).to_be_bytes());
+    calldata.extend_from_slice(&len_bytes);
+    calldata.extend_from_slice(vaa);
+    calldata.resize(calldata.len() + (padded_len - data_len), 0);
+    calldata
+}
+
 /// EVM→Sui/Solana direction (v2 Wormhole):
 /// Submits Wormhole VAA (from Sui/Solana solve_and_prove tx) to settleOrder().
 /// EVM contract verifies VAA and releases locked ETH to solver.
@@ -197,28 +207,9 @@ pub async fn settle_order(
         Err(e) => return SettleOutcome::TransientError(format!("invalid contract address: {e}")),
     };
 
-    // settleOrder(bytes encodedVaa) selector
-    let selector = &ethers::utils::keccak256(b"settleOrder(bytes)")[..4];
+    let calldata = encode_settle_calldata(&vaa);
 
-    // ABI-encode bytes: offset (32) + length (32) + data (padded to 32-byte boundary)
-    let data_len = vaa.len();
-    let padded_len = data_len.div_ceil(32) * 32;
-    let mut calldata = selector.to_vec();
-    // offset to bytes data = 32
-    let mut offset_bytes = [0u8; 32];
-    offset_bytes[31] = 32;
-    calldata.extend_from_slice(&offset_bytes);
-    // length
-    let mut len_bytes = [0u8; 32];
-    len_bytes[24..].copy_from_slice(&(data_len as u64).to_be_bytes());
-    calldata.extend_from_slice(&len_bytes);
-    // data padded
-    calldata.extend_from_slice(&vaa);
-    calldata.resize(calldata.len() + (padded_len - data_len), 0);
-
-    // ── H1: Pre-flight simulation ────────────────────────────────────────────
-    // Simulasikan transaksi via eth_call. Jika revert → return PermanentSkip
-    // tanpa broadcast, hemat gas.
+    // Pre-flight simulation via eth_call — if revert, skip broadcast and save gas.
     let simulate_req = TransactionRequest::new()
         .to(contract_addr)
         .data(Bytes::from(calldata.clone()));
@@ -226,82 +217,27 @@ pub async fn settle_order(
     if let Err(e) = client.call(&simulate_req.into(), None).await {
         let msg = format!("{e}");
         if is_permanent_error(&msg) {
-            info!(
-                "Pre-flight simulation: permanent revert detected — skipping broadcast. Reason: {msg}"
-            );
+            info!("Pre-flight simulation: permanent revert — skipping broadcast. reason={msg}");
             return SettleOutcome::PermanentSkip(format!("pre-flight: {msg}"));
         }
-        // Non-revert error (RPC issue) — lanjutkan broadcast, mungkin berhasil
-        warn!("Pre-flight simulation failed with non-revert error: {msg} — attempting broadcast anyway");
+        // Non-revert RPC error — attempt broadcast anyway.
+        warn!("Pre-flight simulation: non-revert error: {msg} — broadcasting anyway");
     }
-    // ────────────────────────────────────────────────────────────────────────
 
     let mut tx = TransactionRequest::new()
         .to(contract_addr)
         .data(Bytes::from(calldata));
 
-
-    // M4: Pending nonce
     if let Ok(nonce) = get_pending_nonce(&client).await {
         tx = tx.nonce(nonce);
     }
 
     info!(settle_chain_id = chain_id, contract = %contract_address, "Calling settleOrder on EVM with VAA ({} bytes)...", vaa.len());
 
-    // M3: Retry loop
-    const MAX_SETTLE_RETRIES: u32 = 3;
-    let mut settle_attempt = 0u32;
-
-    loop {
-        settle_attempt += 1;
-
-        match client.send_transaction(tx.clone(), None).await {
-            Ok(pending) => match pending.await {
-                Ok(Some(receipt)) => {
-                    let tx_hash = format!("{:?}", receipt.transaction_hash);
-                    debug!(tx_hash = %tx_hash, "settleOrder complete");
-                    return SettleOutcome::Success(tx_hash);
-                }
-                Ok(None) => {
-                    if settle_attempt >= MAX_SETTLE_RETRIES {
-                        return SettleOutcome::TransientError(
-                            "No receipt after max retries".to_string()
-                        );
-                    }
-                    let backoff = 1u64 << settle_attempt; // 2s, 4s, 8s
-                    warn!(attempt = settle_attempt, backoff_secs = backoff, "settle_order: no receipt, retrying...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
-                }
-                Err(e) => {
-                    let msg = format!("{e}");
-                    if is_permanent_error(&msg) {
-                        return SettleOutcome::PermanentSkip(msg);
-                    }
-                    if settle_attempt >= MAX_SETTLE_RETRIES {
-                        return SettleOutcome::TransientError(msg);
-                    }
-                    let backoff = 1u64 << settle_attempt;
-                    warn!(attempt = settle_attempt, backoff_secs = backoff, error = %msg, "settle_order: receipt error, retrying...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
-                }
-            },
-            Err(e) => {
-                let msg = format!("{e}");
-                if is_permanent_error(&msg) {
-                    return SettleOutcome::PermanentSkip(msg);
-                }
-                if settle_attempt >= MAX_SETTLE_RETRIES {
-                    return SettleOutcome::TransientError(msg);
-                }
-                let backoff = 1u64 << settle_attempt;
-                warn!(attempt = settle_attempt, backoff_secs = backoff, error = %msg, "settle_order: send error, retrying...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
-            }
-        }
-    }
+    settle_with_retry(&client, tx, "settle_order").await
 }
 
-/// Settle with higher gas price for urgent transactions (deadline approaching)
+/// Settle with elevated gas price for time-sensitive transactions (deadline approaching).
 pub async fn settle_order_urgent(
     config: &Config,
     vaa: Vec<u8>,
@@ -319,23 +255,9 @@ pub async fn settle_order_urgent(
         Err(e) => return SettleOutcome::TransientError(format!("invalid contract address: {e}")),
     };
 
-    // settleOrder(bytes encodedVaa) selector
-    let selector = &ethers::utils::keccak256(b"settleOrder(bytes)")[..4];
+    let calldata = encode_settle_calldata(&vaa);
 
-    // ABI-encode bytes
-    let data_len = vaa.len();
-    let padded_len = data_len.div_ceil(32) * 32;
-    let mut calldata = selector.to_vec();
-    let mut offset_bytes = [0u8; 32];
-    offset_bytes[31] = 32;
-    calldata.extend_from_slice(&offset_bytes);
-    let mut len_bytes = [0u8; 32];
-    len_bytes[24..].copy_from_slice(&(data_len as u64).to_be_bytes());
-    calldata.extend_from_slice(&len_bytes);
-    calldata.extend_from_slice(&vaa);
-    calldata.resize(calldata.len() + (padded_len - data_len), 0);
-
-    // ── H1: Pre-flight simulation ────────────────────────────────────────────
+    // Pre-flight simulation.
     let simulate_req = TransactionRequest::new()
         .to(contract_addr)
         .data(Bytes::from(calldata.clone()));
@@ -343,52 +265,49 @@ pub async fn settle_order_urgent(
     if let Err(e) = client.call(&simulate_req.into(), None).await {
         let msg = format!("{e}");
         if is_permanent_error(&msg) {
-            info!(
-                "Pre-flight simulation (URGENT): permanent revert detected — skipping broadcast. Reason: {msg}"
-            );
+            info!("Pre-flight simulation (URGENT): permanent revert — skipping broadcast. reason={msg}");
             return SettleOutcome::PermanentSkip(format!("pre-flight: {msg}"));
         }
-        warn!("Pre-flight simulation (URGENT) failed with non-revert error: {msg} — attempting broadcast anyway");
+        warn!("Pre-flight simulation (URGENT): non-revert error: {msg} — broadcasting anyway");
     }
-    // ────────────────────────────────────────────────────────────────────────
 
-    // Use 2x gas price for faster inclusion (Base Sepolia)
-    let gas_price = 2_000_000_000u64; // 2 gwei (2x normal)
+    // 2 gwei — 2x normal priority for faster inclusion on Base Sepolia.
+    const URGENT_GAS_PRICE: u64 = 2_000_000_000;
+    debug!(gas_price_gwei = URGENT_GAS_PRICE / 1_000_000_000, "URGENT settleOrder: elevated gas price");
 
     let mut tx = TransactionRequest::new()
         .to(contract_addr)
         .data(Bytes::from(calldata))
-        .gas_price(U256::from(gas_price));
+        .gas_price(U256::from(URGENT_GAS_PRICE));
 
-    // M4: Pending nonce
     if let Ok(nonce) = get_pending_nonce(&client).await {
         tx = tx.nonce(nonce);
     }
 
-    debug!(gas_price_gwei = gas_price / 1_000_000_000, "URGENT settleOrder sending with high gas");
+    settle_with_retry(&client, tx, "settle_order_urgent").await
+}
 
-    // M3: Retry loop
-    const MAX_SETTLE_RETRIES: u32 = 3;
-    let mut settle_attempt = 0u32;
+/// Shared retry loop for both settle variants.
+async fn settle_with_retry(client: &Client, tx: TransactionRequest, tag: &str) -> SettleOutcome {
+    const MAX_RETRIES: u32 = 3;
+    let mut attempt = 0u32;
 
     loop {
-        settle_attempt += 1;
+        attempt += 1;
 
         match client.send_transaction(tx.clone(), None).await {
             Ok(pending) => match pending.await {
                 Ok(Some(receipt)) => {
                     let tx_hash = format!("{:?}", receipt.transaction_hash);
-                    debug!(tx_hash = %tx_hash, "URGENT settleOrder complete");
+                    debug!(tx_hash = %tx_hash, "{tag}: complete");
                     return SettleOutcome::Success(tx_hash);
                 }
                 Ok(None) => {
-                    if settle_attempt >= MAX_SETTLE_RETRIES {
-                        return SettleOutcome::TransientError(
-                            "No receipt after max retries (URGENT)".to_string()
-                        );
+                    if attempt >= MAX_RETRIES {
+                        return SettleOutcome::TransientError("No receipt after max retries".to_string());
                     }
-                    let backoff = 1u64 << settle_attempt;
-                    warn!(attempt = settle_attempt, backoff_secs = backoff, "settle_order_urgent: no receipt, retrying...");
+                    let backoff = 1u64 << attempt;
+                    warn!(attempt, backoff_secs = backoff, "{tag}: no receipt, retrying...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
                 }
                 Err(e) => {
@@ -396,11 +315,11 @@ pub async fn settle_order_urgent(
                     if is_permanent_error(&msg) {
                         return SettleOutcome::PermanentSkip(msg);
                     }
-                    if settle_attempt >= MAX_SETTLE_RETRIES {
+                    if attempt >= MAX_RETRIES {
                         return SettleOutcome::TransientError(msg);
                     }
-                    let backoff = 1u64 << settle_attempt;
-                    warn!(attempt = settle_attempt, backoff_secs = backoff, error = %msg, "settle_order_urgent: receipt error, retrying...");
+                    let backoff = 1u64 << attempt;
+                    warn!(attempt, backoff_secs = backoff, error = %msg, "{tag}: receipt error, retrying...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
                 }
             },
@@ -409,11 +328,11 @@ pub async fn settle_order_urgent(
                 if is_permanent_error(&msg) {
                     return SettleOutcome::PermanentSkip(msg);
                 }
-                if settle_attempt >= MAX_SETTLE_RETRIES {
+                if attempt >= MAX_RETRIES {
                     return SettleOutcome::TransientError(msg);
                 }
-                let backoff = 1u64 << settle_attempt;
-                warn!(attempt = settle_attempt, backoff_secs = backoff, error = %msg, "settle_order_urgent: send error, retrying...");
+                let backoff = 1u64 << attempt;
+                warn!(attempt, backoff_secs = backoff, error = %msg, "{tag}: send error, retrying...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
             }
         }

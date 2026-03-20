@@ -45,10 +45,9 @@ pub struct Config {
     // Strategy
     pub min_profit_bps: u64,
 
-    // Solver network (optional — enables registration + RFQ server)
+    // Solver network (optional — enables registration + coordinator WS connection)
     pub solver_name:               Option<String>,
     pub solver_backend_url:        Option<String>,
-    pub solver_rfq_port:           u16,
     pub solver_quote_discount_bps: u64,   // discount off startPrice for user; e.g. 200 = 2%
     pub solver_eta_seconds:        u64,   // solver's claimed fill time
 }
@@ -102,10 +101,6 @@ impl Config {
 
             solver_name:               env::var("SOLVER_NAME").ok(),
             solver_backend_url:        env::var("SOLVER_BACKEND_URL").ok(),
-            solver_rfq_port:           env::var("SOLVER_RFQ_PORT")
-                .unwrap_or_else(|_| "3001".to_string())
-                .parse()
-                .unwrap_or(3001),
             solver_quote_discount_bps: env::var("SOLVER_QUOTE_DISCOUNT_BPS")
                 .unwrap_or_else(|_| "200".to_string())
                 .parse()
