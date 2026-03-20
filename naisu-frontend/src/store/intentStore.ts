@@ -56,16 +56,19 @@ export const useIntentStore = create<IntentState>()(
       
       setActiveIntent: (intent) => set({ activeIntent: intent }),
       
-      updateProgress: (progress) => 
-        set((state) => ({
-          activeIntent: state.activeIntent 
-            ? { 
-                ...state.activeIntent, 
-                progress,
-                progressUpdatedAt: Date.now()
-              }
-            : null
-        })),
+      updateProgress: (progress) =>
+        set((state) => {
+          const updated = state.activeIntent
+            ? { ...state.activeIntent, progress, progressUpdatedAt: Date.now() }
+            : null;
+          // Keep completedIntents snapshot in sync so late-arriving events (e.g. settled txHash)
+          // are reflected even after markFulfilled has already snapshotted the intent.
+          const completedIntents =
+            updated?.isFulfilled
+              ? { ...state.completedIntents, [updated.intentId]: updated }
+              : state.completedIntents;
+          return { activeIntent: updated, completedIntents };
+        }),
       
       updateIntentId: (contractOrderId) =>
         set((state) => ({
@@ -104,7 +107,12 @@ export const useIntentStore = create<IntentState>()(
                 fulfilledAt: Date.now(),
                 fillPrice: fillPrice || state.activeIntent.fillPrice,
                 winnerSolver: winnerSolver || state.activeIntent.winnerSolver,
-                progress: state.activeIntent.progress.map(s => ({ ...s, done: true, active: false })),
+                progress: state.activeIntent.progress.map(s => {
+                  // Keep settled active (spinner) if txHash hasn't arrived yet —
+                  // the 'settled' SSE event arrives late and will mark it done.
+                  if (s.key === 'settled' && !s.txHash) return { ...s, done: false, active: true };
+                  return { ...s, done: true, active: false };
+                }),
                 progressUpdatedAt: Date.now()
               }
             : null;
