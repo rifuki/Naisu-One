@@ -6,10 +6,10 @@ import { useAgent, type AgentMessage, type TxData, type GaslessIntentData } from
 
 interface AgentContextValue {
   sessions: ChatSession[];
-  activeSessionId: string;
+  activeSessionId: string | null;
   activeSession: ChatSession | null;
   createSession: () => ChatSession;
-  switchSession: (id: string) => void;
+  switchSession: (id: string | null) => void;
   deleteSession: (id: string) => void;
   exportSessions: () => void;
   importSessions: (file: File) => Promise<{ success: boolean; count: number; error?: string }>;

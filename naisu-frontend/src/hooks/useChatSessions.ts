@@ -97,22 +97,22 @@ export function useChatSessions(walletAddress: string) {
   // Keep stable ref for functions that need latest state without dependency
   const sessionsRef = useRef<ChatSession[]>([]);
 
-  const [sessions, setSessions] = useState<ChatSession[]>(() => initSessions(sessionsKey));
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+  const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions(sessionsKey));
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
     const saved = localStorage.getItem(activeKey);
-    const all   = initSessions(sessionsKey);
+    const all   = loadSessions(sessionsKey);
     if (saved && all.find(s => s.id === saved)) return saved;
-    return all[all.length - 1].id;
+    return null;
   });
 
   // Keep activeSessionId in a stable ref to prevent closure staleness in callbacks
-  const activeSessionIdRef = useRef<string>(activeSessionId);
+  const activeSessionIdRef = useRef<string | null>(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
   // Sync ref
   sessionsRef.current = sessions;
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
+  const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) ?? null : null;
 
   const persist = useCallback((next: ChatSession[]) => {
     setSessions(next);
@@ -120,38 +120,46 @@ export function useChatSessions(walletAddress: string) {
     saveSessions(sessionsKey, next);
   }, [sessionsKey]);
 
-  /** Create a brand-new empty session and switch to it.
-   *  Prunes previous empty sessions so stale ghosts don't accumulate. */
-  const createSession = useCallback(() => {
+  /** Create a brand-new empty session and switch to it. */
+  const createSession = useCallback((title: string = 'New Chat') => {
     const session: ChatSession = {
-      id: generateId(), title: 'New Chat',
+      id: generateId(), title,
       messages: [], createdAt: Date.now(), updatedAt: Date.now(),
       intentCount: 0, fulfilledCount: 0,
     };
     setSessions(prev => {
-      // Prune any existing empty sessions before adding the new one
-      const withContent = prev.filter(s => (s.messages?.length ?? 0) > 0);
-      const next = [...withContent, session];
+      const next = [...prev, session];
       saveSessions(sessionsKey, next);
+      sessionsRef.current = next;
       return next;
     });
     setActiveSessionId(session.id);
+    activeSessionIdRef.current = session.id;
     try { localStorage.setItem(activeKey, session.id); } catch { /* ignore */ }
     return session;
   }, [sessionsKey, activeKey]);
 
-  /** Switch to an existing session */
-  const switchSession = useCallback((id: string) => {
+  /** Switch to an existing session or null for new virtual chat */
+  const switchSession = useCallback((id: string | null) => {
     setActiveSessionId(id);
-    try { localStorage.setItem(activeKey, id); } catch { /* ignore */ }
+    if (id) {
+      try { localStorage.setItem(activeKey, id); } catch { /* ignore */ }
+    } else {
+      try { localStorage.removeItem(activeKey); } catch { /* ignore */ }
+    }
   }, [activeKey]);
 
   /** Update the active session's messages and auto-generate title from first user message */
   const updateActiveSession = useCallback((
     updates: Partial<Pick<ChatSession, 'messages' | 'backendSessionId' | 'title'>>
   ) => {
-    // Read from stable ref to prevent activeSessionId closure bugs
-    const currentActiveId = activeSessionIdRef.current;
+    // Read from stable ref
+    let currentActiveId = activeSessionIdRef.current;
+    
+    if (!currentActiveId) {
+      const session = createSession();
+      currentActiveId = session.id;
+    }
     
     setSessions(prev => {
       const current = prev.find(s => s.id === currentActiveId);
@@ -191,30 +199,18 @@ export function useChatSessions(walletAddress: string) {
     });
   }, [sessionsKey]);
 
-  /** Delete a session; switches to the previous one or creates a new one */
+  /** Delete a session; switches to new virtual chat if active deleted */
   const deleteSession = useCallback((id: string) => {
     let next = sessionsRef.current.filter(s => s.id !== id);
-
-    if (next.length === 0) {
-      const fallback: ChatSession = {
-        id: generateId(), title: 'New Chat',
-        messages: [], createdAt: Date.now(), updatedAt: Date.now(),
-        intentCount: 0, fulfilledCount: 0,
-      };
-      next = [fallback];
-    }
 
     sessionsRef.current = next;
     saveSessions(sessionsKey, next);
     setSessions(next);
 
     if (activeSessionIdRef.current === id || activeSessionId === id) {
-      const newActive = next[next.length - 1];
-      setActiveSessionId(newActive.id);
-      activeSessionIdRef.current = newActive.id;
-      try { localStorage.setItem(activeKey, newActive.id); } catch { /* ignore */ }
+      switchSession(null);
     }
-  }, [activeSessionId, sessionsKey, activeKey]);
+  }, [activeSessionId, sessionsKey, switchSession]);
 
   /** Export all sessions to JSON file */
   const exportSessions = useCallback(() => {
@@ -273,15 +269,9 @@ export function useChatSessions(walletAddress: string) {
 
   /** Clear all sessions (dangerous!) */
   const clearAllSessions = useCallback(() => {
-    const fresh: ChatSession = {
-      id: generateId(), title: 'New Chat',
-      messages: [], createdAt: Date.now(), updatedAt: Date.now(),
-      intentCount: 0, fulfilledCount: 0,
-    };
-    persist([fresh]);
-    setActiveSessionId(fresh.id);
-    try { localStorage.setItem(activeKey, fresh.id); } catch { /* ignore */ }
-  }, [persist, activeKey]);
+    persist([]);
+    switchSession(null);
+  }, [persist, switchSession]);
 
   return {
     sessions,

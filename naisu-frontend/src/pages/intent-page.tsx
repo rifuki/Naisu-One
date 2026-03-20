@@ -133,6 +133,10 @@ export default function IntentPage() {
     else if (activeSessionId && chatParam !== activeSessionId) {
       setSearchParams({ chat: activeSessionId }, { replace: true });
     }
+    // If activeSessionId is null (new chat) but URL has a chat param, clear it
+    else if (!activeSessionId && chatParam) {
+      setSearchParams({}, { replace: true });
+    }
   }, [activeSessionId, searchParams, sessions /* handleSwitchSession is omitted as it causes loop if not careful */, setSearchParams]);
 
   const currentMsgIdxRef = useRef(0);
@@ -336,10 +340,7 @@ export default function IntentPage() {
   useEffect(() => {
     if (initialIntentRef.current && !initialSentRef.current) {
       initialSentRef.current = true;
-      // Force a pristine session for new intents from the home page
-      createSession();
-      // Delay slightly so the new session has time to become active
-      // and useSolanaAddress has time to detect injected wallets
+      // Delay slightly so useSolanaAddress has time to detect injected wallets
       setTimeout(() => {
         handleSend(initialIntentRef.current);
       }, 500);
@@ -405,7 +406,7 @@ export default function IntentPage() {
   );
 
   /** Switch to an existing session — clears active intent so the new session starts fresh */
-  const handleSwitchSession = useCallback((id: string) => {
+  const handleSwitchSession = useCallback((id: string | null) => {
     clearActiveIntent();
     setSignedIntentSnapshot(undefined);
     setSignedAt(undefined);
@@ -434,12 +435,9 @@ export default function IntentPage() {
     previousIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
 
-    // Only create a new session if the current one actually has content.
-    // If already on an empty session, reusing it avoids accumulating ghost sessions.
-    if (!isEffectivelyEmpty) {
-      createSession();
-    }
-  }, [createSession, setPendingTx, setPendingGaslessIntent, messages.length, intentFulfilled, signedIntentSnapshot, clearActiveIntent]);
+    // Clean state for fresh start
+    handleSwitchSession(null);
+  }, [handleSwitchSession, setPendingTx, setPendingGaslessIntent, clearActiveIntent]);
 
   /** Handle widget confirm — agent sent a quote_review widget, user confirmed selections */
   const handleDutchPlanConfirm = useCallback((intentData: {
