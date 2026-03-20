@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Zap, ShieldCheck, Check, ArrowRight, Clock } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
@@ -13,17 +14,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: number;
-}
-
-interface SignIntentParams {
-  recipientAddress: string;
-  destinationChain: string;
-  amount: string;
-  outputToken: string;
-  startPrice: string;
-  floorPrice: string;
-  durationSeconds: number;
-  nonce: number;
 }
 
 interface MessageBubbleProps {
@@ -460,6 +450,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
   ];
   const currentOption = DURATION_OPTIONS.find(o => o.seconds === selectedDuration) || DURATION_OPTIONS[1];
 
+  const ethUsd = 3100;
+  const solUsd = 150;
+  const inputUsd = (parseFloat(intent.amount) * ethUsd).toFixed(2);
+  const outputUsd = (parseFloat(startSol) * solUsd).toFixed(2);
+  const minOutputUsd = (parseFloat(floorSol) * solUsd).toFixed(2);
+  const exchangeRate = parseFloat(intent.amount) > 0 ? (parseFloat(startSol) / parseFloat(intent.amount)).toFixed(2) : '0';
+
   // Plan Phase
   if (phase === 'plan') {
     return (
@@ -477,147 +474,133 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSigning }: Un
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
           
-          <div className="rounded-xl overflow-hidden border border-primary/20 bg-[#0a1310] shadow-lg">
-            {/* Card Header */}
-            <div className="px-4 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center justify-between">
+          <div className="w-full max-w-lg rounded-[24px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-                <span className="text-[11px] font-medium text-primary">Dutch Auction</span>
+                <Zap size={14} className="text-[#0df2df] fill-[#0df2df]" />
+                <span className="text-[13px] font-semibold text-white tracking-wide">Live Quote</span>
               </div>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
-                <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span className="text-[9px] text-primary font-medium">Pyth</span>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                <div className="w-1.5 h-1.5 rounded-full bg-[#0df2df]" />
+                <span>Pyth Oracle • 5.0% conf</span>
               </div>
             </div>
 
-            <div className="p-4 space-y-4">
-              {/* Bridge Route */}
-              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                <div className="flex items-center justify-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                      <span className="text-[8px] font-bold text-indigo-400">B</span>
-                    </div>
-                    <span className="text-[11px] text-slate-300">Base</span>
-                  </div>
-                  <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                  <div className="text-center">
-                    <div className="text-sm font-bold text-white">{intent.amount} ETH</div>
-                  </div>
-                  <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center">
-                      <span className="text-[8px] font-bold text-purple-400">S</span>
-                    </div>
-                    <span className="text-[11px] text-slate-300">{destLabel}</span>
-                  </div>
+            <div className="p-6 space-y-7">
+              
+              {/* Main Conversion */}
+              <div className="flex flex-col items-center justify-center space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[36px] font-bold text-white tracking-tight leading-none">{intent.amount} <span className="text-[18px] font-medium text-slate-400 ml-1">ETH</span></span>
+                  <ArrowRight size={24} className="text-[#0df2df]" />
+                  <span className="text-[36px] font-bold text-[#0df2df] tracking-tight leading-none">~{startSol} <span className="text-[18px] font-medium ml-1">{tokenLabel}</span></span>
+                </div>
+                <div className="text-[14px] text-slate-500 font-medium tracking-wide">
+                  on {destLabel}
+                </div>
+                
+                {/* USD Pill */}
+                <div className="mt-3 bg-white/[0.03] border border-white/5 rounded-full px-4 py-1.5 flex items-center gap-3 text-[12px] font-medium text-slate-400">
+                  <span>≈${inputUsd} USD</span>
+                  <span className="opacity-50">→</span>
+                  <span>≈${outputUsd} USD</span>
                 </div>
               </div>
 
-              {/* Pricing explanation */}
-              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <span className="text-[11px] font-medium text-primary">Dynamic Pricing</span>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Price powered by <span className="text-primary font-medium">Pyth Network</span>. 
-                  Multiple solvers compete to give you the best rate. 
-                  Price starts high and improves over time until filled.
-                </p>
-              </div>
-
-              {/* Conversion */}
-              <div className="text-center p-3 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] text-slate-500 mb-1">Estimated receive amount</div>
-                <div className="text-2xl font-bold text-white">{startSol} - {floorSol}</div>
-                <div className="text-sm text-primary">{tokenLabel}</div>
-              </div>
-
-              {/* Price range */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2.5 rounded-lg bg-green-500/5 border border-green-500/20">
-                  <div className="text-[10px] text-green-500/80">Target price</div>
-                  <div className="text-sm font-semibold text-green-400">{startSol} {tokenLabel}</div>
-                </div>
-                <div className="p-2.5 rounded-lg bg-white/5 border border-white/10">
-                  <div className="text-[10px] text-slate-500">Minimum guaranteed</div>
-                  <div className="text-sm font-semibold text-slate-300">{floorSol} {tokenLabel}</div>
-                </div>
-              </div>
-
-              {/* Duration selector with better label */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
+              {/* Rate & Min Receive Cards */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Rate Card */}
+                <div className="p-4 rounded-2xl bg-[#0F0F0F] border border-white/5 flex flex-col justify-between">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-3">Rate</div>
                   <div>
-                    <span className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                      <svg className="w-3 h-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Auction Duration
-                    </span>
-                    <div className="text-[9px] text-slate-500 mt-0.5">Longer = more time for solvers to compete</div>
+                    <div className="text-[16px] font-bold text-white font-mono leading-none mb-1">
+                      1 ETH = {exchangeRate} {tokenLabel}
+                    </div>
                   </div>
-                  <button
-                    onClick={() => setShowDurationPicker(!showDurationPicker)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors"
-                  >
-                    {currentOption.label}
-                    <svg className={`w-3 h-3 transition-transform ${showDurationPicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
+                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
+                    Powered by Pyth Network
+                  </div>
                 </div>
-                {showDurationPicker && (
-                  <div className="flex gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
-                    {DURATION_OPTIONS.map((opt) => (
+                
+                {/* Min Receive Card */}
+                <div className="p-4 rounded-2xl bg-[#0F0F0F] border border-green-500/20 flex flex-col justify-between relative overflow-hidden">
+                  <div className="absolute top-2 right-2 opacity-[0.04]">
+                    <ShieldCheck size={48} className="text-[#0df2df]" />
+                  </div>
+                  <div className="flex items-center gap-1.5 mb-2 relative z-10">
+                    <ShieldCheck size={14} className="text-green-500" />
+                    <div className="text-[10px] text-green-500 uppercase tracking-widest font-bold">Min. Receive</div>
+                    <div className="ml-auto">
+                      <ShieldCheck size={16} className="text-green-500/30" />
+                    </div>
+                  </div>
+                  <div className="relative z-10">
+                    <div className="text-[20px] font-bold text-green-400 font-mono leading-none mb-1">
+                      {floorSol} <span className="text-[13px] font-semibold">{tokenLabel}</span>
+                    </div>
+                    <div className="text-[12px] text-slate-400 font-medium mb-3">
+                      ≈${parseFloat(minOutputUsd) > 0 ? minOutputUsd : (parseFloat(floorSol) * solUsd).toFixed(2)} USD
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-green-500/70 uppercase tracking-widest font-bold relative z-10">
+                    Guaranteed On-Chain
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-px w-full bg-white/5" />
+
+              {/* Duration selector */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-[#0df2df]" />
+                    <span className="text-[13px] font-semibold text-white">Auction Duration</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">Longer = better rates</span>
+                </div>
+                <div className="flex gap-2">
+                  {DURATION_OPTIONS.map((opt) => {
+                    const isSelected = selectedDuration === opt.seconds;
+                    return (
                       <button
                         key={opt.seconds}
-                        onClick={() => { setSelectedDuration(opt.seconds); setShowDurationPicker(false); }}
-                        className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all ${
-                          selectedDuration === opt.seconds ? 'bg-primary text-black' : 'bg-transparent text-slate-400 hover:bg-white/5'
+                        onClick={() => setSelectedDuration(opt.seconds)}
+                        className={`flex-1 py-3 rounded-[12px] text-[13px] font-bold transition-all duration-200 ${
+                          isSelected 
+                            ? 'bg-[#0df2df] text-black shadow-[0_4px_14px_rgba(13,242,223,0.25)] translate-y-[-1px]' 
+                            : 'bg-[#0F0F0F] border border-white/5 text-slate-400 hover:bg-[#1A1A1A] hover:text-white'
                         }`}
                       >
                         {opt.label}
                       </button>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </div>
+
+              <div className="h-px w-full bg-white/5" />
 
               {/* Recipient */}
-              <div className="pt-2 border-t border-white/5">
-                <div className="text-[10px] text-slate-500 mb-1">Recipient Address ({destLabel})</div>
-                <code className="font-mono text-[11px] text-slate-200 bg-[#1a1a1a] px-2 py-1.5 rounded border border-white/10 block overflow-hidden" style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <span className="text-slate-500">`</span>
+              <div className="space-y-2">
+                <div className="text-[11px] text-slate-500 font-medium">Recipient on {destLabel}</div>
+                <div className="font-mono text-[13px] text-slate-300 bg-[#0F0F0F] px-4 py-3.5 rounded-xl border border-white/5 truncate select-all">
                   {intent.recipientAddress}
-                  <span className="text-slate-500">`</span>
-                </code>
+                </div>
               </div>
+
             </div>
 
-            <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 space-y-2">
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <svg className="w-3 h-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                <span>Floor price guaranteed on-chain</span>
-              </div>
+            {/* Footer */}
+            <div className="px-6 pb-6 pt-1">
               <button
                 onClick={() => setPhase('sign')}
-                className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-black text-sm font-semibold transition-all active:scale-[0.98]"
+                className="group relative w-full py-4 rounded-[16px] bg-[linear-gradient(135deg,_#0df2df_93%,_#80faf1_93%)] hover:bg-[linear-gradient(135deg,_#33ffff_93%,_#99fbf3_93%)] text-black text-[15px] font-bold transition-all duration-200 active:scale-[0.98] shadow-[0_0_20px_rgba(13,242,223,0.15)] flex items-center justify-center gap-2 overflow-hidden"
               >
-                Confirm Plan
+                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-black/[0.03]" />
+                <Check size={18} className="relative z-10 stroke-[3]" />
+                <span className="relative z-10">Looks good — prepare my intent</span>
               </button>
             </div>
           </div>

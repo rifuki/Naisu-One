@@ -414,9 +414,9 @@ export default function IntentPage() {
     // Set pending gasless intent with user-selected plan
     setPendingGaslessIntent({
       recipientAddress: intentData.recipientAddress,
-      destinationChain: intentData.destinationChain,
+      destinationChain: intentData.destinationChain as 'solana' | 'sui',
       amount: intentData.amount,
-      outputToken: intentData.outputToken,
+      outputToken: intentData.outputToken as 'sol' | 'msol' | 'marginfi',
       startPrice: intentData.startPrice,
       floorPrice: intentData.floorPrice,
       durationSeconds: intentData.durationSeconds,

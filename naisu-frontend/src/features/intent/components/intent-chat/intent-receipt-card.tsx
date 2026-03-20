@@ -24,7 +24,7 @@ interface ProgressStep {
 }
 
 // Icon mapping for each progress step
-const stepIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+const stepIcons: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
   signed: CheckCircle2,
   rfq: Radio,
   winner: Trophy,
