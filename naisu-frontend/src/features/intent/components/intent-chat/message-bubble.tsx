@@ -597,14 +597,23 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
               <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/5 justify-center">
                 {/* Conversion */}
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
-                    <span className="text-[13px] text-slate-400 font-medium">ETH</span>
-                    <ArrowRight size={18} className="text-[#0df2df] shrink-0" />
-                    <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
-                    <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
+                        <span className="text-[13px] text-slate-400 font-medium">ETH</span>
+                      </div>
+                      <span className="text-[10px] text-slate-600">Base Sepolia</span>
+                    </div>
+                    <ArrowRight size={18} className="text-[#0df2df] shrink-0 mt-2" />
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
+                        <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-600">{destLabel}</span>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">on {destLabel}</div>
                   {inputUsd != null && outputUsd != null && (
                     <div className="mt-2 inline-flex items-center gap-2 bg-white/[0.03] border border-white/5 rounded-full px-3 py-1 text-[11px] text-slate-400">
                       <span>≈${inputUsd}</span>
@@ -784,14 +793,23 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
               <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5 justify-center">
                 <div>
                   <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2">You are bridging</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
-                    <span className="text-[13px] text-slate-400 font-medium">ETH</span>
-                    <ArrowRight size={18} className="text-[#0df2df] shrink-0" />
-                    <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
-                    <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[26px] font-bold text-white leading-none tabular-nums">{intent.amount}</span>
+                        <span className="text-[13px] text-slate-400 font-medium">ETH</span>
+                      </div>
+                      <span className="text-[10px] text-slate-600">Base Sepolia</span>
+                    </div>
+                    <ArrowRight size={18} className="text-[#0df2df] shrink-0 mt-2" />
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[26px] font-bold text-[#0df2df] leading-none tabular-nums">~{startSol}</span>
+                        <span className="text-[13px] text-[#0df2df]/80 font-medium">{tokenLabel}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-600">{destLabel}</span>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">on {destLabel}</div>
                   {inputUsd != null && outputUsd != null && (
                     <div className="mt-2 inline-flex items-center gap-2 bg-white/[0.03] border border-white/5 rounded-full px-3 py-1 text-[11px] text-slate-400">
                       <span>≈${inputUsd}</span>
@@ -964,12 +982,22 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {!isComplete && (
                   <>
                     {/* Bridge summary row */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
-                      <span className="text-[11px] text-slate-500">ETH</span>
-                      <ArrowRight size={13} className="text-slate-600 shrink-0" />
-                      <span className="text-[13px] text-slate-400">~{startSol}</span>
-                      <span className="text-[11px] text-slate-500">{tokenLabel} on {destLabel}</span>
+                    <div className="flex items-start gap-2.5">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
+                          <span className="text-[11px] text-slate-500">ETH</span>
+                        </div>
+                        <span className="text-[9px] text-slate-600">Base Sepolia</span>
+                      </div>
+                      <ArrowRight size={13} className="text-slate-600 shrink-0 mt-1" />
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[13px] text-slate-400">~{startSol}</span>
+                          <span className="text-[11px] text-slate-500">{tokenLabel}</span>
+                        </div>
+                        <span className="text-[9px] text-slate-600">{destLabel}</span>
+                      </div>
                     </div>
 
                     {/* Live offer card */}
@@ -1015,12 +1043,22 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {isComplete && (
                   <>
                     {/* Bridge summary row */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
-                      <span className="text-[11px] text-slate-500">ETH</span>
-                      <ArrowRight size={13} className="text-green-500 shrink-0" />
-                      <span className="text-[13px] text-green-400 font-semibold">{fillPrice ?? startSol}</span>
-                      <span className="text-[11px] text-slate-500">{tokenLabel} on {destLabel}</span>
+                    <div className="flex items-start gap-2.5">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[15px] font-bold text-white tabular-nums">{intent.amount}</span>
+                          <span className="text-[11px] text-slate-500">ETH</span>
+                        </div>
+                        <span className="text-[9px] text-slate-600">Base Sepolia</span>
+                      </div>
+                      <ArrowRight size={13} className="text-green-500 shrink-0 mt-1" />
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[13px] text-green-400 font-semibold">{fillPrice ?? startSol}</span>
+                          <span className="text-[11px] text-slate-500">{tokenLabel}</span>
+                        </div>
+                        <span className="text-[9px] text-slate-600">{destLabel}</span>
+                      </div>
                     </div>
 
                     {/* You received — big */}
