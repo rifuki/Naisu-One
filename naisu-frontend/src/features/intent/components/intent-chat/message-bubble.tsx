@@ -732,8 +732,17 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* Separator + Recipient */}
                 <div className="border-t border-white/5 pt-3 space-y-1.5">
                   <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
-                    {intent.recipientAddress}
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 flex items-center gap-1.5">
+                    <span className="truncate flex-1">{intent.recipientAddress}</span>
+                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
+                      <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
+                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                      <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -911,8 +920,17 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* Recipient */}
                 <div className="border-t border-white/5 pt-3 space-y-1.5">
                   <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
-                    {intent.recipientAddress}
+                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 flex items-center gap-1.5">
+                    <span className="truncate flex-1">{intent.recipientAddress}</span>
+                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
+                      <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
+                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                      <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1242,8 +1260,17 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* Recipient */}
                 <div className="space-y-1">
                   <div className="text-[9px] text-slate-600">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[8.5px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 truncate" title={intent.recipientAddress}>
-                    {intent.recipientAddress}
+                  <div className="font-mono text-[8.5px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 flex items-center gap-1.5">
+                    <span className="truncate flex-1">{intent.recipientAddress}</span>
+                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
+                      <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
+                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                      <span className="material-symbols-outlined text-[10px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
+                    </button>
                   </div>
                 </div>
 
