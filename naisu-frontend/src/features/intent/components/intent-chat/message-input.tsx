@@ -14,7 +14,7 @@ export function MessageInput({
   onChange,
   onSubmit,
   isLoading = false,
-  placeholder = 'Ask anything about DeFi...',
+  placeholder = 'Message Nesu...',
 }: MessageInputProps) {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

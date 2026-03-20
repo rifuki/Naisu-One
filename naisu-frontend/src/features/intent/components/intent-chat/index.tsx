@@ -118,8 +118,8 @@ export function IntentChat({
       {/* Input area */}
       <div className="w-full px-4 sm:px-8 pb-6 pt-3 relative z-20 bg-background/80 backdrop-blur shrink-0 border-t border-white/5">
         <div className="max-w-3xl mx-auto">
-          {/* Suggestion chips — only when chat is empty */}
-          {isEmpty && (
+          {/* Suggestion chips — only when chat is empty and user hasn't typed */}
+          {isEmpty && !inputValue.trim() && (
             <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
               {SUGGESTIONS.map((text) => (
                 <button
@@ -138,13 +138,8 @@ export function IntentChat({
             onChange={onInputChange}
             onSubmit={onSend}
             isLoading={isLoading}
-            placeholder={isEmpty ? 'Ask anything about DeFi...' : 'Type a follow-up...'}
+            placeholder={isEmpty ? 'Message Nesu...' : 'Type a follow-up...'}
           />
-          <div className="mt-2 text-center">
-            <p className="text-[10px] text-slate-600">
-              Powered by NesuClaw Agent. Verify critical transactions before executing.
-            </p>
-          </div>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Plus, MessageSquarePlus } from 'lucide-react';
 import type { ChatSession } from '@/hooks/useChatSessions';
 
 interface ChatSidebarProps {
@@ -172,23 +173,25 @@ export function ChatSidebar({
           </div>
         )}
 
-        {/* New Chat Button — highlighted when active session is empty (ChatGPT-style) */}
+        {/* New Chat Button — Re-designed for premium look */}
         <button
           onClick={onNewChat}
           disabled={disabled}
-          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors border ${
+          className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-300 ${
             disabled
-              ? 'bg-white/5 text-slate-200 border-white/5 opacity-50 cursor-not-allowed'
+              ? 'bg-white/5 text-slate-500 cursor-not-allowed border outline-none border-transparent'
               : activeIsEmpty
-              ? 'bg-white/10 text-white border-white/10'
-              : 'bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border-white/5 hover:border-white/10'
+              ? 'bg-primary/20 text-primary shadow-[0_0_15px_rgba(var(--primary),0.1)] border border-primary/30'
+              : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 shadow-sm'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm">add</span>
-            <span className="text-sm font-medium">New Chat</span>
+          <div className="flex items-center gap-3">
+            <div className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${activeIsEmpty ? 'bg-primary/20 text-primary' : 'bg-white/10 text-slate-300 group-hover:bg-white/20 group-hover:text-white'}`}>
+              <Plus strokeWidth={2.5} className="w-4 h-4" />
+            </div>
+            <span className="text-[13px] font-semibold tracking-wide">New Chat</span>
           </div>
-          <span className="material-symbols-outlined text-sm opacity-40">edit</span>
+          <MessageSquarePlus strokeWidth={1.5} className={`w-[18px] h-[18px] transition-opacity ${activeIsEmpty ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} />
         </button>
 
         {/* Session List — only shows sessions with at least one message */}
