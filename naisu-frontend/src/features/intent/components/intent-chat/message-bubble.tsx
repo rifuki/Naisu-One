@@ -763,10 +763,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
               <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/8 text-slate-400 text-[10px] font-medium tracking-wide">EIP-712 · Offchain</span>
             </div>
 
-            {/* Error banner — full width, does not affect column layout */}
+            {/* Error banner — full-width row, same as header, with border-b */}
             {signError && (
-              <div className="mx-5 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/8 border border-red-500/20">
-                <span className="text-red-400 text-[12px] shrink-0">✕</span>
+              <div className="px-5 py-2.5 border-b border-red-500/15 bg-red-500/5 flex items-center gap-2">
+                <span className="text-red-400 text-[11px] shrink-0">✕</span>
                 <p className="text-[10px] text-red-400 leading-snug">{signError}</p>
               </div>
             )}
