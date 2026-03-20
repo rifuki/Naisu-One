@@ -16,6 +16,8 @@ export interface ProgressStep {
 export interface ActiveIntent {
   intentId: string;
   contractOrderId?: string;
+  sourceTxHash?: string;       // EVM tx hash on Base Sepolia (creation tx)
+  destinationTxHash?: string;  // Destination chain tx hash (e.g. Solana)
   progress: ProgressStep[];
   progressUpdatedAt?: number; // Timestamp of last progress update
   isFulfilled: boolean;
@@ -30,11 +32,13 @@ interface IntentState {
   activeIntent: ActiveIntent | null;
   // History of completed intents for looking up final state
   completedIntents: Record<string, ActiveIntent>; // key: intentId
-  
+
   // Actions
   setActiveIntent: (intent: ActiveIntent | null) => void;
   updateProgress: (progress: ProgressStep[]) => void;
   updateIntentId: (contractOrderId: string) => void;
+  setSourceTxHash: (hash: string) => void;
+  setDestinationTxHash: (hash: string) => void;
   markFulfilled: (fillPrice?: string, winnerSolver?: string) => void;
   clearActiveIntent: () => void;
   getCompletedIntent: (intentId: string) => ActiveIntent | undefined;
@@ -65,7 +69,21 @@ export const useIntentStore = create<IntentState>()(
             ? { ...state.activeIntent, contractOrderId }
             : null
         })),
-      
+
+      setSourceTxHash: (hash) =>
+        set((state) => ({
+          activeIntent: state.activeIntent
+            ? { ...state.activeIntent, sourceTxHash: hash }
+            : null
+        })),
+
+      setDestinationTxHash: (hash) =>
+        set((state) => ({
+          activeIntent: state.activeIntent
+            ? { ...state.activeIntent, destinationTxHash: hash }
+            : null
+        })),
+
       markFulfilled: (fillPrice, winnerSolver) =>
         set((state) => {
           const fulfilledIntent = state.activeIntent

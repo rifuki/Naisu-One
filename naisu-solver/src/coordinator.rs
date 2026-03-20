@@ -18,6 +18,71 @@ use ethers::{
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::RwLock;
+
+// ============================================================================
+// Shared reporter — written after successful registration, read by evm_listener
+// ============================================================================
+
+/// Holds all state needed to report steps back to the backend.
+pub struct SolverReporter {
+    pub backend_url: String,
+    pub token:       String,
+    pub solver_name: String,
+}
+
+/// Arc-wrapped optional reporter shared across async tasks.
+pub type SharedReporter = Arc<RwLock<Option<SolverReporter>>>;
+
+/// Create an empty shared reporter (call from main.rs before spawning tasks).
+pub fn make_shared_reporter() -> SharedReporter {
+    Arc::new(RwLock::new(None))
+}
+
+/// Report a solver step (sol_sent / vaa_ready) to naisu-backend via HTTP POST.
+/// No-op if registration has not yet completed.
+pub async fn report_step(
+    reporter: &SharedReporter,
+    order_id: &str,
+    step_type: &str,
+    tx_hash: Option<&str>,
+) {
+    let guard = reporter.read().await;
+    let Some(r) = guard.as_ref() else { return };
+
+    let client = reqwest::Client::new();
+    let mut payload = serde_json::json!({
+        "orderId": order_id,
+        "type":    step_type,
+    });
+    if let Some(hash) = tx_hash {
+        payload["txHash"] = serde_json::Value::String(hash.to_string());
+    }
+
+    let url = format!("{}/api/v1/solver/report-step", r.backend_url);
+    let res = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", r.token))
+        .json(&payload)
+        .send()
+        .await;
+
+    match res {
+        Ok(resp) if resp.status().is_success() => {
+            tracing::debug!(step = step_type, order_id, "Step reported to backend");
+        }
+        Ok(resp) => {
+            tracing::warn!(
+                step   = step_type,
+                status = %resp.status(),
+                "report-step returned non-OK"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(step = step_type, err = %e, "Failed to report step to backend");
+        }
+    }
+}
 
 // ============================================================================
 // API types (backend ↔ solver)
@@ -136,7 +201,9 @@ struct ExecuteResponse {
 // ============================================================================
 
 /// Start solver network coordinator. No-op if SOLVER_NAME or SOLVER_BACKEND_URL not set.
-pub async fn start(config: Arc<Config>) {
+/// After successful registration the token is written to `reporter` so that other tasks
+/// (e.g. evm_listener) can call `report_step()` to push progress events to the backend.
+pub async fn start(config: Arc<Config>, reporter: SharedReporter) {
     let name = match &config.solver_name {
         Some(n) => n.clone(),
         None => {
@@ -233,6 +300,13 @@ pub async fn start(config: Arc<Config>) {
             return;
         }
     };
+
+    // Write reporter so evm_listener can report steps back to the backend
+    *reporter.write().await = Some(SolverReporter {
+        backend_url: backend_url.clone(),
+        token:       token.clone(),
+        solver_name: name.clone(),
+    });
 
     // ── Heartbeat loop (background) ───────────────────────────────────────────
 

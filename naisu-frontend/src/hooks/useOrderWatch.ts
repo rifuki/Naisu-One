@@ -24,7 +24,7 @@ export interface OrderUpdateEvent {
 }
 
 export interface IntentProgressEvent {
-  type:    'rfq_broadcast' | 'rfq_winner' | 'execute_sent'
+  type:    'rfq_broadcast' | 'rfq_winner' | 'execute_sent' | 'sol_sent' | 'vaa_ready'
   orderId: string
   data:    Record<string, unknown>
 }
@@ -113,7 +113,7 @@ export function useOrderWatch({ user, chain, enabled = true, onOrderUpdate, onOr
         onCreatedRef.current?.()
       })
 
-      for (const evtType of ['rfq_broadcast', 'rfq_winner', 'execute_sent'] as const) {
+      for (const evtType of ['rfq_broadcast', 'rfq_winner', 'execute_sent', 'sol_sent', 'vaa_ready'] as const) {
         es.addEventListener(evtType, (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data) as Record<string, unknown>

@@ -1,4 +1,4 @@
-use crate::{auction, config::Config, executor, wormhole};
+use crate::{auction, config::Config, coordinator, executor, wormhole};
 use bs58;
 use ethers::{
     providers::{Http, Middleware, Provider, StreamExt, Ws},
@@ -67,6 +67,7 @@ async fn process_evm_order(
     contract_addr: Address,
     rpc_url: String,
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+    reporter: coordinator::SharedReporter,
 ) {
     let order_id_hex = hex::encode(order.order_id);
     let short = &order_id_hex[..8];
@@ -126,6 +127,8 @@ async fn process_evm_order(
                             info!(" [{short}]  seq : {seq}");
                             info!(" [{short}]  tx  : {sig}");
                             info!(" [{short}]  url : {sol_url}");
+                            // Report sol_sent step to backend so frontend can update progress
+                            coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
                             solana_payment_sig = Some(sig);
                             solana_recipient_b58_cap = Some(recipient_b58);
                             payment_amount_lamports = price;
@@ -155,6 +158,8 @@ async fn process_evm_order(
                             info!(" [{short}]  seq : {seq}");
                             info!(" [{short}]  tx  : {sig}");
                             info!(" [{short}]  url : {sol_url}");
+                            // Report sol_sent step to backend so frontend can update progress
+                            coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
                             solana_payment_sig = Some(sig);
                             solana_recipient_b58_cap = Some(recipient_b58);
                             payment_amount_lamports = price;
@@ -184,6 +189,8 @@ async fn process_evm_order(
                             info!(" [{short}]  seq : {seq}");
                             info!(" [{short}]  tx  : {sig}");
                             info!(" [{short}]  url : {sol_url}");
+                            // Report sol_sent step to backend so frontend can update progress
+                            coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
                             solana_payment_sig = Some(sig);
                             solana_recipient_b58_cap = Some(recipient_b58);
                             payment_amount_lamports = price;
@@ -237,6 +244,8 @@ async fn process_evm_order(
         Ok(v) => {
             let elapsed = vaa_start.elapsed().as_secs();
             info!(" [{short}] STEP 2/3 ✓  |  VAA ready  ({} bytes, {elapsed}s)", v.len());
+            // Report vaa_ready step to backend so frontend can update progress
+            coordinator::report_step(&reporter, &order_id_hex, "vaa_ready", None).await;
             v
         }
         Err(e) => {
@@ -316,6 +325,7 @@ async fn handle_order_log(
     contract_addr: Address,
     rpc_url: &str,
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+    reporter: coordinator::SharedReporter,
 ) {
     let chain_name = evm_chain_name(chain_id);
     let tx_hash = log.transaction_hash.map(|h| format!("{h:?}")).unwrap_or_default();
@@ -392,12 +402,13 @@ async fn handle_order_log(
 
     seen_orders.lock().await.insert(order.order_id);
 
-    let config_clone = Arc::clone(config);
-    let seen_clone = Arc::clone(&seen_orders);
-    let rpc_clone = rpc_url.to_string();
+    let config_clone  = Arc::clone(config);
+    let seen_clone    = Arc::clone(&seen_orders);
+    let rpc_clone     = rpc_url.to_string();
+    let reporter_clone = Arc::clone(&reporter);
 
     tokio::spawn(async move {
-        process_evm_order(config_clone, order, price, chain_id, contract_addr, rpc_clone, seen_clone).await;
+        process_evm_order(config_clone, order, price, chain_id, contract_addr, rpc_clone, seen_clone, reporter_clone).await;
     });
 }
 
@@ -409,6 +420,7 @@ pub async fn run_with_config(
     chain_id: u64,
     rpc_url: &str,
     contract: &str,
+    reporter: coordinator::SharedReporter,
 ) -> Result<()> {
     let chain_name = evm_chain_name(chain_id);
     let contract_addr: Address = contract.parse()?;
@@ -424,11 +436,11 @@ pub async fn run_with_config(
     match &config.evm_ws_url {
         Some(ws_url) => {
             info!("[{chain_name}] WS mode | contract={contract_addr} | from block={last_block}");
-            run_ws_mode(&config, chain_id, rpc_url, &ws_url.clone(), contract_addr, http, last_block, order_filter, seen_orders).await;
+            run_ws_mode(&config, chain_id, rpc_url, &ws_url.clone(), contract_addr, http, last_block, order_filter, seen_orders, reporter).await;
         }
         None => {
             info!("[{chain_name}] HTTP polling mode | set BASE_SEPOLIA_WS_URL for real-time WS | contract={contract_addr} | from block={last_block}");
-            run_http_mode(&config, chain_id, rpc_url, contract_addr, http, &mut last_block, order_filter, seen_orders).await;
+            run_http_mode(&config, chain_id, rpc_url, contract_addr, http, &mut last_block, order_filter, seen_orders, reporter).await;
         }
     }
 
@@ -445,6 +457,7 @@ async fn run_ws_mode(
     mut last_block: ethers::types::U64,
     order_filter: Filter,
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+    reporter: coordinator::SharedReporter,
 ) {
     let chain_name = evm_chain_name(chain_id);
 
@@ -460,7 +473,7 @@ async fn run_ws_mode(
                             info!("[{chain_name}] Catchup: {} event(s) in blocks {}→{}", logs.len(), last_block + 1, safe);
                         }
                         for log in logs {
-                            handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                            handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders), Arc::clone(&reporter)).await;
                         }
                     }
                     Err(e) => warn!("[{chain_name}] Catchup get_logs failed: {e}"),
@@ -476,7 +489,7 @@ async fn run_ws_mode(
                     info!("[{chain_name}] WS connected ✓  streaming OrderCreated events...");
                     while let Some(log) = stream.next().await {
                         if let Some(bn) = log.block_number { last_block = bn; }
-                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders), Arc::clone(&reporter)).await;
                     }
                     warn!("[{chain_name}] WS stream ended — reconnecting...");
                 }
@@ -498,6 +511,7 @@ async fn run_http_mode(
     last_block: &mut ethers::types::U64,
     order_filter: Filter,
     seen_orders: Arc<Mutex<HashSet<[u8; 32]>>>,
+    reporter: coordinator::SharedReporter,
 ) {
     let chain_name = evm_chain_name(chain_id);
     const LAG: u64 = 2;
@@ -518,7 +532,7 @@ async fn run_http_mode(
             match http.get_logs(&filter).await {
                 Ok(logs) => {
                     for log in logs {
-                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders)).await;
+                        handle_order_log(log, &http, config, chain_id, contract_addr, rpc_url, Arc::clone(&seen_orders), Arc::clone(&reporter)).await;
                     }
                 }
                 Err(e) => warn!("[{chain_name}] get_logs failed: {e}"),

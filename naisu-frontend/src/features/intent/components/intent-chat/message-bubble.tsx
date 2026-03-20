@@ -38,7 +38,7 @@ function usePythPrices(
 
   return { fromUsd, toUsd };
 }
-import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
+import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Trophy, Link, Send, Shield, Sparkles } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
 import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
@@ -532,6 +532,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     if (activeIntent && localSigning) {
       setLocalSigning(false);
       setSignError(null);
+      // Set flag immediately to suppress the standalone receipt card before phase changes
+      setBubbleTracking(true);
       setIsTransitioning(true);
       setTimeout(() => {
         setPhase('tracking');
@@ -1118,13 +1120,28 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                   <div className="flex flex-col gap-0">
                     {progress.map((step, idx) => {
                       const isLast = idx === progress.length - 1;
+
+                      // Per-step icon when done (active shows spinner, pending shows dot)
+                      const StepIcon = (() => {
+                        switch (step.key) {
+                          case 'signed':        return CheckCircle2;
+                          case 'rfq':           return Radio;
+                          case 'winner':        return Trophy;
+                          case 'evm_submitted': return Link;
+                          case 'sol_sent':      return Send;
+                          case 'vaa_ready':     return Shield;
+                          case 'settled':       return Sparkles;
+                          default:              return CheckCircle2;
+                        }
+                      })();
+
                       return (
                         <div key={step.key} className="flex gap-2.5">
                           <div className="flex flex-col items-center shrink-0 w-5">
                             <div className="relative z-10 shrink-0">
                               {step.done ? (
                                 <div className="size-5 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
-                                  <CheckCircle2 size={11} className="text-green-400" />
+                                  <StepIcon size={11} className="text-green-400" />
                                 </div>
                               ) : step.active ? (
                                 <div className="size-5 rounded-full bg-[#0df2df]/15 border border-[#0df2df]/30 flex items-center justify-center">
@@ -1161,7 +1178,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 )}
 
                 {/* TX references */}
-                {(activeIntent?.intentId || activeIntent?.contractOrderId) && (
+                {(activeIntent?.intentId || activeIntent?.sourceTxHash || activeIntent?.destinationTxHash) && (
                   <div className="border-t border-white/5 pt-3 space-y-2 mt-1">
                     <div className="text-[9px] text-slate-600 uppercase tracking-widest font-bold">References</div>
                     {activeIntent.intentId && (
@@ -1183,28 +1200,52 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         </div>
                       </div>
                     )}
-                    {activeIntent.contractOrderId && (
+                    {activeIntent.sourceTxHash && (
                       <div className="space-y-0.5">
-                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Source Tx</div>
+                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Source Tx (Base)</div>
                         <div className="flex items-center gap-1">
                           <span className="font-mono text-[8px] text-slate-500 truncate">
-                            {activeIntent.contractOrderId.startsWith('0x')
-                              ? `${activeIntent.contractOrderId.slice(0, 10)}…${activeIntent.contractOrderId.slice(-6)}`
-                              : `${activeIntent.contractOrderId.slice(0, 12)}…`}
+                            {`${activeIntent.sourceTxHash.slice(0, 10)}…${activeIntent.sourceTxHash.slice(-6)}`}
                           </span>
-                          {activeIntent.contractOrderId.startsWith('0x') && activeIntent.contractOrderId.length === 66 && (
-                            <a
-                              href={`https://sepolia.basescan.org/tx/${activeIntent.contractOrderId}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
-                              title="View on BaseScan"
-                            >
-                              <span className="material-symbols-outlined text-[10px]">open_in_new</span>
-                            </a>
-                          )}
+                          <a
+                            href={`https://sepolia.basescan.org/tx/${activeIntent.sourceTxHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
+                            title="View on BaseScan"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                          </a>
                           <button
-                            onClick={() => navigator.clipboard.writeText(activeIntent.contractOrderId!)}
+                            onClick={() => navigator.clipboard.writeText(activeIntent.sourceTxHash!)}
+                            className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
+                            title="Copy"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">content_copy</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {activeIntent.destinationTxHash && (
+                      <div className="space-y-0.5">
+                        <div className="text-[8px] text-slate-600 uppercase tracking-wider">Solana Tx</div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-[8px] text-slate-500 truncate">
+                            {activeIntent.destinationTxHash.length > 16
+                              ? `${activeIntent.destinationTxHash.slice(0, 10)}…${activeIntent.destinationTxHash.slice(-6)}`
+                              : activeIntent.destinationTxHash}
+                          </span>
+                          <a
+                            href={`https://explorer.solana.com/tx/${activeIntent.destinationTxHash}?cluster=devnet`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 text-slate-700 hover:text-[#0df2df] transition-colors"
+                            title="View on Solana Explorer"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                          </a>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(activeIntent.destinationTxHash!)}
                             className="shrink-0 text-slate-700 hover:text-slate-400 transition-colors"
                             title="Copy"
                           >

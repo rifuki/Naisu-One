@@ -15,6 +15,7 @@ import {
   processHeartbeat,
   listSolvers,
   getSolverSelection,
+  reportStep,
 } from '@services/solver.service'
 import { rateLimit } from '@middleware/rate-limit'
 import { logger } from '@lib/logger'
@@ -97,4 +98,33 @@ solverRouter.get('/selection/:orderId', (c) => {
   }
 
   return c.json({ success: true, data: selection })
+})
+
+// ============================================================================
+// POST /report-step — solver reports sol_sent or vaa_ready progress back
+// ============================================================================
+
+const reportStepBody = z.object({
+  orderId: z.string().min(1),
+  type:    z.enum(['sol_sent', 'vaa_ready']),
+  txHash:  z.string().optional(),
+})
+
+solverRouter.post('/report-step', zValidator('json', reportStepBody), async (c) => {
+  const authHeader = c.req.header('Authorization')
+  const token      = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (!token) {
+    return c.json({ success: false, error: 'Authorization header required' }, 401)
+  }
+
+  const body = c.req.valid('json')
+  const ok   = reportStep(token, body)
+
+  if (!ok) {
+    return c.json({ success: false, error: 'Invalid token' }, 401)
+  }
+
+  logger.info({ orderId: body.orderId, type: body.type }, '[Route] Solver report-step accepted')
+  return c.json({ success: true })
 })

@@ -94,10 +94,15 @@ async fn main() -> Result<()> {
         });
     }
 
+    // Create shared reporter — written by coordinator after registration,
+    // read by evm_listener to post sol_sent / vaa_ready progress to backend.
+    let reporter = coordinator::make_shared_reporter();
+
     // Solver network: register + heartbeat + RFQ server (no-op if env vars not set)
     {
-        let cfg_coord = Arc::clone(&config);
-        tokio::spawn(async move { coordinator::start(cfg_coord).await });
+        let cfg_coord      = Arc::clone(&config);
+        let reporter_coord = Arc::clone(&reporter);
+        tokio::spawn(async move { coordinator::start(cfg_coord, reporter_coord).await });
     }
 
     let cfg_base = Arc::clone(&config);
@@ -109,6 +114,7 @@ async fn main() -> Result<()> {
                 cfg_base.base_chain_id,
                 &cfg_base.base_rpc_url.clone(),
                 &cfg_base.base_contract_address.clone(),
+                Arc::clone(&reporter),
             )
             .await
             {

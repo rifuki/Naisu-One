@@ -52,6 +52,8 @@ export default function IntentPage() {
   const updateProgress = useIntentStore((state) => state.updateProgress);
   const updateIntentId = useIntentStore((state) => state.updateIntentId);
   const markFulfilled = useIntentStore((state) => state.markFulfilled);
+  const setSourceTxHash = useIntentStore((state) => state.setSourceTxHash);
+  const setDestinationTxHash = useIntentStore((state) => state.setDestinationTxHash);
   const clearActiveIntent = useIntentStore((state) => state.clearActiveIntent);
   
   // Local refs for tracking (not state)
@@ -173,7 +175,7 @@ export default function IntentPage() {
         console.log('[intent-page] Order FULFILLED, updating UI');
         // Clear persisted signed intent — it has been fulfilled on-chain
         try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
-        
+
         // Update intent count for stats
         if (activeSessionId) {
           updateIntentCount(activeSessionId, true);
@@ -196,12 +198,13 @@ export default function IntentPage() {
         console.log('[intent-page] Updating trackedId from', intentId, 'to', contractOrderId);
         previousIntentIdRef.current = intentId; // Store old ID
         trackedIntentIdRef.current = contractOrderId;
+        updateIntentId(contractOrderId);
       } else if (trackedIntentIdRef.current === contractOrderId) {
         console.log('[intent-page] trackedId already set to contractOrderId');
       } else {
         console.log('[intent-page] gasless_resolved ignored - intentId mismatch. Expected:', trackedIntentIdRef.current, 'Got:', intentId);
       }
-    }, []),
+    }, [updateIntentId]),
     onProgress: useCallback((evt) => {
       const currentId = trackedIntentIdRef.current;
       const previousId = previousIntentIdRef.current;
@@ -236,8 +239,8 @@ export default function IntentPage() {
             : s
         ));
       } else if (evt.type === 'rfq_winner') {
-        const winner  = evt.data['winner']      as string | undefined;
-        const priceRaw = evt.data['quotedPrice'] as string | undefined;
+        const winner   = evt.data['winner']       as string | undefined;
+        const priceRaw = evt.data['quotedPrice']  as string | undefined;
         const eta      = evt.data['estimatedETA'] as number | undefined;
         const priceSol = priceRaw
           ? (Number(BigInt(priceRaw)) / 1e9).toFixed(4)
@@ -245,7 +248,7 @@ export default function IntentPage() {
         const detail = winner
           ? `${winner}${priceSol ? ` — ${priceSol} SOL` : ''}${eta ? ` (ETA ~${eta}s)` : ''}`
           : undefined;
-        
+
         // Update Zustand store with winner info and progress
         const currentIntent = useIntentStore.getState().activeIntent;
         if (currentIntent && (winner || priceSol)) {
@@ -257,24 +260,48 @@ export default function IntentPage() {
             }
           });
         }
-        
-        // Mark all steps up to and including winner as done; set executing active
+
+        // Mark rfq + winner done; set evm_submitted active
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'rfq')       return { ...s, done: true, active: false };
-          if (s.key === 'winner')    return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
-          if (s.key === 'executing') return { ...s, active: true };
+          if (s.key === 'rfq')           return { ...s, done: true, active: false };
+          if (s.key === 'winner')        return { ...s, done: true, active: false, label: detail ? `Winner: ${detail}` : 'Winner selected', detail: undefined };
+          if (s.key === 'evm_submitted') return { ...s, active: true };
           return s;
         }));
       } else if (evt.type === 'execute_sent') {
-        // Mark all steps up to and including executing as done; set fulfilled active
+        // Capture EVM source tx hash (solver's executeIntent() call on Base Sepolia)
+        const sourceTx = evt.data['txHash'] as string | null | undefined;
+        if (sourceTx) {
+          setSourceTxHash(sourceTx);
+        }
+        // Mark signed + rfq + winner + evm_submitted done; set sol_sent active
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'rfq' || s.key === 'winner' || s.key === 'signed') return { ...s, done: true, active: false };
-          if (s.key === 'executing') return { ...s, done: true, active: false };
-          if (s.key === 'fulfilled') return { ...s, active: true };
+          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
+          if (s.key === 'evm_submitted') return { ...s, done: true, active: false };
+          if (s.key === 'sol_sent')      return { ...s, active: true };
+          return s;
+        }));
+      } else if (evt.type === 'sol_sent') {
+        // Capture Solana destination tx hash
+        const destTx = evt.data['txHash'] as string | null | undefined;
+        if (destTx) {
+          setDestinationTxHash(destTx);
+        }
+        // Mark all up to evm_submitted done; set sol_sent active
+        updateProgress(currentProgress.map(s => {
+          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted') return { ...s, done: true, active: false };
+          if (s.key === 'sol_sent') return { ...s, active: true };
+          return s;
+        }));
+      } else if (evt.type === 'vaa_ready') {
+        // Mark all up to sol_sent done; set vaa_ready active
+        updateProgress(currentProgress.map(s => {
+          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted' || s.key === 'sol_sent') return { ...s, done: true, active: false };
+          if (s.key === 'vaa_ready') return { ...s, active: true };
           return s;
         }));
       }
-    }, []),
+    }, [setSourceTxHash, setDestinationTxHash]),
   });
 
   const handleSend = useCallback(async (overrideText?: string | React.MouseEvent | React.FormEvent) => {
@@ -493,11 +520,13 @@ export default function IntentPage() {
       
       // Set active intent in Zustand store with detailed progress steps
       const initialProgress = [
-        { key: 'signed',    label: 'Signed & submitted',           detail: 'Intent broadcast to network', done: true,  active: false },
-        { key: 'rfq',       label: 'Broadcasting RFQ',              detail: 'Requesting quotes from solvers…', done: false, active: true  },
-        { key: 'winner',    label: 'Selecting winner',              detail: 'Evaluating solver quotes…', done: false, active: false },
-        { key: 'executing', label: 'Executing on-chain',            detail: 'Transaction being mined…', done: false, active: false },
-        { key: 'fulfilled', label: 'Finalizing bridge',             detail: 'Waiting for confirmation…', done: false, active: false },
+        { key: 'signed',        label: 'Signed & submitted',  detail: 'Intent broadcast to network',      done: true,  active: false },
+        { key: 'rfq',           label: 'Broadcasting RFQ',    detail: 'Requesting quotes from solvers…',  done: false, active: true  },
+        { key: 'winner',        label: 'Selecting winner',    detail: 'Evaluating solver quotes…',        done: false, active: false },
+        { key: 'evm_submitted', label: 'EVM submitted',       detail: 'Solver calling executeIntent()…',  done: false, active: false },
+        { key: 'sol_sent',      label: 'Sending to Solana',   detail: 'SOL transfer in progress…',        done: false, active: false },
+        { key: 'vaa_ready',     label: 'Cross-chain proof',   detail: 'Fetching Wormhole VAA…',           done: false, active: false },
+        { key: 'settled',       label: 'Bridge settled',      detail: 'Waiting for confirmation…',        done: false, active: false },
       ];
       setActiveIntent({
         intentId: result.submissionResult.intentId,
@@ -511,11 +540,13 @@ export default function IntentPage() {
         intentId: result.submissionResult.intentId,
         intent: pendingGaslessIntent,
         progress: [
-          { key: 'signed', label: 'Signed & submitted', detail: 'Intent broadcast to network', done: true, active: false },
-          { key: 'rfq', label: 'Broadcasting RFQ', detail: 'Requesting quotes from solvers…', done: false, active: true },
-          { key: 'winner', label: 'Selecting winner', detail: 'Evaluating solver quotes…', done: false, active: false },
-          { key: 'executing', label: 'Executing on-chain', detail: 'Transaction being mined…', done: false, active: false },
-          { key: 'fulfilled', label: 'Finalizing bridge', detail: 'Waiting for confirmation…', done: false, active: false },
+          { key: 'signed',        label: 'Signed & submitted', detail: 'Intent broadcast to network',     done: true,  active: false },
+          { key: 'rfq',           label: 'Broadcasting RFQ',   detail: 'Requesting quotes from solvers…', done: false, active: true  },
+          { key: 'winner',        label: 'Selecting winner',   detail: 'Evaluating solver quotes…',       done: false, active: false },
+          { key: 'evm_submitted', label: 'EVM submitted',      detail: 'Solver calling executeIntent()…', done: false, active: false },
+          { key: 'sol_sent',      label: 'Sending to Solana',  detail: 'SOL transfer in progress…',       done: false, active: false },
+          { key: 'vaa_ready',     label: 'Cross-chain proof',  detail: 'Fetching Wormhole VAA…',          done: false, active: false },
+          { key: 'settled',       label: 'Bridge settled',     detail: 'Waiting for confirmation…',       done: false, active: false },
         ],
         fillPrice,
         winnerSolver,

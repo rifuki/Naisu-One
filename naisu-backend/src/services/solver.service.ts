@@ -31,7 +31,7 @@ const EXECUTE_TIMEOUT_MS       = 10_000
 export const solverEvents = new EventEmitter()
 
 export interface SolverProgressEvent {
-  type: 'rfq_broadcast' | 'rfq_winner' | 'execute_sent' | 'order_fulfilled'
+  type: 'rfq_broadcast' | 'rfq_winner' | 'execute_sent' | 'order_fulfilled' | 'sol_sent' | 'vaa_ready'
   orderId: string
   data: Record<string, unknown>
 }
@@ -582,4 +582,44 @@ export function markStaleOffline(): void {
       logger.info({ name: solver.name }, '[Solver] Marked offline: missed heartbeats')
     }
   }
+}
+
+// ============================================================================
+// Token verification helper
+// ============================================================================
+
+export function verifySolverToken(token: string): SolverInfo | null {
+  const id = byToken.get(token)
+  if (!id) return null
+  return registry.get(id) ?? null
+}
+
+// ============================================================================
+// Step reporting (sol_sent / vaa_ready from solver → frontend via SSE)
+// ============================================================================
+
+export function reportStep(
+  token: string,
+  body: { orderId: string; type: 'sol_sent' | 'vaa_ready'; txHash?: string }
+): boolean {
+  const solver = verifySolverToken(token)
+  if (!solver) return false
+
+  const eventData: SolverProgressEvent = {
+    type:    body.type,
+    orderId: body.orderId,
+    data:    {
+      solverName: solver.name,
+      ...(body.txHash ? { txHash: body.txHash } : {}),
+    },
+  }
+
+  solverEvents.emit(body.type, eventData)
+
+  logger.info(
+    { orderId: body.orderId, type: body.type, txHash: body.txHash, solver: solver.name },
+    '[Solver] Step reported'
+  )
+
+  return true
 }

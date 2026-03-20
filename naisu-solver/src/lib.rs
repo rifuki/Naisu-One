@@ -1,6 +1,7 @@
 pub mod auction;
 pub mod chains;
 pub mod config;
+pub mod coordinator;
 pub mod executor;
 pub mod strategy;
 pub mod wormhole;
@@ -22,6 +23,9 @@ pub async fn run_headless() -> eyre::Result<()> {
         "Starting Intent Solver (Headless)..."
     );
 
+    // Headless mode has no coordinator registration — use an empty reporter
+    let headless_reporter = coordinator::make_shared_reporter();
+
     let cfg_base = Arc::clone(&config);
     let evm_base_to_sol = tokio::spawn(async move {
         loop {
@@ -31,6 +35,7 @@ pub async fn run_headless() -> eyre::Result<()> {
                 cfg_base.base_chain_id,
                 &cfg_base.base_rpc_url.clone(),
                 &cfg_base.base_contract_address.clone(),
+                Arc::clone(&headless_reporter),
             ).await {
                 tracing::error!("Base listener error: {e} — restarting in 10s...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
