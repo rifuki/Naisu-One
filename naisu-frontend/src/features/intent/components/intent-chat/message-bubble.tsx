@@ -1125,7 +1125,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <div className="flex">
 
               {/* LEFT column */}
-              <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/[0.08]">
+              <div className="flex-1 min-w-0 p-3 flex flex-col gap-2 border-r border-white/[0.08]">
 
                 {/* Amount row — always shown */}
                 <div className="flex items-center gap-3">
@@ -1284,8 +1284,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* TX Receipts — complete state */}
                 {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
-                    <div className="px-2.5 py-1 bg-white/[0.04] border-b border-white/[0.08]">
-                      <span className="text-[8px] text-slate-500 uppercase tracking-widest font-bold">Transaction Receipts</span>
+                    <div className="px-2.5 py-0.5 bg-white/[0.04] border-b border-white/[0.08]">
+                      <span className="text-[7.5px] text-slate-500 uppercase tracking-widest font-bold leading-none">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
                       <TxReceiptRow
