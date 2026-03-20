@@ -107,11 +107,27 @@ function extractTxHashFromSubmitMsg(content: string): TxInfo | null {
  * Supports: gasless_intent, quote_review, balance_display
  */
 function extractWidgetBlock(content: string): ParsedWidget | null {
-  const match = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  if (!match) return null;
+  // Try fenced code block first: ```json { ... } ```
+  const fenced = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+
+  // Fallback: raw JSON object at start of message (model forgot fences).
+  // Use bracket-counting to find the complete JSON object reliably.
+  let rawJsonStr: string | null = null;
+  if (!fenced && content.trimStart().startsWith('{')) {
+    const start = content.indexOf('{');
+    let depth = 0, i = start;
+    for (; i < content.length; i++) {
+      if (content[i] === '{') depth++;
+      else if (content[i] === '}') { depth--; if (depth === 0) { rawJsonStr = content.slice(start, i + 1); break; } }
+    }
+  }
+
+  const jsonStr = fenced ? fenced[1]! : rawJsonStr;
+  const matchedStr = fenced ? fenced[0]! : (rawJsonStr ?? '');
+  if (!jsonStr) return null;
   try {
-    const parsed = JSON.parse(match[1]!) as { type?: string };
-    const text = content.replace(match[0]!, '').trim();
+    const parsed = JSON.parse(jsonStr) as { type?: string };
+    const text = content.replace(matchedStr, '').trim();
 
     if (parsed.type === 'gasless_intent') {
       return { widget: parsed as GaslessIntentData, text, kind: 'gasless_intent' };
@@ -400,7 +416,7 @@ function TxReceiptRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[7.5px] text-slate-700 leading-none mb-0.5">{label}</div>
-        <div className="font-mono text-[9px] text-slate-400 truncate">{`${hash.slice(0, 12)}…${hash.slice(-6)}`}</div>
+        <div className="font-mono text-[9px] text-slate-400 truncate">{hash}</div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
@@ -444,7 +460,16 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
   const [phase, setPhase] = useState<'plan' | 'sign' | 'tracking' | 'done'>(() => {
     try {
       const raw = localStorage.getItem(`naisu_phase_${intent.recipientAddress}_${intent.nonce}`);
-      if (raw) return 'tracking';
+      if (raw) {
+        // raw = JSON object → fulfilled snapshot, always valid
+        if (raw.startsWith('{')) return 'tracking';
+        // raw = 'tracking' → live tracking; only restore if activeIntent exists in store.
+        // Without this check, a stale phaseKey from a previous session (same nonce/recipient)
+        // would put a brand-new bubble straight into tracking with no data → "Submitting to network…"
+        if (useIntentStore.getState().activeIntent !== null) return 'tracking';
+        // Stale key — clear it and start fresh
+        try { localStorage.removeItem(`naisu_phase_${intent.recipientAddress}_${intent.nonce}`); } catch { /* ignore */ }
+      }
     } catch { /* storage unavailable */ }
     return 'plan';
   });
@@ -1000,8 +1025,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       const isSolana = step.key === 'sol_sent';
       return {
         short: isSolana
-          ? `${step.txHash.slice(0, 8)}…${step.txHash.slice(-4)}`
-          : `${step.txHash.slice(0, 10)}…${step.txHash.slice(-6)}`,
+          ? `${step.txHash.slice(0, 14)}…${step.txHash.slice(-8)}`
+          : `${step.txHash.slice(0, 16)}…${step.txHash.slice(-8)}`,
         href: isSolana
           ? `https://solscan.io/tx/${step.txHash}?cluster=devnet`
           : `https://sepolia.basescan.org/tx/${step.txHash}`,
@@ -1293,8 +1318,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                             {/* Inline tx hash chip */}
                             {chip && (
-                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-fit">
-                                <span className="font-mono text-[9px] text-slate-400 leading-none">{chip.short}</span>
+                              <div className="flex items-center gap-1.5 mt-1 bg-white/[0.03] rounded-md px-1.5 py-0.5 border border-white/5 w-full min-w-0">
+                                <span className="font-mono text-[9px] text-slate-400 leading-none flex-1">{chip.short}</span>
                                 <a href={chip.href} target="_blank" rel="noreferrer"
                                   className="text-slate-600 hover:text-[#0df2df] transition-colors shrink-0" title={chip.label}>
                                   <span className="material-symbols-outlined text-[10px]">open_in_new</span>

@@ -309,9 +309,9 @@ export default function IntentPage() {
         const priceSol = priceRaw
           ? (Number(BigInt(priceRaw)) / 1e9).toFixed(4)
           : undefined;
-        const detail = winner
-          ? `${winner}${priceSol ? ` — ${priceSol} SOL` : ''}${eta ? ` (ETA ~${eta}s)` : ''}`
-          : undefined;
+        const winnerDetail = priceSol
+          ? `${priceSol} SOL${eta ? ` · ~${eta}s` : ''}`
+          : eta ? `~${eta}s ETA` : undefined;
 
         // Update Zustand store with winner info and progress
         const currentIntent = useIntentStore.getState().activeIntent;
@@ -328,7 +328,7 @@ export default function IntentPage() {
         // rfq done; winner ACTIVE — solver selected, waiting for execute signal
         updateProgress(currentProgress.map(s => {
           if (s.key === 'rfq')    return { ...s, done: true, active: false };
-          if (s.key === 'winner') return { ...s, active: true, label: detail ? `Winner: ${detail}` : 'Winner selected' };
+          if (s.key === 'winner') return { ...s, active: true, label: winner ? `Winner: ${winner}` : 'Winner selected', detail: winnerDetail };
           return s;
         }));
       } else if (evt.type === 'execute_sent') {
@@ -348,14 +348,16 @@ export default function IntentPage() {
         // evm_submitted DONE, sol_sent ACTIVE + txHash — waiting for Wormhole VAA
         updateProgress(currentProgress.map(s => {
           if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
-          if (s.key === 'evm_submitted') return { ...s, done: true, active: false };
+          if (s.key === 'evm_submitted') return { ...s, done: true, active: false, detail: 'Submitted on-chain' };
           if (s.key === 'sol_sent') return { ...s, active: true, txHash: destTx ?? undefined };
           return s;
         }));
       } else if (evt.type === 'vaa_ready') {
         // sol_sent DONE, vaa_ready DONE, settled ACTIVE — waiting for EVM settle tx
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner' || s.key === 'evm_submitted' || s.key === 'sol_sent') return { ...s, done: true, active: false };
+          if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
+          if (s.key === 'evm_submitted') return { ...s, done: true, active: false, detail: 'Submitted on-chain' };
+          if (s.key === 'sol_sent') return { ...s, done: true, active: false, detail: 'Transfer complete' };
           if (s.key === 'vaa_ready') return { ...s, done: true, active: false, detail: 'VAA verified' };
           if (s.key === 'settled') return { ...s, active: true };
           return s;
@@ -364,7 +366,7 @@ export default function IntentPage() {
         const settleTx = evt.data['txHash'] as string | null | undefined;
         if (settleTx) setSettledTxHash(settleTx);
         updateProgress(currentProgress.map(s => {
-          if (s.key === 'settled') return { ...s, done: true, active: false, txHash: settleTx ?? undefined };
+          if (s.key === 'settled') return { ...s, done: true, active: false, txHash: settleTx ?? undefined, detail: undefined };
           return s;
         }));
       }
@@ -479,6 +481,7 @@ export default function IntentPage() {
     trackedIntentIdRef.current = null;
     previousIntentIdRef.current = null;
     currentMsgIdxRef.current = 0;
+    try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
 
     // Clean state for fresh start
     handleSwitchSession(null);
@@ -576,7 +579,7 @@ export default function IntentPage() {
         { key: 'evm_submitted', label: 'EVM submitted',       detail: 'Solver calling executeIntent()…',  done: false, active: false },
         { key: 'sol_sent',      label: 'Sending to Solana',   detail: 'SOL transfer in progress…',        done: false, active: false },
         { key: 'vaa_ready',     label: 'Cross-chain proof',   detail: 'Fetching Wormhole VAA…',           done: false, active: false },
-        { key: 'settled',       label: 'Bridge settled',      detail: 'Waiting for confirmation…',        done: false, active: false },
+        { key: 'settled',       label: 'Bridge settled',      done: false, active: false },
       ];
       setActiveIntent({
         intentId: result.submissionResult.intentId,
