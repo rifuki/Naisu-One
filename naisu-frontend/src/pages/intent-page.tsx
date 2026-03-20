@@ -328,7 +328,7 @@ export default function IntentPage() {
         // rfq done; winner ACTIVE — solver selected, waiting for execute signal
         updateProgress(currentProgress.map(s => {
           if (s.key === 'rfq')    return { ...s, done: true, active: false };
-          if (s.key === 'winner') return { ...s, active: true, label: winner ? `Winner: ${winner}` : 'Winner selected', detail: winnerDetail };
+          if (s.key === 'winner') return { ...s, active: true, label: winner ? `Solver: ${winner}` : 'Solver selected', detail: winnerDetail };
           return s;
         }));
       } else if (evt.type === 'execute_sent') {
@@ -575,7 +575,7 @@ export default function IntentPage() {
       const initialProgress = [
         { key: 'signed',        label: 'Signed & submitted',  detail: 'Intent broadcast to network',      done: true,  active: false },
         { key: 'rfq',           label: 'Broadcasting RFQ',    detail: 'Requesting quotes from solvers…',  done: false, active: true  },
-        { key: 'winner',        label: 'Selecting winner',    detail: 'Evaluating solver quotes…',        done: false, active: false },
+        { key: 'winner',        label: 'Selecting solver',    detail: 'Evaluating solver quotes…',        done: false, active: false },
         { key: 'evm_submitted', label: 'EVM submitted',       detail: 'Solver calling executeIntent()…',  done: false, active: false },
         { key: 'sol_sent',      label: 'Sending to Solana',   detail: 'SOL transfer in progress…',        done: false, active: false },
         { key: 'vaa_ready',     label: 'Cross-chain proof',   detail: 'Fetching Wormhole VAA…',           done: false, active: false },

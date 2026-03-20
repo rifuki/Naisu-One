@@ -38,7 +38,7 @@ function usePythPrices(
 
   return { fromUsd, toUsd };
 }
-import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Trophy, Link, Send, Shield, Sparkles } from 'lucide-react';
+import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget } from '../widgets';
@@ -1065,7 +1065,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       switch (key) {
         case 'signed':        return CheckCircle2;
         case 'rfq':           return Radio;
-        case 'winner':        return Trophy;
+        case 'winner':        return Bot;
         case 'evm_submitted': return Link;
         case 'sol_sent':      return Send;
         case 'vaa_ready':     return Shield;
@@ -1373,19 +1373,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                             style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
                             {/* Step label: white when done (clear), teal when active, dim when pending */}
                             {step.key === 'winner' && step.label.includes(': ') ? (
-                              <span className={`flex items-center gap-1.5 leading-tight mt-[3px] ${
-                                step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'
-                              }`}>
-                                <span className="text-[10px] font-medium">Winner</span>
-                                <code className={`text-[9px] font-mono px-1 py-px rounded ${
-                                  step.done
-                                    ? 'bg-white/[0.07] text-slate-300 border border-white/10'
-                                    : step.active
-                                    ? 'bg-[#0df2df]/10 text-[#0df2df] border border-[#0df2df]/20'
-                                    : 'bg-white/[0.04] text-slate-500'
-                                }`}>
-                                  {step.label.split(': ')[1]}
-                                </code>
+                              <span className="flex items-center gap-1 leading-tight mt-[3px]">
+                                <span className={`text-[10px] font-medium ${
+                                  step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'
+                                }`}>Solver</span>
+                                <span className="text-slate-600 text-[10px]">·</span>
+                                <span className={`text-[10px] font-semibold ${
+                                  step.done ? 'text-slate-300' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
+                                }`}>{step.label.split(': ')[1]}</span>
                               </span>
                             ) : (
                               <span className={`text-[10px] font-medium leading-tight mt-[3px] ${
