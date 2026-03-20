@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO intent_orders\n            (order_id, chain, creator, recipient, destination_chain,\n             amount, amount_raw, start_price, floor_price, current_price,\n             deadline, created_at, status, intent_type, explorer_url,\n             fulfill_tx_hash, is_gasless)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(order_id) DO UPDATE SET\n            status          = excluded.status,\n            current_price   = excluded.current_price,\n            fulfill_tx_hash = excluded.fulfill_tx_hash,\n            is_gasless      = excluded.is_gasless\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": []
+  },
+  "hash": "beaa2c897f382340275233eb1d1347499e6a1ea23852f55525e989105fcf1b94"
+}

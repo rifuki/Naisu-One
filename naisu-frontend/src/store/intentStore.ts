@@ -12,6 +12,7 @@ export interface ProgressStep {
   txHash?: string;  // Inline tx hash shown in progress step (optional)
   done: boolean;
   active: boolean;
+  error?: boolean;
 }
 
 export interface ActiveIntent {

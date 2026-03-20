@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO gasless_intents\n            (intent_id, creator, recipient, destination_chain, amount,\n             start_price, floor_price, deadline, intent_type, nonce,\n             signature, status, submitted_at, winning_solver)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(intent_id) DO UPDATE SET\n            status         = excluded.status,\n            winning_solver = excluded.winning_solver\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "c89a108526cc7319714a6a03ea8ad12e3a66b22a41100120a1c0e68095dceffe"
+}

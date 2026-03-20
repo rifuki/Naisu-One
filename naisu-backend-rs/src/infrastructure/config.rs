@@ -74,18 +74,22 @@ pub struct Config {
     pub is_production: bool,
     pub server: ServerConfig,
     pub chain: ChainConfig,
+    pub database_url: String,
 }
 
 impl Config {
     pub fn load() -> Result<Self> {
         let rust_env = get_rust_env()?;
         let is_production = rust_env == "production";
+        let database_url = env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "sqlite://data/naisu.db".to_string());
 
         Ok(Self {
             rust_env,
             is_production,
             server: ServerConfig::from_env()?,
             chain: ChainConfig::from_env()?,
+            database_url,
         })
     }
 }

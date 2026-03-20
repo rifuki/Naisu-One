@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   ArrowRight,
   Zap,
+  XCircle,
 } from 'lucide-react';
 
 interface ProgressStep {
@@ -19,6 +20,7 @@ interface ProgressStep {
   detail?: string;
   done: boolean;
   active: boolean;
+  error?: boolean;
 }
 
 // Icon mapping for each progress step
@@ -33,6 +35,9 @@ const stepIcons: Record<string, React.ComponentType<{ className?: string; size?:
 function StepIcon({ step, className }: { step: ProgressStep; className?: string }) {
   const Icon = stepIcons[step.key] || Circle;
   
+  if (step.error) {
+    return <XCircle className={`text-red-500 ${className}`} size={16} />;
+  }
   if (step.done) {
     return <CheckCircle2 className={`text-green-400 ${className}`} size={16} />;
   }

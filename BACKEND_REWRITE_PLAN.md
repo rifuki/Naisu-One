@@ -1,6 +1,6 @@
 # Naisu Backend Rewrite — TypeScript → Rust
 
-> Status: PHASE 5 COMPLETE — Phase 6 (EVM indexer) is next
+> Status: PHASE 9 READY FOR CUTOVER — All backend tests passed
 > Last updated: 2026-03-20
 
 ---
@@ -240,26 +240,26 @@ RFQ:
 - [x] Winner execute relay + SSE emit
 
 ### Phase 6 — EVM Indexer (alloy-rs)
-- [ ] `infrastructure/indexer/evm.rs`
-- [ ] alloy WsProvider subscribe IntentBridge logs
-- [ ] Parse IntentCreated → store + broadcast
-- [ ] Parse IntentFulfilled → store update + broadcast
-- [ ] HTTP poll fallback on WS disconnect
+- [x] `infrastructure/indexer/evm.rs`
+- [x] alloy WsProvider subscribe IntentBridge logs
+- [x] Parse IntentCreated → store + broadcast
+- [x] Parse IntentFulfilled → store update + broadcast
+- [x] HTTP poll fallback on WS disconnect
 
 ### Phase 7 — Gasless Submit + EIP-712
-- [ ] `POST /intent/build-gasless` — compute prices, return unsigned intent
-- [ ] `POST /intent/submit-signature` — verify EIP-712 + trigger RFQ
-- [ ] Alloy EIP-712 signature verification
-- [ ] `GET /intent/quote` + `GET /intent/price`
+- [x] `POST /intent/build-gasless` — compute prices, return unsigned intent
+- [x] `POST /intent/submit-signature` — verify EIP-712 + trigger RFQ
+- [x] Alloy EIP-712 signature verification
+- [x] `GET /intent/quote` + `GET /intent/price`
 
 ### Phase 8 — SQLite Persistence (sqlx)
-- [ ] sqlx + SQLite migrations
-- [ ] Persist orders on write
-- [ ] Restore on startup
-- [ ] Keep DashMap as L1 cache
+- [x] sqlx + SQLite migrations
+- [x] Persist orders on write
+- [x] Restore on startup
+- [x] Keep DashMap as L1 cache
 
 ### Phase 9 — Cutover
-- [ ] Integration test all endpoints match TS backend
+- [x] Integration test all endpoints match TS backend
 - [ ] Deploy to VPS alongside TS backend
 - [ ] Switch frontend env to Rust backend
 - [ ] Deprecate TS backend

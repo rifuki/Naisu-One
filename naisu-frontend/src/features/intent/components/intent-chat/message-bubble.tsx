@@ -38,7 +38,7 @@ function usePythPrices(
 
   return { fromUsd, toUsd };
 }
-import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles } from 'lucide-react';
+import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles, XCircle } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget } from '../widgets';
@@ -1055,8 +1055,12 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     const currentUsdVal = toUsd != null ? (parseFloat(currentPriceSol) * toUsd).toFixed(2) : null;
     const fillUsdVal    = fillPrice != null && toUsd != null ? (parseFloat(fillPrice) * toUsd).toFixed(2) : null;
 
+    // Check error state
+    const isError = progress.some(s => s.error);
+
     // Header label
-    const headerLabel = isComplete ? 'Bridge Complete'
+    const headerLabel = isError ? 'Auction Expired'
+      : isComplete ? 'Bridge Complete'
       : isExecPhase ? 'Executing Bridge'
       : 'Dutch Auction Live';
 
@@ -1099,17 +1103,19 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
 
-          <div className={`rounded-[20px] overflow-hidden border border-white/[0.1] bg-[#141618] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+          <div className={`rounded-[20px] overflow-hidden border ${isError ? 'border-red-500/20 bg-[#141618]' : 'border-white/[0.1] bg-[#141618]'} shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
 
             {/* ── Header ─────────────────────────────────────────────── */}
-            <div className="px-5 py-3 border-b border-white/[0.08] flex items-center justify-between">
+            <div className={`px-5 py-3 border-b ${isError ? 'border-red-500/20 bg-red-500/5' : 'border-white/[0.08]'} flex items-center justify-between`}>
               <div className="flex items-center gap-2">
-                {isComplete
+                {isError
+                  ? <XCircle size={13} className="text-red-500" />
+                  : isComplete
                   ? <CheckCircle2 size={13} className="text-green-400" />
                   : <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
                 }
-                <span className="text-[12px] font-semibold text-white tracking-wide">{headerLabel}</span>
-                {!isComplete && (
+                <span className={`text-[12px] font-semibold tracking-wide ${isError ? 'text-red-400' : 'text-white'}`}>{headerLabel}</span>
+                {!isComplete && !isError && (
                   <span className="flex items-center gap-1 text-[10px] text-slate-500">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#0df2df] animate-pulse" />
                     {elapsedSec}s elapsed
@@ -1136,21 +1142,38 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     </div>
                     <span className="text-[11px] text-slate-600">Base Sepolia</span>
                   </div>
-                  <ArrowRight size={16} className={isComplete ? 'text-green-400 shrink-0' : 'text-[#0df2df] shrink-0'} />
+                  <ArrowRight size={16} className={isComplete ? 'text-green-400 shrink-0' : isError ? 'text-slate-600 shrink-0' : 'text-[#0df2df] shrink-0'} />
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-baseline gap-1.5">
                       {isComplete
                         ? <span className="text-[22px] font-bold text-green-400 tabular-nums leading-none">{fillPrice ?? startSol}</span>
+                        : isError
+                        ? <span className="text-[22px] font-bold text-slate-400 tabular-nums leading-none">~{startSol}</span>
                         : <span className="text-[22px] font-bold text-[#0df2df] tabular-nums leading-none">~{startSol}</span>
                       }
-                      <span className={`text-[12px] font-medium ${isComplete ? 'text-green-400/70' : 'text-[#0df2df]/70'}`}>{tokenLabel}</span>
+                      <span className={`text-[12px] font-medium ${isComplete ? 'text-green-400/70' : isError ? 'text-slate-500' : 'text-[#0df2df]/70'}`}>{tokenLabel}</span>
                     </div>
                     <span className="text-[11px] text-slate-600">{destLabel}</span>
                   </div>
                 </div>
 
+                {/* Error/Expired State Block */}
+                {isError && (
+                  <div className="mt-2 p-4 rounded-xl bg-[#0F0F0F] border border-red-500/10 flex flex-col items-center justify-center text-center gap-2.5">
+                    <div className="size-10 rounded-full bg-red-500/10 flex items-center justify-center mb-1">
+                      <XCircle size={20} className="text-red-500" />
+                    </div>
+                    <div>
+                      <div className="text-[13px] font-bold text-red-400 mb-1">Auction Expired</div>
+                      <div className="text-[11px] text-red-400/80 leading-relaxed px-2">
+                        No solvers accepted the offer of <strong>~{startSol} {tokenLabel}</strong> before the deadline. Your funds remained safely in your wallet.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Auction phase: live offer + progress bar */}
-                {!isComplete && isAuctionPhase && (
+                {!isComplete && !isError && isAuctionPhase && (
                   <>
                     <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/15 relative overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-br from-[#0df2df]/3 to-transparent pointer-events-none" />
@@ -1187,7 +1210,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 )}
 
                 {/* Execution phase: bridge status card */}
-                {!isComplete && isExecPhase && activeStep && (
+                {!isComplete && !isError && isExecPhase && activeStep && (
                   <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/10 space-y-3">
                     <div className="flex items-center gap-2">
                       <div className="size-7 rounded-full bg-[#0df2df]/10 border border-[#0df2df]/20 flex items-center justify-center shrink-0">
@@ -1277,7 +1300,11 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {!isComplete && (
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-600">Network fee</span>
-                    <span className="text-[10px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                    {isError ? (
+                      <span className="text-[10px] font-bold text-slate-500">None <span className="text-slate-600/70 font-normal">(Gasless)</span></span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-green-400">Free <span className="text-green-600/70 font-normal">(solver pays)</span></span>
+                    )}
                   </div>
                 )}
 
@@ -1348,9 +1375,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           {/* Icon + connector */}
                           <div className="flex flex-col items-center shrink-0 w-[18px]">
                             <div className="shrink-0 z-10">
-                              {step.done ? (
-                                <div className="size-[18px] rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
-                                  <StepIcon size={9} className="text-green-400" />
+                              {step.error ? (
+                                <div className="size-[18px] rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                                  <XCircle size={11} className="text-red-500" />
+                                </div>
+                              ) : step.done ? (
+                                <div className={`size-[18px] rounded-full ${isError ? 'bg-white/5 border-white/10' : 'bg-green-500/15 border-green-500/30'} flex items-center justify-center`}>
+                                  <StepIcon size={9} className={isError ? 'text-slate-500' : 'text-green-400'} />
                                 </div>
                               ) : step.active ? (
                                 <div className="size-[18px] rounded-full bg-[#0df2df]/15 border border-[#0df2df]/30 flex items-center justify-center">
@@ -1363,7 +1394,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                               )}
                             </div>
                             {!isLast && (
-                              <div className={`w-px mt-0.5 ${step.done ? 'bg-green-500/25' : 'bg-white/6'}`}
+                              <div className={`w-px mt-0.5 ${step.done ? (isError ? 'bg-white/10' : 'bg-green-500/25') : 'bg-white/6'}`}
                                 style={{ minHeight: chip ? 28 : step.active && step.detail ? 26 : 16 }} />
                             )}
                           </div>
@@ -1384,10 +1415,15 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                               </span>
                             ) : (
                               <span className={`text-[11px] font-medium leading-tight mt-[3px] ${
-                                step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
+                                step.error ? 'text-red-400 font-semibold' : step.done ? (isError ? 'text-slate-500' : 'text-slate-200') : step.active ? 'text-[#0df2df] font-semibold' : 'text-slate-700'
                               }`}>
                                 {step.label}
                               </span>
+                            )}
+                            
+                            {/* Error detail */}
+                            {step.error && step.detail && (
+                              <span className="text-[9.5px] text-red-400/80 mt-0.5 leading-snug">{step.detail}</span>
                             )}
 
                             {/* Active step detail */}

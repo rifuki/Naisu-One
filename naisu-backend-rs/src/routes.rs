@@ -8,6 +8,7 @@ use crate::{
 pub fn app_routes(state: AppState) -> Router {
     Router::new()
         .nest("/health", health_routes())
+        .nest("/api/v1/solana", Router::new().route("/balance/{address}", axum::routing::get(crate::feature::intent::handlers::get_solana_balance)))
         .nest("/api/v1/intent", intent_routes())
         .nest("/api/v1/solver", solver_routes())
         .fallback(handle_404)

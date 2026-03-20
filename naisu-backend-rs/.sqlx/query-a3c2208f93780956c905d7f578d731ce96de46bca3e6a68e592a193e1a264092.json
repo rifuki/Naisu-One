@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE gasless_intents SET status = ?, winning_solver = COALESCE(?, winning_solver) WHERE intent_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a3c2208f93780956c905d7f578d731ce96de46bca3e6a68e592a193e1a264092"
+}

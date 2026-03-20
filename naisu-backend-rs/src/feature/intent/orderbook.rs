@@ -137,15 +137,33 @@ pub fn mark_fulfilled(store: &IntentStore, intent_id: &str) -> bool {
 
 /// Clean up expired intents (deadline passed without fulfillment).
 /// Should be called periodically (e.g., every 30s via a background task in Phase 4+).
-pub fn cleanup_expired(store: &IntentStore) -> usize {
+pub fn cleanup_expired(state: &crate::AppState) -> usize {
     let now_secs = chrono::Utc::now().timestamp();
     let mut cleaned = 0;
+
+    let store = &state.intent_store;
 
     for mut entry in store.gasless.iter_mut() {
         let intent = entry.value_mut();
         if intent.intent.deadline < now_secs && !intent.status.is_terminal() {
             intent.status = IntentStatus::Expired;
             info!(intent_id = %intent.intent_id, "Intent expired");
+            
+            // Emit expired SSE event
+            let _ = state.event_tx.send(crate::feature::intent::events::SolverProgressEvent {
+                event_type: crate::feature::intent::events::SseEventType::OrderUpdate,
+                order_id: intent.intent_id.clone(),
+                user_addr: Some(intent.intent.creator.clone()),
+                data: serde_json::json!({
+                    "orderId": intent.intent_id,
+                    "status": "EXPIRED",
+                    "chain": "base-sepolia", // Adjust logic if dynamic
+                    "amount": intent.intent.amount,
+                    "destinationChain": intent.intent.destination_chain,
+                    "explorerUrl": "",
+                    "prevStatus": "OPEN",
+                }),
+            });
             cleaned += 1;
         }
     }

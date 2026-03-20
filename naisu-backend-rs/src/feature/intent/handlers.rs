@@ -1,6 +1,6 @@
 use alloy::{
     primitives::{Address, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::ProviderBuilder,
     sol,
 };
 use axum::{
@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use crate::{
     AppState,
     feature::solver::auction,
-    infrastructure::web::response::{ApiError, ApiResult, ApiSuccess},
+    infrastructure::{db::intent_repo, web::response::{ApiError, ApiResult, ApiSuccess}},
 };
 
 use super::{
@@ -63,14 +63,7 @@ pub async fn get_orders(
         params.chain.as_ref(),
     );
 
-    let total = orders.len();
-    let data = serde_json::json!({
-        "orders": orders,
-        "total": total,
-        "source": "store",
-    });
-
-    Ok(ApiSuccess::default().with_data(data))
+    Ok(ApiSuccess::default().with_data(serde_json::to_value(orders).unwrap_or_default()))
 }
 
 // ─── GET /nonce ───────────────────────────────────────────────────────────────
@@ -93,7 +86,17 @@ pub async fn get_nonce(
 
     info!(address = %params.address, "Nonce requested");
 
-    let nonce = orderbook::get_cached_nonce(&state.intent_store, &params.address).unwrap_or(0);
+    let addr: Address = params.address.parse().unwrap_or_default();
+    let nonce = match read_onchain_nonce(&state, addr).await {
+        Ok(n) => {
+            info!(address = %params.address, nonce = n, "Got onchain nonce");
+            n
+        }
+        Err(e) => {
+            warn!(error = %e, address = %params.address, "Onchain nonce failed, using cache");
+            orderbook::get_cached_nonce(&state.intent_store, &params.address).unwrap_or(0)
+        }
+    };
 
     let data = serde_json::json!({
         "address": params.address,
@@ -118,6 +121,16 @@ pub async fn cancel_order(
         return Err(ApiError::default()
             .with_code(StatusCode::NOT_FOUND)
             .with_message("Intent not found or cannot be cancelled"));
+    }
+
+    // Persist cancellation
+    {
+        let db  = state.db.clone();
+        let oid = intent_id.clone();
+        tokio::spawn(async move {
+            intent_repo::update_order_status(&db, &oid, &super::model::OrderStatus::Cancelled, None).await;
+            intent_repo::update_gasless_status(&db, &oid, &IntentStatus::Cancelled, None).await;
+        });
     }
 
     let data = serde_json::json!({
@@ -242,9 +255,9 @@ pub async fn build_gasless(
 
 // ─── POST /submit-signature ───────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct SubmitIntentBody {
+pub struct GaslessIntentPayload {
     pub creator:           String,
     pub recipient:         String, // bytes32 hex, 0x + 64 chars
     pub destination_chain: u16,
@@ -254,6 +267,12 @@ pub struct SubmitIntentBody {
     pub deadline:          i64,    // unix seconds
     pub intent_type:       u8,
     pub nonce:             u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitIntentBody {
+    pub intent: GaslessIntentPayload,
     pub signature:         String, // 0x + 130 hex chars
 }
 
@@ -262,12 +281,12 @@ pub async fn submit_signature(
     Json(body): Json<SubmitIntentBody>,
 ) -> ApiResult<serde_json::Value> {
     // ── Basic validation ──────────────────────────────────────────────────────
-    if !body.creator.starts_with("0x") || body.creator.len() != 42 {
+    if !body.intent.creator.starts_with("0x") || body.intent.creator.len() != 42 {
         return Err(ApiError::default()
             .with_code(StatusCode::BAD_REQUEST)
             .with_message("creator must be a valid EVM address (0x + 40 hex chars)"));
     }
-    if !body.recipient.starts_with("0x") || body.recipient.len() != 66 {
+    if !body.intent.recipient.starts_with("0x") || body.intent.recipient.len() != 66 {
         return Err(ApiError::default()
             .with_code(StatusCode::BAD_REQUEST)
             .with_message("recipient must be bytes32 hex (0x + 64 chars)"));
@@ -279,22 +298,22 @@ pub async fn submit_signature(
     }
 
     let now_secs = Utc::now().timestamp();
-    if body.deadline <= now_secs {
+    if body.intent.deadline <= now_secs {
         return Err(ApiError::default()
             .with_code(StatusCode::BAD_REQUEST)
             .with_message("Intent deadline has already passed"));
     }
 
     info!(
-        creator          = %body.creator,
-        amount           = %body.amount,
-        destination_chain = body.destination_chain,
-        nonce            = body.nonce,
+        creator          = %body.intent.creator,
+        amount           = %body.intent.amount,
+        destination_chain = body.intent.destination_chain,
+        nonce            = body.intent.nonce,
         "Gasless intent signature submitted"
     );
 
     // ── Parse address ─────────────────────────────────────────────────────────
-    let creator_addr: Address = body.creator.parse().map_err(|_| {
+    let creator_addr: Address = body.intent.creator.parse().map_err(|_| {
         ApiError::default()
             .with_code(StatusCode::BAD_REQUEST)
             .with_message("Invalid creator address")
@@ -303,10 +322,10 @@ pub async fn submit_signature(
     // ── Verify on-chain nonce ─────────────────────────────────────────────────
     match read_onchain_nonce(&state, creator_addr).await {
         Ok(onchain_nonce) => {
-            if body.nonce != onchain_nonce {
+            if body.intent.nonce != onchain_nonce {
                 warn!(
-                    creator       = %body.creator,
-                    intent_nonce  = body.nonce,
+                    creator       = %body.intent.creator,
+                    intent_nonce  = body.intent.nonce,
                     onchain_nonce = onchain_nonce,
                     "Stale nonce rejected"
                 );
@@ -314,17 +333,17 @@ pub async fn submit_signature(
                     .with_code(StatusCode::BAD_REQUEST)
                     .with_message(&format!(
                         "Stale nonce: signed with {} but contract expects {}. Please start a new bridge request.",
-                        body.nonce, onchain_nonce
+                        body.intent.nonce, onchain_nonce
                     )));
             }
         }
         Err(e) => {
-            warn!(error = %e, creator = %body.creator, "Nonce check failed — proceeding without on-chain verify");
+            warn!(error = %e, creator = %body.intent.creator, "Nonce check failed — proceeding without on-chain verify");
         }
     }
 
     // ── Parse recipient bytes32 ───────────────────────────────────────────────
-    let recipient_hex = body.recipient.strip_prefix("0x").unwrap_or(&body.recipient);
+    let recipient_hex = body.intent.recipient.strip_prefix("0x").unwrap_or(&body.intent.recipient);
     let recipient_bytes = hex::decode(recipient_hex).map_err(|_| {
         ApiError::default()
             .with_code(StatusCode::BAD_REQUEST)
@@ -343,22 +362,22 @@ pub async fn submit_signature(
         })
     };
 
-    let amount      = parse_u256(&body.amount, "amount")?;
-    let start_price = parse_u256(&body.start_price, "startPrice")?;
-    let floor_price = parse_u256(&body.floor_price, "floorPrice")?;
-    let deadline    = U256::from(body.deadline as u64);
-    let nonce       = U256::from(body.nonce);
+    let amount      = parse_u256(&body.intent.amount, "amount")?;
+    let start_price = parse_u256(&body.intent.start_price, "startPrice")?;
+    let floor_price = parse_u256(&body.intent.floor_price, "floorPrice")?;
+    let deadline    = U256::from(body.intent.deadline as u64);
+    let nonce       = U256::from(body.intent.nonce);
 
     // ── EIP-712 verify ────────────────────────────────────────────────────────
     let params = IntentParams {
         creator: creator_addr,
         recipient,
-        destination_chain: body.destination_chain,
+        destination_chain: body.intent.destination_chain,
         amount,
         start_price,
         floor_price,
         deadline,
-        intent_type: body.intent_type,
+        intent_type: body.intent.intent_type,
         nonce,
     };
 
@@ -376,7 +395,7 @@ pub async fn submit_signature(
     }
 
     // ── Generate intent ID ────────────────────────────────────────────────────
-    let raw = format!("{}{}{}", body.creator, body.nonce, Utc::now().timestamp_millis());
+    let raw = format!("{}{}{}", body.intent.creator, body.intent.nonce, Utc::now().timestamp_millis());
     let intent_id = format!(
         "0x{}",
         &hex::encode(raw.as_bytes())[..64]
@@ -384,54 +403,54 @@ pub async fn submit_signature(
 
     // ── Build IntentDetails ───────────────────────────────────────────────────
     let details = IntentDetails {
-        creator:           body.creator.clone(),
-        recipient:         body.recipient.clone(),
-        destination_chain: body.destination_chain,
-        amount:            body.amount.clone(),
-        start_price:       body.start_price.clone(),
-        floor_price:       body.floor_price.clone(),
-        deadline:          body.deadline,
-        intent_type:       body.intent_type,
-        nonce:             body.nonce,
+        creator:           body.intent.creator.clone(),
+        recipient:         body.intent.recipient.clone(),
+        destination_chain: body.intent.destination_chain,
+        amount:            body.intent.amount.clone(),
+        start_price:       body.intent.start_price.clone(),
+        floor_price:       body.intent.floor_price.clone(),
+        deadline:          body.intent.deadline,
+        intent_type:       body.intent.intent_type,
+        nonce:             body.intent.nonce,
     };
 
     // ── Build injected IntentOrder (visible in GET /orders immediately) ───────
     let amount_eth = {
-        let val: u128 = body.amount.parse().unwrap_or(0);
+        let val: u128 = body.intent.amount.parse().unwrap_or(0);
         let whole = val / 1_000_000_000_000_000_000u128;
         let frac  = (val % 1_000_000_000_000_000_000u128) / 1_000_000_000_000u128;
         format!("{whole}.{frac:06}")
     };
-    let deadline_ms  = body.deadline * 1000;
+    let deadline_ms  = body.intent.deadline * 1000;
     let now_ms       = Utc::now().timestamp_millis();
 
     let injected = IntentOrder {
         order_id:          intent_id.clone(),
         chain:             SupportedChain::EvmBase,
-        creator:           body.creator.clone(),
+        creator:           body.intent.creator.clone(),
         recipient:         hex::encode(&recipient_bytes),
-        destination_chain: body.destination_chain,
+        destination_chain: body.intent.destination_chain,
         amount:            amount_eth,
-        amount_raw:        body.amount.clone(),
-        start_price:       body.start_price.clone(),
-        floor_price:       body.floor_price.clone(),
-        current_price:     Some(body.start_price.clone()),
+        amount_raw:        body.intent.amount.clone(),
+        start_price:       body.intent.start_price.clone(),
+        floor_price:       body.intent.floor_price.clone(),
+        current_price:     Some(body.intent.start_price.clone()),
         deadline:          deadline_ms,
         created_at:        now_ms,
         status:            OrderStatus::Open,
-        intent_type:       body.intent_type,
+        intent_type:       body.intent.intent_type,
         explorer_url:      String::new(),
         fulfill_tx_hash:   None,
         is_gasless:        true,
     };
 
     // ── Add to orderbook ──────────────────────────────────────────────────────
-    orderbook::add_intent(
+    let pending = orderbook::add_intent(
         &state.intent_store,
         intent_id.clone(),
         details,
         body.signature.clone(),
-        injected,
+        injected.clone(),
     );
     orderbook::update_intent_status(
         &state.intent_store,
@@ -439,9 +458,21 @@ pub async fn submit_signature(
         IntentStatus::RfqActive,
     );
 
-    info!(intent_id = %intent_id, creator = %body.creator, "Intent verified, starting RFQ");
+    // ── Persist to DB (fire-and-forget) ───────────────────────────────────────
+    {
+        let db  = state.db.clone();
+        let ord = injected;
+        let mut pnd = pending;
+        pnd.status = IntentStatus::RfqActive;
+        tokio::spawn(async move {
+            intent_repo::upsert_order(&db, &ord).await;
+            intent_repo::upsert_gasless(&db, &pnd).await;
+        });
+    }
 
-    // ── Spawn RFQ async ───────────────────────────────────────────────────────
+    info!(intent_id = %intent_id, creator = %body.intent.creator, "Intent verified, starting RFQ");
+
+    // ── Spawn Initial RFQ async ───────────────────────────────────────────
     {
         let state_rfq    = state.clone();
         let intent_id_rfq = intent_id.clone();
@@ -464,4 +495,145 @@ fn is_valid_evm_address(s: &str) -> bool {
     s.starts_with("0x")
         && s.len() == 42
         && s[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+// ─── GET /evm-balance ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct EvmBalanceQuery {
+    pub chain: String,
+    pub address: String,
+}
+
+pub async fn get_evm_balance(
+    State(state): State<AppState>,
+    Query(params): Query<EvmBalanceQuery>,
+) -> ApiResult<serde_json::Value> {
+    if !is_valid_evm_address(&params.address) {
+        return Err(ApiError::default()
+            .with_code(StatusCode::BAD_REQUEST)
+            .with_message("Invalid EVM address"));
+    }
+
+    let addr: Address = params.address.parse().unwrap();
+    let url: alloy::transports::http::reqwest::Url = state.config.chain.rpc_url.parse().unwrap();
+    let provider = ProviderBuilder::new().connect_http(url);
+    
+    let balance_wei = alloy::providers::Provider::get_balance(&provider, addr).await.unwrap_or_default();
+    
+    let wei_str = balance_wei.to_string();
+    let val: u128 = wei_str.parse().unwrap_or(0);
+    let whole = val / 1_000_000_000_000_000_000;
+    let frac = (val % 1_000_000_000_000_000_000) / 1_000_000_000_000;
+    let balance_eth = format!("{}.{:06}", whole, frac);
+
+    let data = serde_json::json!({
+        "balanceEth": balance_eth,
+        "balanceWei": wei_str,
+        "estimatedGasEth": "0.0005",
+        "estimatedGasWei": "500000000000000",
+        "symbol": "ETH"
+    });
+
+    Ok(ApiSuccess::default().with_data(data))
+}
+
+// ─── GET /solana/balance/:address ─────────────────────────────────────────────
+
+pub async fn get_solana_balance(
+    Path(address): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let client = reqwest::Client::new();
+    let mut lamports = 0u64;
+    
+    if let Ok(resp) = client.post("https://api.devnet.solana.com")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBalance",
+            "params": [address]
+        }))
+        .send()
+        .await
+    {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(val) = json.get("result").and_then(|r| r.get("value")).and_then(|v| v.as_u64()) {
+                lamports = val;
+            }
+        }
+    }
+
+    let sol = (lamports as f64) / 1e9;
+    
+    let data = serde_json::json!({
+        "lamports": lamports,
+        "sol": sol,
+        "symbol": "SOL"
+    });
+
+    Ok(ApiSuccess::default().with_data(data))
+}
+
+// ─── GET /quote ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteQuery {
+    pub from_chain: String,
+    pub to_chain: String,
+    pub token: String,
+    pub amount: String,
+}
+
+pub async fn get_quote(
+    State(state): State<AppState>,
+    Query(params): Query<QuoteQuery>,
+) -> ApiResult<serde_json::Value> {
+    let amount_f64: f64 = params.amount.parse().unwrap_or(0.0);
+    let amount_wei = format!("{:.0}", amount_f64 * 1e18);
+
+    let prices = super::price::compute_eth_to_sol_prices(&amount_wei).await;
+
+    let receive_f64 = (amount_f64 * (prices.from_usd / prices.to_usd)) * 0.97;
+    let receive_amount = format!("{:.6}", receive_f64);
+
+    let active_solvers = state.solver_registry.active_count();
+
+    let data = serde_json::json!({
+        "fromUsd": prices.from_usd,
+        "toUsd": prices.to_usd,
+        "startPrice": prices.start_price,
+        "floorPrice": prices.floor_price,
+        "amount": params.amount,
+        "receiveAmount": receive_amount,
+        "durationSeconds": 300,
+        "activeSolvers": active_solvers,
+    });
+
+    Ok(ApiSuccess::default().with_data(data))
+}
+
+// ─── GET /price ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceQuery {
+    pub from_chain: String,
+    pub to_chain: String,
+}
+
+pub async fn get_price(
+    Query(_params): Query<PriceQuery>,
+) -> ApiResult<serde_json::Value> {
+    let prices = super::price::compute_eth_to_sol_prices("1000000000000000000").await;
+    let rate = prices.from_usd / prices.to_usd;
+
+    let data = serde_json::json!({
+        "rate": rate,
+        "fromUsd": prices.from_usd,
+        "toUsd": prices.to_usd,
+        "timestamp": 0,
+    });
+
+    Ok(ApiSuccess::default().with_data(data))
 }

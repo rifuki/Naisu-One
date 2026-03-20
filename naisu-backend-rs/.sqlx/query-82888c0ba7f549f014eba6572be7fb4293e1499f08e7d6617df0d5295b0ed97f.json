@@ -1,0 +1,116 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT order_id, chain, creator, recipient, destination_chain,\n                amount, amount_raw, start_price, floor_price, current_price,\n                deadline, created_at, status, intent_type, explorer_url,\n                fulfill_tx_hash, is_gasless\n         FROM intent_orders",
+  "describe": {
+    "columns": [
+      {
+        "name": "order_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "chain",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "creator",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "recipient",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "destination_chain",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amount",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "amount_raw",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "start_price",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "floor_price",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "current_price",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "deadline",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "status",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "intent_type",
+        "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "explorer_url",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "fulfill_tx_hash",
+        "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_gasless",
+        "ordinal": 16,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "82888c0ba7f549f014eba6572be7fb4293e1499f08e7d6617df0d5295b0ed97f"
+}

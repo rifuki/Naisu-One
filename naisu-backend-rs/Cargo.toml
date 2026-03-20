@@ -1,5 +1,5 @@
 [package]
-name = "naisu-backend-rs"
+name = "naisu-backend"
 version = "0.1.0"
 edition = "2024"
 
@@ -24,3 +24,4 @@ chrono        = { version = "0.4", features = ["serde"] }
 hex           = "0.4"
 alloy         = { version = "1", features = ["providers", "provider-ws", "transport-ws", "sol-types", "rpc-types", "contract", "reqwest", "k256"] }
 reqwest       = { version = "0.12", features = ["json"] }
+sqlx          = { version = "0.8", features = ["sqlite", "runtime-tokio", "chrono", "uuid"] }

@@ -5,7 +5,7 @@ pub mod routes;
 pub mod store;
 
 mod eip712;
-mod handlers;
+pub mod handlers;
 mod price;
 mod sse;
 

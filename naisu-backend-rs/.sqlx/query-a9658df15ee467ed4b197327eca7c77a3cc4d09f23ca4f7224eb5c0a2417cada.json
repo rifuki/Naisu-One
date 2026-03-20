@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT intent_id, creator, recipient, destination_chain, amount,\n                start_price, floor_price, deadline, intent_type, nonce,\n                signature, status, submitted_at, winning_solver\n         FROM gasless_intents",
+  "describe": {
+    "columns": [
+      {
+        "name": "intent_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "creator",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "recipient",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "destination_chain",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amount",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "start_price",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "floor_price",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "deadline",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "intent_type",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "nonce",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "signature",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "status",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "submitted_at",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "winning_solver",
+        "ordinal": 13,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a9658df15ee467ed4b197327eca7c77a3cc4d09f23ca4f7224eb5c0a2417cada"
+}

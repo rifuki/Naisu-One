@@ -107,6 +107,46 @@ async fn handle_message(
             });
             let _ = tx.send(ack.to_string()).await;
             info!(solver_id = %id, name = %name, "Solver register ACK sent");
+
+            // Look for active RFQs and send them to the newly connected solver
+            let now = chrono::Utc::now().timestamp_millis();
+            let mut active_rfqs = Vec::new();
+            for entry in state.intent_store.gasless.iter() {
+                let intent = entry.value();
+                if intent.status == crate::feature::intent::model::IntentStatus::RfqActive {
+                    if let Some(order) = state.intent_store.orders.get(entry.key()) {
+                        if order.deadline > now {
+                            active_rfqs.push((entry.key().clone(), intent.clone()));
+                        }
+                    }
+                }
+            }
+
+            if !active_rfqs.is_empty() {
+                info!(solver_id = %id, count = active_rfqs.len(), "Pushing active RFQs to newly connected solver");
+                for (intent_id, pending) in active_rfqs {
+                    let rfq_msg = serde_json::json!({
+                        "type": "rfq",
+                        "orderId": intent_id,
+                        "startPrice": pending.intent.start_price,
+                        "floorPrice": pending.intent.floor_price,
+                        "deadline": pending.intent.deadline,
+                        "amount": pending.intent.amount,
+                    });
+                    state.solver_registry.send(&id, &rfq_msg).await;
+                    
+                    // Broadcast updated solver count
+                    let _ = state.event_tx.send(crate::feature::intent::events::SolverProgressEvent {
+                        event_type: crate::feature::intent::events::SseEventType::RfqBroadcast,
+                        order_id: intent_id.clone(),
+                        user_addr: None,
+                        data: serde_json::json!({
+                            "solverCount": state.solver_registry.active_count(),
+                            "solverNames": [],
+                        }),
+                    });
+                }
+            }
         }
 
         // ── Heartbeat ─────────────────────────────────────────────────────────
@@ -138,18 +178,26 @@ async fn handle_message(
 
             debug!(solver_id = %id, order_id = %order_id, quoted_price = %quoted_price, "RFQ quote received");
 
+            let quote = super::model::RawQuote {
+                solver_id: id.to_string(),
+                solver_name,
+                quoted_price,
+                estimated_eta,
+                expires_at,
+            };
+
             let accepted = state.solver_registry.push_quote(
                 &order_id,
-                super::model::RawQuote {
-                    solver_id: id.to_string(),
-                    solver_name,
-                    quoted_price,
-                    estimated_eta,
-                    expires_at,
-                },
+                quote.clone(),
             );
             if !accepted {
-                warn!(order_id = %order_id, "rfq_quote for unknown/expired orderId — ignoring");
+                // If it's not accepted by a collector, it might be a late quote for an RfqActive intent.
+                // Handle it immediately as a standalone quote.
+                let state_clone = state.clone();
+                let order_id_clone = order_id.clone();
+                tokio::spawn(async move {
+                    crate::feature::solver::auction::handle_standalone_quote(&state_clone, &order_id_clone, quote).await;
+                });
             }
         }
 

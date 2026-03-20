@@ -205,11 +205,15 @@ export default function IntentPage() {
         return;
       }
       // Set winner solver in Zustand store
-      if (data.data?.solverName) {
+      if (data.data?.solverName || data.data?.quotedPrice || data.data?.fillTimeMs) {
         useIntentStore.setState((state) => ({
           activeIntent: state.activeIntent ? {
             ...state.activeIntent,
-            winnerSolver: data.data!.solverName
+            winnerSolver: data.data!.solverName || state.activeIntent.winnerSolver,
+            fillPrice: data.data!.quotedPrice || state.activeIntent.fillPrice,
+            fulfilledAt: data.data!.fillTimeMs && state.activeIntent.signedAt
+                         ? state.activeIntent.signedAt + data.data!.fillTimeMs
+                         : state.activeIntent.fulfilledAt || Date.now()
           } : null
         }));
       }
@@ -254,6 +258,23 @@ export default function IntentPage() {
         setGaslessStatus(null);
         window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
         sendMessage(`[System] ✅ Intent fulfilled! ID: ${event.orderId}\nThe bridge has completed successfully. The user can verify the transaction on the explorer.`);
+      } else if (event.status === 'EXPIRED') {
+        if (intentFulfilled) return;
+        console.log('[intent-page] Order EXPIRED, updating UI');
+        try { localStorage.removeItem(PENDING_INTENT_KEY); } catch { /* ignore */ }
+        
+        const currentProgress = useIntentStore.getState().activeIntent?.progress;
+        if (currentProgress) {
+          updateProgress(currentProgress.map(s => {
+            if (s.active) {
+              return { ...s, error: true, active: false, detail: 'Auction expired without receiving an acceptable quote' };
+            }
+            return s;
+          }));
+        }
+        setPendingGaslessIntent(undefined);
+        setGaslessStatus(null);
+        sendMessage(`[System] ❌ Intent expired! No solver accepted the Dutch Auction before the deadline.`);
       }
     }, [intentFulfilled, setPendingGaslessIntent, sendMessage]),
     onGaslessResolved: useCallback((intentId: string, contractOrderId: string) => {
@@ -296,10 +317,15 @@ export default function IntentPage() {
       }
       
       if (evt.type === 'rfq_broadcast') {
-        const count = (evt.data['solverCount'] as number | undefined) ?? 1;
+        const count = (evt.data['solverCount'] as number | undefined) ?? 0;
         updateProgress(currentProgress.map(s =>
           s.key === 'rfq'
-            ? { ...s, label: `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}`, active: true }
+            ? { 
+                ...s, 
+                label: count > 0 ? `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}` : 'Waiting for solvers...', 
+                detail: count > 0 ? `Requesting quotes from ${count} solver${count !== 1 ? 's' : ''}…` : 'No solvers online. Retrying...',
+                active: true 
+              }
             : s
         ));
       } else if (evt.type === 'rfq_winner') {

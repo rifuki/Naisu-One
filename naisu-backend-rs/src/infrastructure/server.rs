@@ -53,4 +53,11 @@ pub async fn shutdown_signal() {
         _ = ctrl_c => { tracing::info!("Received Ctrl+C, shutting down..."); },
         _ = terminate => { tracing::info!("Received SIGTERM, shutting down..."); },
     }
+
+    // Force exit if graceful shutdown takes longer than 3 seconds
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        tracing::warn!("Graceful shutdown timed out, forcing exit");
+        std::process::exit(0);
+    });
 }

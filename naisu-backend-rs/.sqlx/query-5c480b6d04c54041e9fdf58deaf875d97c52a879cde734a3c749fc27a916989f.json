@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE intent_orders SET status = ?, fulfill_tx_hash = COALESCE(?, fulfill_tx_hash) WHERE order_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "5c480b6d04c54041e9fdf58deaf875d97c52a879cde734a3c749fc27a916989f"
+}

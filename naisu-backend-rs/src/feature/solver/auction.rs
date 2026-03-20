@@ -28,6 +28,17 @@ pub async fn broadcast_rfq(state: &AppState, intent_id: &str) -> Option<RfqResul
 
     if eligible.is_empty() {
         warn!(intent_id = %intent_id, "No eligible solvers for RFQ broadcast");
+        
+        let _ = state.event_tx.send(SolverProgressEvent {
+            event_type: SseEventType::RfqBroadcast,
+            order_id: intent_id.to_string(),
+            user_addr: None,
+            data: serde_json::json!({
+                "solverCount": 0,
+                "solverNames": [],
+            }),
+        });
+
         return None;
     }
 
@@ -247,6 +258,112 @@ fn score_quotes(quotes: &[RawQuote], state: &AppState) -> Vec<ScoredQuote> {
 
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     scored
+}
+
+// ─── Event-Driven Standalone Quote (Late Solver) ──────────────────────────────
+
+pub async fn handle_standalone_quote(state: &AppState, intent_id: &str, quote: RawQuote) {
+    // Check if intent is still RfqActive and not expired
+    let pending = match state.intent_store.gasless.get(intent_id) {
+        Some(p) if p.status == crate::feature::intent::model::IntentStatus::RfqActive => p.clone(),
+        _ => return, // Already fulfilled, executed, or cancelled
+    };
+
+    if let Some(order) = state.intent_store.orders.get(intent_id) {
+        let now = chrono::Utc::now().timestamp_millis();
+        if now >= order.deadline {
+            warn!(intent_id = %intent_id, "Late quote received but intent has expired");
+            return;
+        }
+    } else {
+        return;
+    }
+
+    info!(intent_id = %intent_id, solver = %quote.solver_name, "Processing standalone/late quote");
+
+    // In a pure event-driven late-solver scenario, the first acceptable quote wins.
+    // Instead of waiting another 3 seconds, we just accept it if it's > 0 (or meets any basic criteria).
+    
+    // We can reuse select_winner logic by just scoring this single quote.
+    let scored = score_quotes(&[quote], state);
+    
+    let (winner_quote, reasoning) = select_winner(&scored, state);
+
+    let mut winner_name: Option<String> = None;
+    let mut winner_id: Option<String> = None;
+    let mut winner_address: Option<String> = None;
+    let mut exclusivity_deadline: Option<i64> = None;
+
+    if let Some(ref wq) = winner_quote {
+        winner_name = Some(wq.solver_name.clone());
+        winner_id = Some(wq.solver_id.clone());
+
+        winner_address = state.solver_registry.sessions
+            .get(&wq.solver_id)
+            .map(|s| s.info.evm_address.clone());
+
+        let deadline = chrono::Utc::now().timestamp_millis() + EXCLUSIVITY_WINDOW_MS;
+        state.solver_registry.set_exclusive(intent_id.to_string(), wq.solver_id.clone(), deadline);
+        exclusivity_deadline = Some(deadline);
+
+        let _ = state.event_tx.send(SolverProgressEvent {
+            event_type: SseEventType::RfqWinner,
+            order_id: intent_id.to_string(),
+            user_addr: None,
+            data: serde_json::json!({
+                "winner": wq.solver_name,
+                "winnerAddress": winner_address,
+                "quotedPrice": wq.quoted_price,
+                "estimatedETA": wq.estimated_eta,
+            }),
+        });
+
+        let execute_msg = serde_json::json!({
+            "type": "execute",
+            "orderId": intent_id,
+            "intent": {
+                "creator":          pending.intent.creator,
+                "recipient":        pending.intent.recipient,
+                "destinationChain": pending.intent.destination_chain,
+                "amount":           pending.intent.amount,
+                "startPrice":       pending.intent.start_price,
+                "floorPrice":       pending.intent.floor_price,
+                "deadline":         pending.intent.deadline,
+                "intentType":       pending.intent.intent_type,
+                "nonce":            pending.intent.nonce,
+            },
+            "signature":       pending.signature,
+            "contractAddress": state.config.chain.contract_address,
+            "chainId":         state.config.chain.chain_id,
+            "rpcUrl":          state.config.chain.rpc_url,
+        });
+
+        state.solver_registry.send(&wq.solver_id, &execute_msg).await;
+        info!(
+            intent_id = %intent_id,
+            winner = %wq.solver_name,
+            "Execute message sent to late-arriving winner"
+        );
+        
+        let result = RfqResult {
+            order_id: intent_id.to_string(),
+            rfq_sent_at: chrono::Utc::now().timestamp_millis(),
+            quotes: scored,
+            winner: winner_name,
+            winner_id,
+            winner_address,
+            reasoning,
+            exclusivity_deadline,
+        };
+        state.solver_registry.rfq_results.insert(intent_id.to_string(), result);
+        
+        // Mark intent as executed (or waiting for execute block)
+        crate::feature::intent::orderbook::update_intent_status(
+            &state.intent_store,
+            intent_id,
+            crate::feature::intent::model::IntentStatus::Executing,
+        );
+    }
 }
 
 // ─── Winner selection ─────────────────────────────────────────────────────────

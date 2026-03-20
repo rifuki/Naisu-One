@@ -19,6 +19,7 @@ use crate::{
         model::{IntentOrder, OrderStatus, SupportedChain},
         orderbook,
     },
+    infrastructure::db::intent_repo,
 };
 
 // ─── ABI ─────────────────────────────────────────────────────────────────────
@@ -38,8 +39,7 @@ sol! {
 
     event OrderFulfilled(
         bytes32 indexed orderId,
-        address indexed solver,
-        uint256 pricePaid
+        address indexed solver
     );
 }
 
@@ -196,7 +196,7 @@ async fn on_order_created(
     };
 
     if state.intent_store.orders.contains_key(&order_id) {
-        // Gasless intent confirmed on-chain
+        // Gasless intent confirmed on-chain — update is_gasless flag
         if let Some(mut existing) = state.intent_store.orders.get_mut(&order_id) {
             existing.is_gasless = true;
         }
@@ -207,7 +207,53 @@ async fn on_order_created(
             data: serde_json::json!({ "intentId": order_id, "contractOrderId": order_id }),
         });
     } else {
-        state.intent_store.orders.insert(order_id.clone(), order);
+        // Check if this is a gasless intent submitted via /submit-signature
+        // Gasless intents are stored with an internal intentId (not the onchain orderId).
+        // Find the match by looking up who the creator is in the gasless store.
+        let creator_lower = creator.to_lowercase();
+        let matching_intent_id: Option<String> = state.intent_store.gasless
+            .iter()
+            .find(|entry| entry.value().intent.creator.to_lowercase() == creator_lower)
+            .map(|entry| entry.key().clone());
+
+        if let Some(intent_id) = matching_intent_id {
+            // Update the order to mark it as gasless and persist
+            let mut gasless_order = order.clone();
+            gasless_order.is_gasless = true;
+            state.intent_store.orders.insert(order_id.clone(), gasless_order.clone());
+
+            let db  = state.db.clone();
+            let ord = gasless_order;
+            tokio::spawn(async move {
+                intent_repo::upsert_order(&db, &ord).await;
+            });
+
+            info!(
+                intent_id = %intent_id,
+                contract_order_id = %order_id,
+                creator = %creator,
+                "Gasless intent resolved on-chain — emitting gasless_resolved"
+            );
+
+            // Emit gasless_resolved so frontend can switch tracking from intentId to contractOrderId
+            let _ = state.event_tx.send(SolverProgressEvent {
+                event_type: SseEventType::GaslessResolved,
+                order_id:   intent_id.clone(),
+                user_addr:  Some(creator.clone()),
+                data: serde_json::json!({
+                    "intentId":        intent_id,
+                    "contractOrderId": order_id,
+                }),
+            });
+        } else {
+            // New regular on-chain order — persist to DB
+            let db  = state.db.clone();
+            let ord = order.clone();
+            tokio::spawn(async move {
+                intent_repo::upsert_order(&db, &ord).await;
+            });
+            state.intent_store.orders.insert(order_id.clone(), order);
+        }
     }
 
     let _ = state.event_tx.send(SolverProgressEvent {
@@ -240,8 +286,55 @@ async fn on_order_fulfilled(
     orderbook::mark_fulfilled(&state.intent_store, &order_id);
     state.solver_registry.record_fill(&solver_addr, None, Some(&order_id));
 
+    // Persist fulfilled status to DB (fire-and-forget)
+    {
+        let db  = state.db.clone();
+        let oid = order_id.clone();
+        let txh = tx_hash.clone();
+        tokio::spawn(async move {
+            intent_repo::update_order_status(
+                &db, &oid,
+                &crate::feature::intent::model::OrderStatus::Fulfilled,
+                txh.as_deref(),
+            ).await;
+            intent_repo::update_gasless_status(
+                &db, &oid,
+                &crate::feature::intent::model::IntentStatus::Fulfilled,
+                None,
+            ).await;
+        });
+    }
+
     let mut data = serde_json::json!({ "solverAddress": solver_addr });
     if let Some(ref h) = tx_hash { data["txHash"] = serde_json::json!(h); }
+
+    // Calculate fill time using created_at from the original order
+    if let Some(order) = state.intent_store.orders.get(&order_id) {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        data["fillTimeMs"] = serde_json::json!(now_ms - order.created_at);
+    }
+
+    // Try to get solver name and quoted price if this was a gasless intent routed via RFQ
+    let intent_id_opt = creator.as_ref().and_then(|c| {
+        let c_lower = c.to_lowercase();
+        state.intent_store.gasless
+            .iter()
+            .find(|e| e.value().intent.creator.to_lowercase() == c_lower)
+            .map(|e| e.key().clone())
+    });
+
+    if let Some(iid) = intent_id_opt {
+        if let Some(rfq) = state.solver_registry.get_rfq_result(&iid) {
+            if let Some(name) = rfq.winner {
+                data["solverName"] = serde_json::json!(name);
+            }
+            if let Some(winner_id) = rfq.winner_id {
+                if let Some(quote) = rfq.quotes.iter().find(|q| q.solver_id == winner_id) {
+                    data["quotedPrice"] = serde_json::json!(quote.quoted_price);
+                }
+            }
+        }
+    }
 
     let _ = state.event_tx.send(SolverProgressEvent {
         event_type: SseEventType::OrderFulfilled,
