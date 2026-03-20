@@ -24,6 +24,9 @@
 - [x] Progress steps: Signed → RFQ → Winner → Executing → Fulfilled
 - [x] Code-block style recipient address with backticks
 - [x] Pyth Network badge in Dutch Auction header
+- [x] **New:** Hyper-polished pill-shaped `MessageInput` with dynamic suggestion chips
+- [x] **New:** Premium glassmorphic empty chat state illustration
+- [x] **New:** "Naisu" branding with custom neon Web3 favicon & logo replacing generic diamond
 
 ### 3. Chat System Improvements
 - [x] Session management with export/import JSON
@@ -32,6 +35,10 @@
 - [x] State persistence across page refreshes (localStorage + Zustand)
 - [x] New Chat spam prevention (empty session guard)
 - [x] Remove fake progress simulation (real SSE events only)
+- [x] **New:** Collapsible Sidebar to maximize chat width
+- [x] **New:** Bulletproof Router Sync (fixed "Ghost Session" bouncing using `isNavigatingRef` and `useNavigationType`)
+- [x] **New:** "Virtual New Chat" logic (`activeSessionId = null`) creating sessions only upon first message
+- [x] **New:** Historical intents auto-collapse feature (abandoned/old RFQ quotes turn into tiny history badges to prevent clutter)
 
 ### 4. Backend Fixes
 - [x] Switched from Bun.serve to @hono/node-server for stability

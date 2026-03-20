@@ -40,11 +40,10 @@ function usePythPrices(
 }
 import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Trophy, Link, Send, Shield, Sparkles } from 'lucide-react';
 import LiveProgressCard from '@/components/LiveProgressCard';
-import { QuoteReviewWidget, BalanceDisplayWidget, DutchAuctionPlanWidget } from '../widgets';
-import type { AnyWidget, WidgetConfirmPayload } from '../widgets';
+import { BalanceDisplayWidget } from '../widgets';
+import type { AnyWidget } from '../widgets';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import { useIntentStore } from '@/store';
-import { GaslessIntentReviewCard } from '../gasless-intent-review-card';
 import ReactMarkdown from 'react-markdown';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
 import { formatAbsoluteTime } from '@/lib/time-utils';
@@ -60,7 +59,6 @@ interface MessageBubbleProps {
   message: ChatMessage;
   renderContent: (content: string) => React.ReactNode;
   monitorTx?: { hash: string; chainId: number; userAddress: string; submittedAt: number } | null;
-  onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // For unified card flow
   pendingSignIntent?: SignIntentParams | null;
@@ -192,112 +190,9 @@ function MessageHeader({ name, timestamp, isUser = false }: { name: string; time
   );
 }
 
-/** Clean visual summary card for gasless bridge intent — shown inline in chat after sign */
-function GaslessIntentSummary({ intent, text, renderContent }: {
-  intent: GaslessIntentData;
-  text: string;
-  renderContent: (content: string) => React.ReactNode;
-}) {
-  const destLabel    = DEST_LABELS[intent.destinationChain]    ?? intent.destinationChain;
-  const tokenLabel   = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
-  const startSol     = formatLamports(intent.startPrice);
-  const floorSol     = formatLamports(intent.floorPrice);
-  const durationMin  = Math.round(intent.durationSeconds / 60);
-  const recipient    = shortenAddress(intent.recipientAddress);
-
-  return (
-    <div className="flex flex-col gap-3">
-      {/* Solver warning banner */}
-      {intent.solverWarning && (
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/25">
-          <span className="material-symbols-outlined text-amber-400 text-[15px] mt-0.5 shrink-0">warning</span>
-          <p className="text-[11px] text-amber-300 leading-snug">{intent.solverWarning}</p>
-        </div>
-      )}
-
-      {/* Intent summary card */}
-      <div className="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
-        {/* Top bar */}
-        <div className="px-4 py-2.5 flex items-center gap-2 bg-primary/8 border-b border-primary/15">
-          <span className="material-symbols-outlined text-primary text-[15px]">swap_horiz</span>
-          <span className="text-[11px] font-bold text-primary uppercase tracking-[0.1em]">Gasless Bridge Intent</span>
-        </div>
-
-        {/* Amount row */}
-        <div className="px-4 pt-3 pb-2 flex items-center gap-3">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold text-white tabular-nums">{intent.amount}</span>
-            <span className="text-sm text-slate-400">ETH</span>
-          </div>
-          <span className="material-symbols-outlined text-primary/60 text-[18px]">arrow_forward</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-bold text-primary">~{startSol}</span>
-            <span className="text-sm text-primary/70">{tokenLabel}</span>
-            <span className="text-xs text-slate-500">on {destLabel}</span>
-          </div>
-        </div>
-
-        {/* Details grid */}
-        <div className="px-4 pb-3 grid grid-cols-2 gap-2">
-          {/* Recipient */}
-          <div className="col-span-2 flex items-center justify-between py-1.5 px-3 rounded-lg bg-white/3 border border-white/6">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-slate-500 text-[13px]">account_balance_wallet</span>
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider">To</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-mono text-slate-300">{recipient}</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(intent.recipientAddress)}
-                className="text-slate-600 hover:text-primary transition-colors"
-                title={intent.recipientAddress}
-              >
-                <span className="material-symbols-outlined text-[11px]">content_copy</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Best price */}
-          <div className="flex flex-col gap-1 py-1.5 px-3 rounded-lg bg-white/3 border border-white/5">
-            <span className="text-[9px] text-slate-600 uppercase tracking-wider">Best price</span>
-            <span className="text-[11px] font-mono text-slate-200">{startSol} {tokenLabel}</span>
-          </div>
-
-          {/* Min receive — on-chain guaranteed */}
-          <div className="flex flex-col gap-1 py-1.5 px-3 rounded-lg bg-green-500/5 border border-green-500/15">
-            <div className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-green-500 text-[10px]">verified_user</span>
-              <span className="text-[9px] text-green-600 uppercase tracking-wider">Min. receive</span>
-            </div>
-            <span className="text-[11px] font-mono text-green-400 font-semibold">{floorSol} {tokenLabel}</span>
-          </div>
-
-          {/* Auction duration */}
-          <div className="flex flex-col gap-1 py-1.5 px-3 rounded-lg bg-white/3 border border-white/5">
-            <span className="text-[9px] text-slate-600 uppercase tracking-wider">Auction</span>
-            <span className="text-[11px] font-mono text-slate-200">{durationMin} min</span>
-          </div>
-
-          {/* Network fee */}
-          <div className="flex flex-col gap-1 py-1.5 px-3 rounded-lg bg-green-500/5 border border-green-500/15">
-            <span className="text-[9px] text-green-600 uppercase tracking-wider">Network fee</span>
-            <span className="text-[11px] font-bold text-green-400">FREE <span className="font-normal text-green-600/70">(solver pays)</span></span>
-          </div>
-        </div>
-      </div>
-
-      {/* Remaining agent text */}
-      {text && !/^sign the message above/i.test(text.trim()) && (
-        <div className="text-slate-300 text-sm leading-relaxed">
-          {renderContent(text)}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function MessageBubble({
-  message, renderContent, monitorTx, onWidgetConfirm, onDutchPlanConfirm,
+  message, renderContent, monitorTx, onDutchPlanConfirm,
   pendingSignIntent, signIntentStatus, isSignIntentFailed, isSignIntentSuccess,
   onSignIntentConfirm, onSignIntentDismiss, isHistoricalIntent
 }: MessageBubbleProps) {
@@ -393,6 +288,26 @@ export function MessageBubble({
     );
   }
 
+  // quote_review widget is retired — always show as expired badge regardless of history
+  if (parsed?.kind === 'quote_review') {
+    return (
+      <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-[#0a100f] border border-white/5 flex items-center justify-center grayscale opacity-50">
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <MessageHeader name="Nesu" timestamp={message.timestamp} />
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0a100f] border border-white/5 text-slate-500 text-xs font-mono shadow-sm">
+            <span className="material-symbols-outlined text-[14px]">history</span>
+            <span>Quote expired</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // For gasless_intent widget, unified card with internal phase state
   if (parsed?.kind === 'gasless_intent') {
     return (
@@ -420,21 +335,6 @@ export function MessageBubble({
       <div className="flex-1 max-w-2xl">
         <MessageHeader name="Nesu" timestamp={message.timestamp} />
         <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-[#0d1614] border border-white/6 text-slate-300 text-sm leading-relaxed shadow-lg">
-          {parsed?.kind === 'quote_review' && (
-            <div className="flex flex-col gap-3">
-              <QuoteReviewWidget
-                widget={parsed.widget as import('../widgets/types').QuoteReviewWidget}
-                onConfirm={(outputToken, durationSeconds) => {
-                  onWidgetConfirm?.({ widgetType: 'quote_review', selection: { outputToken, durationSeconds } });
-                }}
-              />
-              {parsed.text && !/^\s*$/.test(parsed.text) && (
-                <div className="text-slate-300 text-sm leading-relaxed">
-                  {renderContent(parsed.text)}
-                </div>
-              )}
-            </div>
-          )}
           {parsed?.kind === 'balance_display' && (
             <div className="flex flex-col gap-3">
               <BalanceDisplayWidget widget={parsed.widget as import('../widgets/types').BalanceDisplayWidget} />

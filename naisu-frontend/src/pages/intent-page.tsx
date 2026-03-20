@@ -11,7 +11,6 @@ import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { PanelLeftOpen } from 'lucide-react';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
 import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
-import type { WidgetConfirmPayload } from '@/features/intent/components/widgets';
 import { useIntentStore, useChatStore, type ProgressStep } from '@/store';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
@@ -504,13 +503,6 @@ export default function IntentPage() {
     });
   }, [setPendingGaslessIntent]);
 
-  const handleWidgetConfirm = useCallback((payload: WidgetConfirmPayload) => {
-    if (payload.widgetType === 'quote_review') {
-      const { outputToken, durationSeconds } = payload.selection as { outputToken: string; durationSeconds: number };
-      sendMessage(`[Widget confirm] outputToken=${outputToken} duration=${durationSeconds}`);
-    }
-  }, [sendMessage]);
-
   /** Handle gasless intent signing */
   const handleSignGaslessIntent = useCallback(async () => {
     if (!pendingGaslessIntent || !address) return;
@@ -685,7 +677,6 @@ export default function IntentPage() {
           onRetry={handleRetry}
           onNewChat={handleNewChat}
           onOpenSettings={() => setShowSettings(true)}
-          onWidgetConfirm={handleWidgetConfirm}
           onDutchPlanConfirm={handleDutchPlanConfirm}
           pendingSignIntent={pendingGaslessIntent && !intentProgress ? pendingGaslessIntent : undefined}
           signIntentStatus={gaslessStatus}

@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown';
 import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
-import type { WidgetConfirmPayload } from '../widgets';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 const SUGGESTIONS = [
@@ -37,7 +36,6 @@ interface IntentChatProps {
   onRetry: () => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
-  onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // Sign intent card props (rendered inline in chat instead of floating)
   pendingSignIntent?: SignIntentParams | null;
@@ -79,7 +77,6 @@ export function IntentChat({
   onRetry,
   onNewChat,
   onOpenSettings,
-  onWidgetConfirm,
   onDutchPlanConfirm,
   pendingSignIntent,
   signIntentStatus,
@@ -105,7 +102,6 @@ export function IntentChat({
         error={error}
         onRetry={onRetry}
         renderContent={renderMarkdown}
-        onWidgetConfirm={onWidgetConfirm}
         onDutchPlanConfirm={onDutchPlanConfirm}
         pendingSignIntent={pendingSignIntent}
         signIntentStatus={signIntentStatus}

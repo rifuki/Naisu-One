@@ -266,7 +266,7 @@ export function useAgent(
     if (extras.length) messageToSend += `\n\n[Wallet context]\n${extras.join('\n')}`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout — bridge flow needs 4 LLM iterations
 
     try {
       const res = await fetch(`${AGENT_URL}/v1/chat`, {
@@ -301,7 +301,7 @@ export function useAgent(
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
-        console.error(`[useAgent] request timed out (60s)`, { url: `${AGENT_URL}/v1/chat`, projectId: PROJECT_ID, userId: walletAddress, messagePrev: userMessage.slice(0, 80) });
+        console.error(`[useAgent] request timed out (120s)`, { url: `${AGENT_URL}/v1/chat`, projectId: PROJECT_ID, userId: walletAddress, messagePrev: userMessage.slice(0, 80) });
         const timeoutMsg = "The agent is taking too long to respond (timeout). It might be stuck waiting for a solver or processing a long request. Please try again later.";
         setError(timeoutMsg);
         appendMessages(prev => [...prev, {

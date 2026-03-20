@@ -2,7 +2,6 @@ import { ReactNode, useRef, useEffect } from 'react';
 import { Bot } from 'lucide-react';
 import { ChatMessage, MessageBubble } from './message-bubble';
 import { SignIntentMessage } from './sign-intent-message';
-import type { WidgetConfirmPayload } from '../widgets';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 interface GaslessIntentData {
@@ -25,7 +24,6 @@ interface MessageListProps {
   error?: string | null;
   onRetry?: () => void;
   renderContent: (content: string) => ReactNode;
-  onWidgetConfirm?: (payload: WidgetConfirmPayload) => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // Sign intent card props (rendered inline in chat)
   pendingSignIntent?: SignIntentParams | null;
@@ -44,7 +42,6 @@ export function MessageList({
   error,
   onRetry,
   renderContent,
-  onWidgetConfirm,
   onDutchPlanConfirm,
   pendingSignIntent,
   signIntentStatus,
@@ -55,10 +52,16 @@ export function MessageList({
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const lastGaslessIntentIdx = messages.reduce((latest, msg, i) => {
-    if (msg.role === 'assistant' && msg.content.includes('"type":"gasless_intent"')) return i;
+  // Matches any interactive widget (quote_review OR gasless_intent), handles both compact and pretty-printed JSON
+  const hasInteractiveWidget = (content: string) =>
+    /"type"\s*:\s*"(gasless_intent|quote_review)"/.test(content);
+
+  // Index of the last message that contains any interactive widget
+  const lastWidgetIdx = messages.reduce((latest, msg, i) => {
+    if (msg.role === 'assistant' && hasInteractiveWidget(msg.content)) return i;
     return latest;
   }, -1);
+
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -104,7 +107,8 @@ export function MessageList({
             }
           }
 
-          const isHistoricalIntent = lastGaslessIntentIdx !== -1 && idx < lastGaslessIntentIdx && msg.content.includes('"type":"gasless_intent"');
+          // Mark as historical if this message has an interactive widget but a newer one exists after it
+          const isHistoricalIntent = lastWidgetIdx !== -1 && idx < lastWidgetIdx && hasInteractiveWidget(msg.content);
 
           return (
             <MessageBubble
@@ -112,7 +116,6 @@ export function MessageList({
               message={msg}
               renderContent={renderContent}
               monitorTx={monitorTx}
-              onWidgetConfirm={onWidgetConfirm}
               onDutchPlanConfirm={onDutchPlanConfirm}
               pendingSignIntent={pendingSignIntent}
               signIntentStatus={signIntentStatus}
