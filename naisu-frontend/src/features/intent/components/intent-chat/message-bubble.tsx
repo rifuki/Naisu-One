@@ -655,9 +655,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
 
-          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+          <div className={`rounded-[20px] overflow-hidden border border-white/[0.1] bg-[#141618] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
             {/* Header */}
-            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-white/[0.08] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Zap size={13} className="text-[#0df2df] fill-[#0df2df]" />
                 <span className="text-[12px] font-semibold text-white tracking-wide">Live Quote</span>
@@ -671,7 +671,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             {/* Body — 2 columns */}
             <div className="flex">
               {/* LEFT: quote info */}
-              <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/5 justify-center">
+              <div className="flex-1 min-w-0 p-4 flex flex-col gap-3 border-r border-white/[0.08] justify-center">
                 {/* Conversion */}
                 <div>
                   <div className="flex items-start gap-3">
@@ -837,9 +837,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
 
-          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+          <div className={`rounded-[20px] overflow-hidden border border-white/[0.1] bg-[#141618] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
             {/* Header */}
-            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-white/[0.08] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg className="w-3.5 h-3.5 text-[#0df2df]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -867,7 +867,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             {/* Body — 2 columns */}
             <div className="flex">
               {/* LEFT: what you're signing */}
-              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5 justify-center">
+              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/[0.08] justify-center">
                 <div>
                   <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2">You are bridging</div>
                   <div className="flex items-start gap-3">
@@ -1081,10 +1081,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <span className="text-[10px] text-slate-500">just now</span>
           </div>
 
-          <div className={`rounded-[20px] overflow-hidden border border-white/5 bg-[#0A0A0A] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
+          <div className={`rounded-[20px] overflow-hidden border border-white/[0.1] bg-[#141618] shadow-2xl font-sans transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'}`}>
 
             {/* ── Header ─────────────────────────────────────────────── */}
-            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-white/[0.08] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {isComplete
                   ? <CheckCircle2 size={13} className="text-green-400" />
@@ -1107,7 +1107,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
             <div className="flex">
 
               {/* LEFT column */}
-              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/5">
+              <div className="flex-1 min-w-0 p-5 flex flex-col gap-4 border-r border-white/[0.08]">
 
                 {/* Amount row — always shown */}
                 <div className="flex items-center gap-3">
@@ -1257,7 +1257,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* TX Receipts — complete state */}
                 {isComplete && (srcTxHash || destTxHash || settledTxHash) && (
                   <div className="rounded-xl border border-white/5 overflow-hidden">
-                    <div className="px-2.5 py-1.5 bg-white/[0.02] border-b border-white/5">
+                    <div className="px-2.5 py-1.5 bg-white/[0.02] border-b border-white/[0.08]">
                       <span className="text-[8px] text-slate-600 uppercase tracking-widest font-bold">Transaction Receipts</span>
                     </div>
                     {srcTxHash && (
