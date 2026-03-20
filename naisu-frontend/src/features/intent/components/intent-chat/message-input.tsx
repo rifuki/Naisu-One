@@ -27,8 +27,8 @@ export function MessageInput({
 
   return (
     <div className="relative group w-full">
-      <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-indigo-500/20 rounded-[24px] blur opacity-20 group-hover:opacity-40 transition duration-500" />
-      <div className="relative bg-[#0A0A0A]/90 backdrop-blur-2xl border border-white/10 rounded-[28px] p-1.5 flex items-center shadow-2xl transition-all group-focus-within:border-primary/40 group-focus-within:bg-[#050505] group-focus-within:shadow-[0_0_30px_rgba(var(--primary),0.1)]">
+      <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-indigo-500/20 rounded-[28px] blur-md opacity-20 group-hover:opacity-40 transition duration-500" />
+      <div className="relative bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[28px] p-1.5 flex items-center shadow-2xl transition-all group-focus-within:border-white/20 group-focus-within:bg-white/10 group-focus-within:shadow-[0_0_30px_rgba(255,255,255,0.05)]">
         <input
           className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 text-[15px] px-4 py-3 outline-none font-normal"
           placeholder={isLoading ? 'Agent is thinking...' : placeholder}

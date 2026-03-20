@@ -116,7 +116,7 @@ export function IntentChat({
       />
 
       {/* Input area */}
-      <div className="w-full px-4 sm:px-8 pb-6 pt-3 relative z-20 bg-background/80 backdrop-blur shrink-0 border-t border-white/5">
+      <div className="w-full px-4 sm:px-8 pb-6 pt-3 relative z-20 shrink-0">
         <div className="max-w-3xl mx-auto opacity-0 animate-fade-in-up" style={{ animationFillMode: 'forwards' }}>
           {/* Suggestion chips — only when chat is empty and user hasn't typed */}
           {isEmpty && !inputValue.trim() && (
