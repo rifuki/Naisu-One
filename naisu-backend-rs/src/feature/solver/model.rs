@@ -135,6 +135,20 @@ pub struct RawQuote {
     pub expires_at: i64,
 }
 
+// ─── Scored quote (output of auction scoring) ─────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoredQuote {
+    pub solver_id: String,
+    pub solver_name: String,
+    pub quoted_price: String,
+    pub estimated_eta: u64,
+    pub expires_at: i64,
+    pub score: f64,
+    pub winner: bool,
+}
+
 // ─── RFQ result stored after auction ─────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
@@ -142,6 +156,7 @@ pub struct RawQuote {
 pub struct RfqResult {
     pub order_id: String,
     pub rfq_sent_at: i64,
+    pub quotes: Vec<ScoredQuote>,
     pub winner: Option<String>,
     pub winner_id: Option<String>,
     pub winner_address: Option<String>,

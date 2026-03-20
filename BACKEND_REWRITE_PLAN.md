@@ -232,12 +232,12 @@ RFQ:
 - [x] Register/heartbeat/rfq_quote handling
 - [x] Heartbeat cron (check 60s timeout)
 
-### Phase 5 — RFQ Auction Engine
-- [ ] `feature/solver/auction.rs` — scoring, winner selection
-- [ ] Fade detection (3 fades → 24h suspend)
-- [ ] Tier computation (0-3 based on fill rate)
-- [ ] RFQ broadcast to eligible solvers
-- [ ] Winner execute relay + SSE emit
+### Phase 5 — RFQ Auction Engine ✅ DONE
+- [x] `feature/solver/auction.rs` — scoring, winner selection
+- [x] Fade detection (3 fades → 24h suspend)
+- [x] Tier computation (0-3 based on fill rate)
+- [x] RFQ broadcast to eligible solvers
+- [x] Winner execute relay + SSE emit
 
 ### Phase 6 — EVM Indexer (alloy-rs)
 - [ ] `infrastructure/indexer/evm.rs`

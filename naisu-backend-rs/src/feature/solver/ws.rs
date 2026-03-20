@@ -124,7 +124,7 @@ async fn handle_message(
             }
         }
 
-        // ── RFQ Quote — stored for Phase 5 auction ────────────────────────────
+        // ── RFQ Quote ─────────────────────────────────────────────────────────
         SolverInbound::RfqQuote { order_id, quoted_price, estimated_eta, expires_at } => {
             let Some(id) = solver_id.as_deref() else {
                 not_registered(tx).await;
@@ -136,23 +136,19 @@ async fn handle_message(
                 .map(|s| s.info.name.clone())
                 .unwrap_or_else(|| id.to_string());
 
-            debug!(
-                solver_id = %id,
-                order_id = %order_id,
-                quoted_price = %quoted_price,
-                "RFQ quote received"
-            );
+            debug!(solver_id = %id, order_id = %order_id, quoted_price = %quoted_price, "RFQ quote received");
 
-            // Store in collector for Phase 5 auction engine
-            if let Some(mut collector) = state.solver_registry.rfq_collectors.get_mut(&order_id) {
-                collector.quotes.push(super::model::RawQuote {
+            let accepted = state.solver_registry.push_quote(
+                &order_id,
+                super::model::RawQuote {
                     solver_id: id.to_string(),
                     solver_name,
                     quoted_price,
                     estimated_eta,
                     expires_at,
-                });
-            } else {
+                },
+            );
+            if !accepted {
                 warn!(order_id = %order_id, "rfq_quote for unknown/expired orderId — ignoring");
             }
         }
@@ -163,8 +159,8 @@ async fn handle_message(
                 not_registered(tx).await;
                 return;
             };
-            // Clear exclusive window so fade detection doesn't penalise executing solver
-            state.solver_registry.rfq_collectors.remove(&order_id);
+            // Clear exclusive window so fade detection doesn't penalise an executing solver
+            state.solver_registry.clear_exclusive(&order_id);
             emit_progress(state, id, SseEventType::ExecuteSent, order_id, tx_hash);
         }
 

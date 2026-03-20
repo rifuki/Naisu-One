@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     let state = AppState::new(config);
     info!("Application state initialized");
 
-    // Background: mark solvers offline if they miss heartbeats (check every 30s)
+    // Background: mark solvers offline if they miss heartbeats (every 30s)
     {
         let registry = state.solver_registry.clone();
         tokio::spawn(async move {
@@ -40,6 +40,18 @@ async fn main() -> Result<()> {
             loop {
                 interval.tick().await;
                 registry.mark_stale_offline();
+            }
+        });
+    }
+
+    // Background: check for fade penalties on exclusive windows (every 60s)
+    {
+        let registry = state.solver_registry.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                registry.check_fades();
             }
         });
     }

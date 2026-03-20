@@ -1,18 +1,16 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::mpsc;
-use tracing::info;
+use tokio::sync::{mpsc, oneshot};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::model::{RawQuote, RfqResult, SolverInfo};
 
 // ─── Solver session ───────────────────────────────────────────────────────────
 
-/// A connected solver's live state.
 pub struct SolverSession {
     pub info: SolverInfo,
-    /// Channel to push outbound JSON strings to this solver's WS writer task.
     pub tx: mpsc::Sender<String>,
 }
 
@@ -26,28 +24,41 @@ impl std::fmt::Debug for SolverSession {
 
 // ─── RFQ collector ────────────────────────────────────────────────────────────
 
-/// Accumulates rfq_quote messages for a single RFQ auction round.
-/// Phase 5 will add full auction logic; Phase 4 stores quotes for forward compat.
-#[derive(Debug)]
 pub struct RfqCollector {
     pub quotes: Vec<RawQuote>,
     pub expected_count: usize,
+    /// Fires when all expected quotes arrive, so the auction can resolve early.
+    pub notify: Option<oneshot::Sender<()>>,
+}
+
+impl std::fmt::Debug for RfqCollector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RfqCollector")
+            .field("quotes_count", &self.quotes.len())
+            .field("expected_count", &self.expected_count)
+            .finish_non_exhaustive()
+    }
+}
+
+// ─── Pending exclusive window ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct PendingExclusive {
+    pub winner_id: String,
+    pub deadline: i64, // unix ms — when the 30s exclusivity window ends
 }
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct SolverRegistry {
-    /// solver_id → live session (only present while WS is connected)
     pub sessions: Arc<DashMap<String, SolverSession>>,
-    /// token → solver_id (persists across reconnects within process lifetime)
     pub by_token: Arc<DashMap<String, String>>,
-    /// evm_address (lowercase) → solver_id (for upsert on re-register)
     pub by_evm: Arc<DashMap<String, String>>,
-    /// order_id → in-flight RFQ collector
     pub rfq_collectors: Arc<DashMap<String, RfqCollector>>,
-    /// order_id → completed RFQ result (for GET /selection/:orderId)
     pub rfq_results: Arc<DashMap<String, RfqResult>>,
+    /// orderId → exclusive window tracking for fade detection
+    pub pending_exclusive: Arc<DashMap<String, PendingExclusive>>,
 }
 
 impl Default for SolverRegistry {
@@ -58,6 +69,7 @@ impl Default for SolverRegistry {
             by_evm: Arc::new(DashMap::new()),
             rfq_collectors: Arc::new(DashMap::new()),
             rfq_results: Arc::new(DashMap::new()),
+            pending_exclusive: Arc::new(DashMap::new()),
         }
     }
 }
@@ -69,8 +81,6 @@ impl SolverRegistry {
 
     // ─── Register / re-register ───────────────────────────────────────────────
 
-    /// Register a new solver or upsert an existing one by EVM address.
-    /// Returns (solver_id, token, is_new).
     pub fn register(
         &self,
         name: String,
@@ -81,9 +91,7 @@ impl SolverRegistry {
     ) -> (String, String) {
         let evm_lower = evm_address.to_lowercase();
 
-        // Check if already registered by EVM address
         if let Some(existing_id) = self.by_evm.get(&evm_lower).map(|r| r.clone()) {
-            // Re-register: update info, reattach WS
             if let Some(mut session) = self.sessions.get_mut(&existing_id) {
                 let tok = self.by_token.iter()
                     .find(|e| e.value() == &existing_id)
@@ -91,8 +99,8 @@ impl SolverRegistry {
                     .unwrap_or_default();
 
                 session.info.name = name.clone();
-                session.info.solana_address = solana_address.clone();
-                session.info.supported_routes = supported_routes.clone();
+                session.info.solana_address = solana_address;
+                session.info.supported_routes = supported_routes;
                 session.info.online = true;
                 session.info.last_heartbeat = chrono::Utc::now().timestamp_millis();
                 session.info.suspended = false;
@@ -104,7 +112,6 @@ impl SolverRegistry {
             }
         }
 
-        // New solver
         let solver_id = Uuid::new_v4().to_string();
         let token = Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
@@ -168,7 +175,6 @@ impl SolverRegistry {
                 session.info.evm_balance = bal;
             }
 
-            // Lift suspension if past suspendUntil
             if session.info.suspended {
                 if let Some(until) = session.info.suspend_until {
                     if now >= until {
@@ -181,18 +187,145 @@ impl SolverRegistry {
         }
     }
 
-    // ─── Send message to a solver ─────────────────────────────────────────────
+    // ─── RFQ collector lifecycle ──────────────────────────────────────────────
+
+    /// Create a new RFQ collector and return the receiver that fires when all
+    /// expected quotes arrive (or use with tokio::time::timeout for the deadline).
+    pub fn create_collector(&self, order_id: String, expected_count: usize) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.rfq_collectors.insert(order_id, RfqCollector {
+            quotes: Vec::new(),
+            expected_count,
+            notify: Some(tx),
+        });
+        rx
+    }
+
+    /// Push a quote into the collector. Fires notify if all quotes are in.
+    /// Returns false if no collector exists for this order_id.
+    pub fn push_quote(&self, order_id: &str, quote: RawQuote) -> bool {
+        if let Some(mut collector) = self.rfq_collectors.get_mut(order_id) {
+            collector.quotes.push(quote);
+            if collector.quotes.len() >= collector.expected_count {
+                if let Some(notify) = collector.notify.take() {
+                    let _ = notify.send(());
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove and return all collected quotes.
+    pub fn take_quotes(&self, order_id: &str) -> Vec<RawQuote> {
+        self.rfq_collectors
+            .remove(order_id)
+            .map(|(_, c)| c.quotes)
+            .unwrap_or_default()
+    }
+
+    // ─── Exclusive window ─────────────────────────────────────────────────────
+
+    pub fn set_exclusive(&self, order_id: String, winner_id: String, deadline: i64) {
+        self.pending_exclusive.insert(order_id, PendingExclusive { winner_id, deadline });
+    }
+
+    /// Called when execute_confirmed arrives — clears the exclusive window so
+    /// fade detection doesn't penalise a solver that actually executed.
+    pub fn clear_exclusive(&self, order_id: &str) {
+        self.pending_exclusive.remove(order_id);
+    }
+
+    // ─── Fade detection ───────────────────────────────────────────────────────
+
+    pub fn check_fades(&self) {
+        let now = chrono::Utc::now().timestamp_millis();
+        const GRACE_MS: i64 = 5_000;
+
+        let expired: Vec<(String, PendingExclusive)> = self.pending_exclusive
+            .iter()
+            .filter(|e| now > e.value().deadline + GRACE_MS)
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect();
+
+        for (order_id, exclusive) in expired {
+            self.pending_exclusive.remove(&order_id);
+            self.apply_fade(&exclusive.winner_id, now);
+        }
+    }
+
+    fn apply_fade(&self, solver_id: &str, now: i64) {
+        if let Some(mut session) = self.sessions.get_mut(solver_id) {
+            session.info.fade_penalty += 1;
+            session.info.reliability_score =
+                (session.info.reliability_score - 10.0).max(0.0);
+
+            if session.info.fade_penalty >= 3 {
+                session.info.suspended = true;
+                session.info.suspend_until = Some(now + 24 * 60 * 60 * 1_000);
+                warn!(
+                    name = %session.info.name,
+                    fades = session.info.fade_penalty,
+                    "Solver suspended: 3 fades"
+                );
+            } else {
+                warn!(
+                    name = %session.info.name,
+                    fades = session.info.fade_penalty,
+                    "Fade penalty applied to solver"
+                );
+            }
+        }
+    }
+
+    // ─── Fill recording ───────────────────────────────────────────────────────
+
+    /// Called by the EVM indexer when OrderFulfilled is observed.
+    pub fn record_fill(&self, evm_address: &str, fill_time_ms: Option<i64>, _order_id: Option<&str>) {
+        let evm_lower = evm_address.to_lowercase();
+        if let Some(solver_id) = self.by_evm.get(&evm_lower).map(|r| r.clone()) {
+            if let Some(mut session) = self.sessions.get_mut(&solver_id) {
+                session.info.total_fills += 1;
+
+                if let Some(ms) = fill_time_ms {
+                    let sec = ms as f64 / 1000.0;
+                    let n = session.info.total_fills as f64;
+                    session.info.avg_fill_time =
+                        if n == 1.0 { sec }
+                        else { (session.info.avg_fill_time * (n - 1.0) + sec) / n };
+                }
+
+                if session.info.total_rfq_accepted > 0 {
+                    session.info.reliability_score = (session.info.total_fills as f64
+                        / session.info.total_rfq_accepted as f64
+                        * 100.0).round().min(100.0);
+                }
+
+                session.info.tier = session.info.compute_tier();
+
+                info!(
+                    name = %session.info.name,
+                    total_fills = session.info.total_fills,
+                    reliability = session.info.reliability_score,
+                    "Fill recorded"
+                );
+            }
+        }
+    }
+
+    // ─── Send message ─────────────────────────────────────────────────────────
 
     pub async fn send(&self, solver_id: &str, msg: &serde_json::Value) {
         if let Some(session) = self.sessions.get(solver_id) {
             let payload = msg.to_string();
             if let Err(e) = session.tx.send(payload).await {
-                tracing::warn!(solver_id = %solver_id, error = %e, "Failed to send WS message to solver");
+                warn!(solver_id = %solver_id, error = %e, "Failed to send WS message to solver");
             }
         }
     }
 
-    // ─── Stale offline detection ──────────────────────────────────────────────
+    // ─── Offline detection ────────────────────────────────────────────────────
 
     pub fn mark_stale_offline(&self) {
         let cutoff = chrono::Utc::now().timestamp_millis() - 60_000;
@@ -207,20 +340,25 @@ impl SolverRegistry {
     // ─── Queries ──────────────────────────────────────────────────────────────
 
     pub fn list(&self) -> Vec<SolverInfo> {
-        self.sessions
-            .iter()
-            .map(|e| e.value().info.clone())
-            .collect()
+        self.sessions.iter().map(|e| e.value().info.clone()).collect()
     }
 
     pub fn active_count(&self) -> usize {
-        self.sessions
-            .iter()
-            .filter(|e| e.value().info.is_eligible())
-            .count()
+        self.sessions.iter().filter(|e| e.value().info.is_eligible()).count()
     }
 
     pub fn get_rfq_result(&self, order_id: &str) -> Option<RfqResult> {
         self.rfq_results.get(order_id).map(|r| r.clone())
+    }
+
+    pub fn eligible_for_route(&self, route: &str) -> Vec<(String, String)> {
+        self.sessions
+            .iter()
+            .filter(|e| {
+                let info = &e.value().info;
+                info.is_eligible() && info.supported_routes.iter().any(|r| r == route)
+            })
+            .map(|e| (e.key().clone(), e.value().info.name.clone()))
+            .collect()
     }
 }

@@ -1,3 +1,4 @@
+pub mod auction;
 pub mod model;
 pub mod registry;
 pub mod routes;
