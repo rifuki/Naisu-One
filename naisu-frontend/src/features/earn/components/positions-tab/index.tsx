@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { rawToUi } from '@/lib/utils/format';
+import { apiClient } from '@/lib/api-client';
 import { usePositions } from '../../hooks/use-positions';
 import { useUnstakeMsol } from '../../hooks/use-unstake-msol';
-
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000/api/v1';
 
 interface PositionsTabProps {
   solAddress: string | null;
@@ -32,13 +31,10 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
     setMarginfiWithdrawing(true);
     setMarginfiError(null);
     try {
-      const res = await fetch(`${API_BASE}/portfolio/withdraw-marginfi`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: solAddress, amount: marginfiWithdrawAmount }),
-      });
-      const json = await res.json() as { data?: { signature: string }; message?: string };
-      if (!res.ok) throw new Error(json.message || 'Withdraw failed');
+      const json = await apiClient.post<{ data?: { signature: string } }>(
+        '/portfolio/withdraw-marginfi',
+        { wallet: solAddress, amount: marginfiWithdrawAmount },
+      );
       setMarginfiTxResult(json.data?.signature ?? null);
       setShowMarginfiModal(false);
       setMarginfiWithdrawAmount('');

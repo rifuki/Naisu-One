@@ -3,7 +3,7 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { fmtUsd, rawToUi } from '@/lib/utils/format';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
-import { usePortfolioBalances } from '@/features/earn/hooks/use-portfolio-balances';
+import { usePositions } from "@/features/earn/hooks/use-positions";
 import { useUnstakeMsol } from '@/features/earn/hooks/use-unstake-msol';
 
 interface PositionCardProps {
@@ -53,7 +53,7 @@ export default function PortfolioPage() {
   const { connection } = useConnection();
   const wallet = useWallet();
   
-  const { data: portfolio, isLoading, error, refetch } = usePortfolioBalances(solanaAddress);
+  const { data: portfolio, isLoading, error, refetch } = usePositions(solanaAddress);
   const unstakeMutation = useUnstakeMsol();
   
   const [showUnstakeModal, setShowUnstakeModal] = useState(false);

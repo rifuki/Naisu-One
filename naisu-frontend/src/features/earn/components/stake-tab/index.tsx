@@ -1,16 +1,11 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
-import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
-import { fmtUsd } from '@/lib/utils/format';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { apiClient } from '@/lib/api-client';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
-import type { YieldRate } from '../../api/get-yield-rates';
-
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000/api/v1';
 
 interface StakeTabProps {
   selectedProtocol: 'marinade' | 'marginfi';
@@ -20,7 +15,6 @@ interface StakeTabProps {
 export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) {
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
-  const { connection } = useConnection();
   const solanaAddress = useSolanaAddress();
 
   const [amount, setAmount] = useState('');
@@ -41,8 +35,9 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
   const { data: priceData } = useQuery<{ fromUsd: number }>({
     queryKey: ['eth-price'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/intent/price?fromChain=base_sepolia&toChain=solana`);
-      const json = await res.json() as { data?: { fromUsd: number } };
+      const json = await apiClient.get<{ data?: { fromUsd: number } }>('/intent/price', {
+        fromChain: 'base_sepolia', toChain: 'solana',
+      });
       return { fromUsd: json.data?.fromUsd ?? 0 };
     },
     staleTime: 60_000,

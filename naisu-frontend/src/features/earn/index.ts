@@ -1,6 +1,6 @@
 // Re-export hooks
 export { useYieldRates } from './hooks/use-yield-rates';
-export { usePortfolioBalances } from './hooks/use-portfolio-balances';
+export { usePositions } from './hooks/use-positions';
 export { useUnstakeMsol } from './hooks/use-unstake-msol';
 
 // Re-export components
