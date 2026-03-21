@@ -25,3 +25,4 @@ hex           = "0.4"
 alloy         = { version = "1", features = ["providers", "provider-ws", "transport-ws", "sol-types", "rpc-types", "contract", "reqwest", "k256"] }
 reqwest       = { version = "0.12", features = ["json"] }
 sqlx          = { version = "0.8", features = ["sqlite", "runtime-tokio", "chrono", "uuid"] }
+bs58          = "0.5"

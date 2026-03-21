@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
+import { useQuery } from '@tanstack/react-query';
 import { fmtUsd } from '@/lib/utils/format';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 import type { YieldRate } from '../../api/get-yield-rates';
+
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000/api/v1';
 
 interface StakeTabProps {
   selectedProtocol: 'marinade' | 'marginfi';
@@ -33,6 +36,22 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
   const ethBalanceRaw = ethBalanceData
     ? (Number(ethBalanceData.value) / 10 ** ethBalanceData.decimals).toString()
     : '';
+
+  // ETH USD price
+  const { data: priceData } = useQuery<{ fromUsd: number }>({
+    queryKey: ['eth-price'],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/intent/price?fromChain=base_sepolia&toChain=solana`);
+      const json = await res.json() as { data?: { fromUsd: number } };
+      return { fromUsd: json.data?.fromUsd ?? 0 };
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const ethUsdPrice = priceData?.fromUsd ?? 0;
+  const usdValue = Number(amount) > 0 && ethUsdPrice > 0
+    ? `≈ $${(Number(amount) * ethUsdPrice).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+    : '≈ $0.00';
 
   // Yield rates
   const { data: rates, isLoading: isRatesLoading } = useYieldRates();
@@ -104,7 +123,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
         </div>
 
         <div className="flex justify-between items-center mt-2">
-          <span className="text-xs text-slate-600">≈ $0.00</span>
+          <span className="text-xs text-slate-600">{usdValue}</span>
           {ethBalance !== null ? (
             <span className="text-xs text-slate-500 flex items-center gap-1.5">
               Balance: {ethBalance}

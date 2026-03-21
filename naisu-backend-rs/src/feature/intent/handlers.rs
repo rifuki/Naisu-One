@@ -637,3 +637,150 @@ pub async fn get_price(
 
     Ok(ApiSuccess::default().with_data(data))
 }
+
+// ─── POST /build-tx ───────────────────────────────────────────────────────────
+
+sol! {
+    function createOrder(
+        bytes32 recipient,
+        uint16 destinationChain,
+        uint256 startPrice,
+        uint256 floorPrice,
+        uint256 durationSeconds,
+        uint8 intentType
+    ) external payable returns (bytes32);
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildTxBody {
+    pub chain:             String, // "evm-base"
+    pub action:            String, // "create_order"
+    pub sender_address:    String,
+    pub recipient_address: String, // Solana base58 or EVM hex
+    pub destination_chain: String, // "solana" | "sui"
+    pub amount:            String,
+    pub output_token:      Option<String>, // "sol" | "msol" | "marginfi"
+    pub start_price:       Option<String>,
+    pub floor_price:       Option<String>,
+    pub duration_seconds:  Option<u64>,
+}
+
+pub async fn build_tx(
+    State(state): State<AppState>,
+    Json(body): Json<BuildTxBody>,
+) -> ApiResult<serde_json::Value> {
+    use alloy::primitives::{FixedBytes, U256};
+    use alloy::sol_types::SolCall;
+
+    if body.chain != "evm-base" || body.action != "create_order" {
+        return Err(ApiError::default()
+            .with_code(StatusCode::BAD_REQUEST)
+            .with_message("Only chain=evm-base + action=create_order is supported"));
+    }
+
+    let amount_f64: f64 = body.amount.parse().map_err(|_| {
+        ApiError::default()
+            .with_code(StatusCode::BAD_REQUEST)
+            .with_message("amount must be a positive number")
+    })?;
+
+    let amount_wei = format!("{}", (amount_f64 * 1e18) as u128);
+
+    // Compute prices if not provided
+    let (start_price_str, floor_price_str) = if body.start_price.is_some() && body.floor_price.is_some() {
+        (body.start_price.unwrap(), body.floor_price.unwrap())
+    } else {
+        let prices = price::compute_eth_to_sol_prices(&amount_wei).await;
+        (prices.start_price, prices.floor_price)
+    };
+
+    let start_price: U256 = start_price_str.parse().map_err(|_| {
+        ApiError::default().with_code(StatusCode::BAD_REQUEST).with_message("invalid startPrice")
+    })?;
+    let floor_price: U256 = floor_price_str.parse().map_err(|_| {
+        ApiError::default().with_code(StatusCode::BAD_REQUEST).with_message("invalid floorPrice")
+    })?;
+
+    // Encode recipient as bytes32
+    let recipient_bytes32: FixedBytes<32> = if body.recipient_address.starts_with("0x") {
+        let hex_str = body.recipient_address.trim_start_matches("0x");
+        let padded = format!("{:0>64}", hex_str);
+        let bytes = hex::decode(&padded).map_err(|_| {
+            ApiError::default().with_code(StatusCode::BAD_REQUEST).with_message("invalid EVM recipient")
+        })?;
+        FixedBytes::from_slice(&bytes)
+    } else {
+        // Solana base58 → 32 bytes
+        let decoded = bs58::decode(&body.recipient_address).into_vec().map_err(|_| {
+            ApiError::default().with_code(StatusCode::BAD_REQUEST).with_message("invalid Solana recipient address")
+        })?;
+        if decoded.len() != 32 {
+            return Err(ApiError::default()
+                .with_code(StatusCode::BAD_REQUEST)
+                .with_message("Solana address must decode to exactly 32 bytes"));
+        }
+        FixedBytes::from_slice(&decoded)
+    };
+
+    // Wormhole destination chain ID
+    let dest_chain_id: u16 = match body.destination_chain.as_str() {
+        "solana" => 1,
+        "sui"    => 21,
+        other    => return Err(ApiError::default()
+            .with_code(StatusCode::BAD_REQUEST)
+            .with_message(&format!("unsupported destinationChain: {other}"))),
+    };
+
+    // Intent type: 0=sol, 1=msol (Marinade), 3=marginfi
+    let intent_type: u8 = match body.output_token.as_deref().unwrap_or("sol") {
+        "msol"     => 1,
+        "marginfi" => 3,
+        _          => 0,
+    };
+
+    let duration: U256 = U256::from(body.duration_seconds.unwrap_or(300));
+
+    // Encode calldata
+    let call = createOrderCall {
+        recipient:          recipient_bytes32,
+        destinationChain:   dest_chain_id,
+        startPrice:         start_price,
+        floorPrice:         floor_price,
+        durationSeconds:    duration,
+        intentType:         intent_type,
+    };
+    let calldata = hex::encode(call.abi_encode());
+
+    let contract = &state.config.chain.contract_address;
+    let chain_id = state.config.chain.chain_id;
+
+    // Check solver availability
+    let active_solvers = state.solver_registry.active_count();
+    if active_solvers == 0 {
+        return Err(ApiError::default()
+            .with_code(StatusCode::SERVICE_UNAVAILABLE)
+            .with_message("No solver is currently active. Your funds would be locked until the auction deadline with no one to fill the order. Please try again when a solver is online."));
+    }
+
+    info!(
+        sender = %body.sender_address,
+        dest   = %body.destination_chain,
+        amount = %body.amount,
+        output_token = ?body.output_token,
+        "Build-tx createOrder encoded"
+    );
+
+    let data = serde_json::json!({
+        "chain": "evm",
+        "tx": {
+            "to":      contract,
+            "data":    format!("0x{calldata}"),
+            "value":   amount_wei,
+            "chainId": chain_id,
+            "description": format!("Create order: lock {} ETH → bridge to {}", body.amount, body.destination_chain),
+        }
+    });
+
+    Ok(ApiSuccess::default().with_data(data))
+}

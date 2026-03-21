@@ -16,4 +16,5 @@ pub fn intent_routes() -> Router<AppState> {
         .route("/orderbook/stats",          get(handlers::get_orderbook_stats))
         .route("/build-gasless",            post(handlers::build_gasless))
         .route("/submit-signature",         post(handlers::submit_signature))
+        .route("/build-tx",                 post(handlers::build_tx))
 }
