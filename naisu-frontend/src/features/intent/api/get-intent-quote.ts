@@ -11,7 +11,6 @@ export interface IntentQuote {
   fromChain: string
   toChain: string
   amountIn: string
-  amountInRaw: string
   estimatedReceive: string
   floorPrice: string
   currentAuctionPrice: string | null
@@ -24,7 +23,36 @@ export interface IntentQuote {
   durationMs: number
 }
 
+interface BackendQuote {
+  fromUsd: number | null
+  toUsd: number | null
+  startPrice: string
+  floorPrice: string
+  amount: string
+  receiveAmount: string
+  durationSeconds: number
+  activeSolvers: number
+}
+
 export async function getIntentQuote(params: GetIntentQuoteParams): Promise<IntentQuote> {
   const { amount, fromChain = 'evm-base', toChain = 'solana', token = 'native' } = params
-  return apiClient.get<IntentQuote>('/intent/quote', { fromChain, toChain, amount, token })
+  const raw = await apiClient.get<BackendQuote>('/intent/quote', { fromChain, toChain, amount, token })
+
+  const rate = raw.fromUsd && raw.toUsd ? raw.fromUsd / raw.toUsd : null
+
+  return {
+    fromChain,
+    toChain,
+    amountIn: amount,
+    estimatedReceive: raw.receiveAmount ?? '0',
+    floorPrice: raw.floorPrice ?? '0',
+    currentAuctionPrice: null,
+    fromUsd: raw.fromUsd ?? null,
+    toUsd: raw.toUsd ?? null,
+    rate,
+    confidence: null,
+    priceSource: 'fallback',
+    activeSolvers: raw.activeSolvers ?? 0,
+    durationMs: (raw.durationSeconds ?? 300) * 1000,
+  }
 }
