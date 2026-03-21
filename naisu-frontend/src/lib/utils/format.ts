@@ -5,8 +5,8 @@
  * fmtRate(1234.56) // "1,234.56"
  * fmtRate(null) // "—"
  */
-export function fmtRate(rate: number | null): string {
-  if (rate === null) return '—'
+export function fmtRate(rate: number | null | undefined): string {
+  if (rate == null) return '—'
   return rate >= 1000
     ? rate.toLocaleString(undefined, { maximumFractionDigits: 2 })
     : rate.toFixed(4).replace(/\.?0+$/, '')
@@ -18,8 +18,8 @@ export function fmtRate(rate: number | null): string {
  * fmtUsd(1234.56) // "$1,234.56"
  * fmtUsd(null) // ""
  */
-export function fmtUsd(usd: number | null): string {
-  if (usd === null) return ''
+export function fmtUsd(usd: number | null | undefined): string {
+  if (usd == null) return ''
   return `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
