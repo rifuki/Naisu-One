@@ -5,13 +5,14 @@ export interface PortfolioBalances {
   sol: string;
   msol: string;
   usdc: string;
+  marginfiSol: string; // SOL lamports lent in marginfi
   msolDecimals: number;
   usdcDecimals: number;
 }
 
 export async function getPortfolioBalances(wallet: string): Promise<PortfolioBalances> {
-  const response = await apiClient.get<PortfolioBalances>('/portfolio/balances', { wallet });
-  return response;
+  const response = await apiClient.get<{ data: PortfolioBalances }>('/portfolio/balances', { wallet });
+  return response.data;
 }
 
 export async function buildUnstakeMsolTx(wallet: string, amount: string): Promise<string> {

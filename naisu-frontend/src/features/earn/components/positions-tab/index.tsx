@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
-import { fmtUsd, rawToUi } from '@/lib/utils/format';
-import { usePortfolioBalances } from '../../hooks/use-portfolio-balances';
+import { rawToUi } from '@/lib/utils/format';
+import { usePositions } from '../../hooks/use-positions';
 import { useUnstakeMsol } from '../../hooks/use-unstake-msol';
+
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000/api/v1';
 
 interface PositionsTabProps {
   solAddress: string | null;
@@ -12,26 +14,49 @@ interface PositionsTabProps {
 export function PositionsTab({ solAddress }: PositionsTabProps) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const { data: portfolio, isLoading, error, refetch } = usePortfolioBalances(solAddress);
+  const { data: positions, isLoading, error, refetch } = usePositions(solAddress);
   const unstakeMutation = useUnstakeMsol();
 
   const [unstakeAmount, setUnstakeAmount] = useState('');
   const [showUnstakeModal, setShowUnstakeModal] = useState(false);
   const [txResult, setTxResult] = useState<string | null>(null);
 
+  const [marginfiWithdrawAmount, setMarginfiWithdrawAmount] = useState('');
+  const [showMarginfiModal, setShowMarginfiModal] = useState(false);
+  const [marginfiWithdrawing, setMarginfiWithdrawing] = useState(false);
+  const [marginfiTxResult, setMarginfiTxResult] = useState<string | null>(null);
+  const [marginfiError, setMarginfiError] = useState<string | null>(null);
+
+  const handleMarginfiWithdraw = async () => {
+    if (!solAddress || !marginfiWithdrawAmount) return;
+    setMarginfiWithdrawing(true);
+    setMarginfiError(null);
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/withdraw-marginfi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: solAddress, amount: marginfiWithdrawAmount }),
+      });
+      const json = await res.json() as { data?: { signature: string }; message?: string };
+      if (!res.ok) throw new Error(json.message || 'Withdraw failed');
+      setMarginfiTxResult(json.data?.signature ?? null);
+      setShowMarginfiModal(false);
+      setMarginfiWithdrawAmount('');
+      refetch();
+    } catch (err: any) {
+      setMarginfiError(err.message);
+    } finally {
+      setMarginfiWithdrawing(false);
+    }
+  };
+
   const handleUnstake = async () => {
     if (!solAddress || !wallet.signTransaction || !unstakeAmount) return;
-
     try {
-      const txBase64 = await unstakeMutation.mutateAsync({
-        wallet: solAddress,
-        amount: unstakeAmount,
-      });
-
+      const txBase64 = await unstakeMutation.mutateAsync({ wallet: solAddress, amount: unstakeAmount });
       const tx = VersionedTransaction.deserialize(Buffer.from(txBase64, 'base64'));
       const signed = await wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
-
       await connection.confirmTransaction(sig, 'confirmed');
       setTxResult(sig);
       setShowUnstakeModal(false);
@@ -50,13 +75,14 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
     );
   }
 
+  const hasMsol = positions && parseFloat(positions.msol) > 0;
+  const hasMarginfi = positions && parseFloat(positions.marginfiSol) > 0;
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">{solAddress.slice(0, 8)}…{solAddress.slice(-6)}</span>
-        </div>
+        <span className="text-xs text-slate-500">{solAddress.slice(0, 8)}…{solAddress.slice(-6)}</span>
         <button
           onClick={() => refetch()}
           className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
@@ -73,8 +99,26 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
         </div>
       )}
 
-      {/* mSOL Card */}
-      {portfolio && (
+      {/* Loading skeleton */}
+      {isLoading && (
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="bg-surface-light/50 rounded-xl p-4 border border-white/5 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/10" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-white/10 rounded w-20" />
+                  <div className="h-3 bg-white/5 rounded w-32" />
+                </div>
+                <div className="h-6 bg-white/10 rounded w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* mSOL — Marinade liquid staking */}
+      {hasMsol && (
         <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -85,50 +129,105 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
                 <p className="font-semibold text-white">mSOL</p>
                 <p className="text-xs text-slate-500">Marinade Staked SOL</p>
               </div>
-            </div>            <div className="text-right">
+            </div>
+            <div className="text-right">
               <p className="text-xl font-bold text-white">
-                {rawToUi(portfolio.msol, portfolio.msolDecimals)} mSOL
-              </p>              <p className="text-xs text-emerald-400">Earning yield</p>
+                {rawToUi(positions.msol, positions.msolDecimals)} mSOL
+              </p>
+              <p className="text-xs text-emerald-400">Earning 6.50% APY</p>
             </div>
           </div>
-
-          {parseFloat(portfolio.msol) > 0 && (
-            <button
-              onClick={() => setShowUnstakeModal(true)}
-              className="w-full mt-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
-            >
-              Unstake to SOL
-            </button>
-          )}
+          <button
+            onClick={() => setShowUnstakeModal(true)}
+            className="w-full mt-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
+          >
+            Unstake to SOL
+          </button>
         </div>
       )}
 
-      {/* SOL Card */}
-      {portfolio && (
+      {/* marginfi — SOL lending */}
+      {hasMarginfi && (
         <div className="bg-surface-light/50 rounded-xl p-4 border border-white/5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-purple-400/20 flex items-center justify-center">
-                <span className="text-base font-bold text-purple-400">◎</span>
+              <div className="w-10 h-10 rounded-full bg-orange-400/20 flex items-center justify-center">
+                <span className="text-base font-bold text-orange-400">f</span>
               </div>
               <div>
-                <p className="font-semibold text-white">SOL</p>
-                <p className="text-xs text-slate-500">Native SOL</p>
+                <p className="font-semibold text-white">marginfi</p>
+                <p className="text-xs text-slate-500">SOL lending on Solana</p>
               </div>
-            </div>            <div className="text-right">
+            </div>
+            <div className="text-right">
               <p className="text-xl font-bold text-white">
-                {rawToUi(portfolio.sol, 9)} SOL
-              </p>            </div>
+                {parseFloat((parseInt(positions.marginfiSol) / 1e9).toFixed(6))} SOL
+              </p>
+              <p className="text-xs text-emerald-400">Earning 7.80% APY</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowMarginfiModal(true)}
+            className="w-full mt-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
+          >
+            Withdraw SOL
+          </button>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && positions && !hasMsol && !hasMarginfi && (
+        <div className="text-center py-8">
+          <p className="text-slate-500 text-sm">No yield positions yet.</p>
+          <p className="text-slate-600 text-xs mt-1">Stake ETH on the Stake tab to earn yield.</p>
+        </div>
+      )}
+
+      {/* marginfi Withdraw Modal */}
+      {showMarginfiModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowMarginfiModal(false)} />
+          <div className="relative bg-surface rounded-2xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold text-white mb-1">Withdraw from marginfi</h3>
+            <p className="text-xs text-slate-500 mb-4">Enter amount in SOL to withdraw to your Solana wallet</p>
+            <input
+              type="text"
+              value={marginfiWithdrawAmount}
+              onChange={(e) => setMarginfiWithdrawAmount(e.target.value)}
+              placeholder={`Max: ${parseFloat((parseInt(positions?.marginfiSol ?? '0') / 1e9).toFixed(6))} SOL`}
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white mb-3"
+            />
+            {marginfiError && <p className="text-xs text-red-400 mb-3">{marginfiError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setShowMarginfiModal(false)} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10">
+                Cancel
+              </button>
+              <button
+                onClick={handleMarginfiWithdraw}
+                disabled={!marginfiWithdrawAmount || marginfiWithdrawing}
+                className="flex-1 py-2 rounded-xl bg-primary text-black font-semibold disabled:opacity-50"
+              >
+                {marginfiWithdrawing ? 'Withdrawing...' : 'Withdraw'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Unstake Modal */}
+      {/* marginfi Tx Result */}
+      {marginfiTxResult && (
+        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+          Withdrawn! Tx: {marginfiTxResult.slice(0, 8)}…{marginfiTxResult.slice(-8)}
+        </div>
+      )}
+
+      {/* Unstake mSOL Modal */}
       {showUnstakeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowUnstakeModal(false)} />
           <div className="relative bg-surface rounded-2xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-bold text-white mb-4">Unstake mSOL</h3>            <input
+            <h3 className="text-lg font-bold text-white mb-4">Unstake mSOL</h3>
+            <input
               type="text"
               value={unstakeAmount}
               onChange={(e) => setUnstakeAmount(e.target.value)}
@@ -136,10 +235,7 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
               className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white mb-4"
             />
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowUnstakeModal(false)}
-                className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10"
-              >
+              <button onClick={() => setShowUnstakeModal(false)} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10">
                 Cancel
               </button>
               <button
@@ -154,7 +250,7 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
         </div>
       )}
 
-      {/* Tx Result */}
+      {/* Unstake Tx Result */}
       {txResult && (
         <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
           Transaction sent: {txResult.slice(0, 8)}…{txResult.slice(-8)}
