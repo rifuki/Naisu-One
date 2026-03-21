@@ -358,7 +358,7 @@ const Navbar: React.FC = () => {
 
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group shrink-0">
-            <img src="/logo.png" alt="Naisu Logo" className="w-9 h-9 rounded-xl shadow-[0_0_15px_rgba(13,242,223,0.4)] group-hover:scale-110 transition-transform duration-300" />
+            <img src="/logo.svg" alt="Naisu" className="w-8 h-8 group-hover:scale-110 transition-transform duration-300" />
             <span className="text-sm font-bold tracking-tight text-white hidden sm:block">Naisu</span>
           </Link>
 

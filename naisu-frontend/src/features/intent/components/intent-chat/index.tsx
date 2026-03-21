@@ -46,7 +46,34 @@ interface IntentChatProps {
   onSignIntentDismiss?: () => void;
 }
 
+/**
+ * Fix malformed markdown tables from AI responses.
+ * Converts double-pipe tables (||) to standard single-pipe (|) format.
+ */
+function sanitizeMarkdownTables(content: string): string {
+  // Fix double-pipe table format: || Amount || Value || -> | Amount | Value |
+  // Handle cases like: || Amount ||--|--|| Your 0.1 ETH | ~$300 USD ||
+  let sanitized = content;
+  
+  // Replace || at start of line with | 
+  sanitized = sanitized.replace(/^\|\|/gm, '|');
+  // Replace || at end of line with |
+  sanitized = sanitized.replace(/\|\|$/gm, '|');
+  // Replace || in middle with |
+  sanitized = sanitized.replace(/\|\|\s*\|\|/g, ' | ');
+  sanitized = sanitized.replace(/\|\|/g, '|');
+  
+  // Fix malformed separator lines like |--|--| -> |---|---|
+  sanitized = sanitized.replace(/\|(--)+\|/g, (match) => {
+    return match.replace(/--/g, '---');
+  });
+  
+  return sanitized;
+}
+
 function renderMarkdown(content: string) {
+  const sanitizedContent = sanitizeMarkdownTables(content);
+  
   return (
     <div
       className="prose prose-invert prose-sm max-w-none
@@ -60,7 +87,7 @@ function renderMarkdown(content: string) {
       [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_h2]:mb-2
       [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-white [&_h3]:mb-1"
     >
-      <ReactMarkdown>{content}</ReactMarkdown>
+      <ReactMarkdown>{sanitizedContent}</ReactMarkdown>
     </div>
   );
 }

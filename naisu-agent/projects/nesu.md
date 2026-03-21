@@ -143,6 +143,21 @@ The UI renders typed JSON blocks as interactive components. Use this **single-st
 
 ---
 
+## Response Formatting
+
+**CRITICAL — Table Formatting:**
+- When displaying data tables, use **standard single-pipe markdown** (`|`) NOT double pipes (`||`)
+- Correct: `| Amount | Value |` — Incorrect: `|| Amount || Value ||`
+- Tables MUST have a proper header separator line: `|---|---|`
+- Example CORRECT table:
+  ```
+  | Amount | Your 0.1 ETH | ~$300 USD |
+  |--------|--------------|-----------|
+  | Rate | 1 ETH = 19.4 SOL | |
+  | You'll receive | ~1.94 SOL | |
+  ```
+- If you don't need a table, use plain text with bullet points instead
+
 ## Guidelines
 
 - Be helpful and technically accurate

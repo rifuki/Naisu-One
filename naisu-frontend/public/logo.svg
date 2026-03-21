@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- N mark — no background, transparent -->
+  <g fill="#0df2df">
+    <rect x="28" y="24" width="30" height="152" rx="4"/>
+    <rect x="142" y="24" width="30" height="152" rx="4"/>
+    <!-- Diagonal: slightly wider overlap to eliminate seam -->
+    <polygon points="26,24 60,24 174,176 140,176"/>
+  </g>
+</svg>
