@@ -11,9 +11,13 @@ use crate::{
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SOLANA_RPC: &str = "https://api.devnet.solana.com";
-const MSOL_MINT:  &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
-const USDC_MINT:  &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+const SOLANA_RPC:  &str = "https://api.devnet.solana.com";
+const MSOL_MINT:   &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+const USDC_MINT:   &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+// Mock yield platform tokens (devnet only, solver = mint authority)
+const JITO_MINT:   &str = "Grq5gr41xiZaf2Grk8YfCsHF2RCQmpHGcuK6H4w8VEts";
+const JUPSOL_MINT: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
+const KSOL_MINT:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +29,9 @@ pub struct PortfolioBalances {
     msol:            String, // mSOL smallest unit raw
     usdc:            String, // USDC micro-units raw
     marginfi_sol:    String, // SOL lamports lent in marginfi (solver account)
+    jito_sol:        String, // mock jitoSOL raw units
+    jup_sol:         String, // mock jupSOL raw units
+    ksol:            String, // mock kSOL raw units
     msol_decimals:   u8,
     usdc_decimals:   u8,
 }
@@ -84,21 +91,36 @@ fn extract_spl_amount(resp: eyre::Result<serde_json::Value>) -> String {
         .unwrap_or_else(|| "0".to_string())
 }
 
-async fn get_token_balances(wallet: &str) -> eyre::Result<(String, String)> {
-    let (msol_resp, usdc_resp) = tokio::join!(
+async fn get_token_balances(wallet: &str) -> eyre::Result<(String, String, String, String, String)> {
+    let (msol_resp, usdc_resp, jito_resp, jupsol_resp, ksol_resp) = tokio::join!(
         rpc_call(
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": MSOL_MINT }, { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": MSOL_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
         rpc_call(
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": USDC_MINT }, { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": USDC_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+        ),
+        rpc_call(
+            "getTokenAccountsByOwner",
+            serde_json::json!([wallet, { "mint": JITO_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+        ),
+        rpc_call(
+            "getTokenAccountsByOwner",
+            serde_json::json!([wallet, { "mint": JUPSOL_MINT }, { "encoding": "base64", "commitment": "confirmed" }]),
+        ),
+        rpc_call(
+            "getTokenAccountsByOwner",
+            serde_json::json!([wallet, { "mint": KSOL_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
     );
 
     Ok((
         extract_spl_amount(msol_resp),
         extract_spl_amount(usdc_resp),
+        extract_spl_amount(jito_resp),
+        extract_spl_amount(jupsol_resp),
+        extract_spl_amount(ksol_resp),
     ))
 }
 
@@ -161,11 +183,11 @@ pub async fn get_balances(
         }
     };
 
-    let (msol, usdc) = match token_result {
+    let (msol, usdc, jito_sol, jup_sol, ksol) = match token_result {
         Ok(balances) => balances,
         Err(e) => {
             warn!(error = %e, wallet = %params.wallet, "token balance RPC failed");
-            ("0".to_string(), "0".to_string())
+            ("0".to_string(), "0".to_string(), "0".to_string(), "0".to_string(), "0".to_string())
         }
     };
 
@@ -175,6 +197,9 @@ pub async fn get_balances(
         msol,
         usdc,
         marginfi_sol,
+        jito_sol,
+        jup_sol,
+        ksol,
         msol_decimals: 9,
         usdc_decimals: 6,
     }))

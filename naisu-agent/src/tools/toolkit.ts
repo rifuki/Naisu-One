@@ -7,8 +7,10 @@ import { httpJson } from "../utils/http.js";
 import { env } from "../config/env.js";
 
 // ─── API base URLs ───────────────────────────────────────────────────────────
-const INTENT_API = `${env.NAISU_BACKEND_URL}/api/v1/intent`;
-const SOLANA_API = `${env.NAISU_BACKEND_URL}/api/v1/solana`;
+const INTENT_API    = `${env.NAISU_BACKEND_URL}/api/v1/intent`;
+const SOLANA_API    = `${env.NAISU_BACKEND_URL}/api/v1/solana`;
+const PORTFOLIO_API = `${env.NAISU_BACKEND_URL}/api/v1/portfolio`;
+const YIELD_API     = `${env.NAISU_BACKEND_URL}/api/v1/yield`;
 
 export function buildToolkit(params: {
   projectId: string;
@@ -158,7 +160,7 @@ export function buildToolkit(params: {
       destinationChain: z.enum(["solana", "sui"]).describe("Destination chain"),
       amount: z.string().describe("Amount to bridge as human-readable string, e.g. '0.1'"),
       durationSeconds: z.number().int().positive().max(86400).default(300).describe("Auction duration in seconds (default 300 = 5 min)"),
-      outputToken: z.enum(["sol", "msol"]).default("sol").describe("Output token: 'sol' (default) or 'msol' (Marinade liquid staking)"),
+      outputToken: z.enum(["sol", "msol", "marginfi", "jito", "jupsol", "kamino"]).default("sol").describe("Output token: 'sol' (default), 'msol' (Marinade liquid staking), 'marginfi' (marginfi lending), 'jito' (Jito liquid staking), 'jupsol' (Jupiter liquid staking), 'kamino' (Kamino lending)"),
     }),
     func: async ({ senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
       const url = `${INTENT_API}/build-gasless`;
@@ -284,6 +286,77 @@ export function buildToolkit(params: {
       JSON.stringify(await httpJson(`${INTENT_API}/evm-balance?chain=${chain}&address=${encodeURIComponent(address)}`)),
   });
 
+  // ── Earn Tools ─────────────────────────────────────────────────────────────
+
+  const earnYieldRates = new DynamicStructuredTool({
+    name: "earn_yield_rates",
+    description:
+      "Get current APY rates for Marinade liquid staking (mSOL) and marginfi SOL lending on Solana. " +
+      "Use to answer 'what is the APY?' or before recommending a yield strategy.",
+    schema: z.object({}),
+    func: async () => JSON.stringify(await httpJson(`${YIELD_API}/rates`)),
+  });
+
+  const earnPortfolioBalances = new DynamicStructuredTool({
+    name: "earn_portfolio_balances",
+    description:
+      "Get a Solana wallet's earn positions: SOL balance, mSOL (Marinade liquid staking), " +
+      "USDC balance, and marginfi SOL lending balance. " +
+      "Always call this before suggesting unstake or withdraw. " +
+      "Returns raw lamports — divide SOL/mSOL by 1e9, USDC by 1e6.",
+    schema: z.object({
+      wallet: z.string().min(32).max(44).describe("Solana wallet address (base58)"),
+    }),
+    func: async ({ wallet }) =>
+      JSON.stringify(await httpJson(`${PORTFOLIO_API}/balances?wallet=${encodeURIComponent(wallet)}`)),
+  });
+
+  const earnUnstakeMsol = new DynamicStructuredTool({
+    name: "earn_unstake_msol",
+    description:
+      "Build an unsigned Solana VersionedTransaction to liquid-unstake mSOL → SOL via Marinade Finance. " +
+      "Returns { tx: '<base64>' } for the user to sign with their Solana wallet. " +
+      "Always check earn_portfolio_balances first to confirm mSOL balance. " +
+      "Amount is raw mSOL units (9 decimals) — 1 mSOL = '1000000000'. " +
+      "After getting the tx, emit a solana_tx widget for the user to sign.",
+    schema: z.object({
+      wallet: z.string().min(32).max(44).describe("User's Solana wallet address (base58)"),
+      amount: z.string().describe("Raw mSOL in smallest units. E.g. 1 mSOL = '1000000000'"),
+    }),
+    func: async ({ wallet, amount }) => {
+      const res = await fetch(`${PORTFOLIO_API}/unstake-msol`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, amount }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) return JSON.stringify(json.data);
+      return JSON.stringify(json);
+    },
+  });
+
+  const earnWithdrawMarginfi = new DynamicStructuredTool({
+    name: "earn_withdraw_marginfi",
+    description:
+      "Withdraw SOL from marginfi lending position. Server-executed — no user wallet signature required. " +
+      "Returns { signature: '...' } on success. " +
+      "Always check earn_portfolio_balances first. Amount is decimal SOL string e.g. '0.5'.",
+    schema: z.object({
+      wallet: z.string().min(32).max(44).describe("User's Solana wallet address (base58)"),
+      amount: z.string().describe("SOL amount to withdraw as decimal string e.g. '0.5'"),
+    }),
+    func: async ({ wallet, amount }) => {
+      const res = await fetch(`${PORTFOLIO_API}/withdraw-marginfi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, amount }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) return JSON.stringify(json.data);
+      return JSON.stringify(json);
+    },
+  });
+
   tools.push(
     intentQuote,
     intentPrice,
@@ -292,6 +365,10 @@ export function buildToolkit(params: {
     intentBuildTx,
     solanaBalance,
     evmBalance,
+    earnYieldRates,
+    earnPortfolioBalances,
+    earnUnstakeMsol,
+    earnWithdrawMarginfi,
   );
 
   // ── Custom tools from registry ─────────────────────────────────────────────

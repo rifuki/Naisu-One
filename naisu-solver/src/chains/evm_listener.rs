@@ -110,6 +110,9 @@ async fn process_evm_order(
             let mode_label = match order.intent_type {
                 1 => "bridge+marinade_stake",
                 3 => "bridge+marginfi_lend",
+                4 => "bridge+jito_stake",
+                5 => "bridge+jupsol_stake",
+                6 => "bridge+kamino_stake",
                 _ => "bridge",
             };
 
@@ -161,7 +164,6 @@ async fn process_evm_order(
                             info!(" [{short}]  seq : {seq}");
                             info!(" [{short}]  tx  : {sig}");
                             info!(" [{short}]  url : {sol_url}");
-                            // Report sol_sent step to backend so frontend can update progress
                             coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
                             solana_payment_sig = Some(sig);
                             solana_recipient_b58_cap = Some(recipient_b58);
@@ -177,6 +179,40 @@ async fn process_evm_order(
                             }
                             info!("{SEP}");
                             info!(" [{short}] ✗ ORDER ABORTED  |  marginfi deposit step failed");
+                            info!("{SEP}");
+                            return;
+                        }
+                    }
+                }
+                it @ (4 | 5 | 6) => {
+                    let (label, fn_call) = match it {
+                        4 => ("jito_stake",   executor::solana_executor::solve_and_jito(&config, order.order_id, &recipient_b58, price).await),
+                        5 => ("jupsol_stake", executor::solana_executor::solve_and_jupsol(&config, order.order_id, &recipient_b58, price).await),
+                        _ => ("kamino_stake", executor::solana_executor::solve_and_kamino(&config, order.order_id, &recipient_b58, price).await),
+                    };
+                    match fn_call {
+                        Ok((sig, seq, minted)) => {
+                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + {label} complete");
+                            info!(" [{short}]  minted : {minted}");
+                            info!(" [{short}]  seq    : {seq}");
+                            info!(" [{short}]  tx     : {sig}");
+                            info!(" [{short}]  url    : {sol_url}");
+                            coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
+                            solana_payment_sig = Some(sig);
+                            solana_recipient_b58_cap = Some(recipient_b58);
+                            payment_amount_lamports = price;
+                            (1u16, config.solana_emitter_address.clone(), seq)
+                        }
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            error!(" [{short}] STEP 1/3 ✗  |  {label} failed: {e}");
+                            if !err_str.contains("SolanaTransactionFailed") {
+                                seen_orders.lock().await.remove(&order.order_id);
+                                warn!(" [{short}]  → removed from dedup, will retry");
+                            }
+                            info!("{SEP}");
+                            info!(" [{short}] ✗ ORDER ABORTED  |  {label} step failed");
                             info!("{SEP}");
                             return;
                         }

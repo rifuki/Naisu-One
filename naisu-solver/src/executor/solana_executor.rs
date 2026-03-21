@@ -957,6 +957,180 @@ pub async fn solve_and_marginfi(
     Ok((sig, wh_seq))
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Mock yield platform executors (Jito, Jupiter, Kamino)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// All three follow the same pattern as solve_and_liquid_stake:
+//   1. solve_and_prove with SOLVER as recipient → solver gets SOL, VAA emitted
+//   2. Run the corresponding mock stake script → mint tokens to actual recipient
+//
+// The mint scripts read mock_tokens.json from their own dist/ directory.
+
+/// Helper: run a mock stake script and parse TOKEN_MINTED:<amount> from stdout.
+async fn run_mock_stake_script(
+    config: &Config,
+    order_id: [u8; 32],
+    script_name: &str,
+    platform: &str,
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<u64> {
+    let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("naisu-contracts/solana/scripts");
+
+    let script_path = scripts_dir.join(format!("dist/{script_name}"));
+
+    let output = tokio::process::Command::new("node")
+        .current_dir(scripts_dir.parent().unwrap())
+        .arg(&script_path)
+        .arg(recipient_b58)
+        .arg(amount_lamports.to_string())
+        .arg(&config.solana_rpc_url)
+        .arg(&config.solana_private_key)
+        .output()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to run {script_name}: {e}"))?;
+
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    if !stderr_str.is_empty() {
+        info!(order_id = %hex::encode(order_id), "{script_name} stderr:\n{stderr_str}");
+    }
+
+    if !output.status.success() {
+        return Err(eyre::eyre!(
+            "{script_name} failed (exit {}): {stderr_str}",
+            output.status,
+        ));
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let minted = stdout_str
+        .lines()
+        .find(|l| l.starts_with("TOKEN_MINTED:"))
+        .and_then(|l| l.trim_start_matches("TOKEN_MINTED:").trim().parse::<u64>().ok())
+        .unwrap_or(0);
+
+    info!(
+        order_id = %hex::encode(order_id),
+        minted,
+        recipient = %recipient_b58,
+        "Bridge+{platform} complete! Recipient received mock tokens."
+    );
+
+    Ok(minted)
+}
+
+/// solve_and_jito: EVM→Solana bridge + mock Jito liquid staking (jitoSOL).
+pub async fn solve_and_jito(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
+    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
+    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    info!(
+        order_id = %hex::encode(order_id),
+        amount_lamports,
+        actual_recipient = %recipient_b58,
+        "Starting bridge+jito_stake flow"
+    );
+
+    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+
+    let minted = run_mock_stake_script(
+        config, order_id, "jito_stake.js", "jito", recipient_b58, amount_lamports,
+    ).await?;
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence = wh_seq,
+        jito_minted = minted,
+        "Bridge+jito complete."
+    );
+
+    Ok((sig, wh_seq, minted))
+}
+
+/// solve_and_jupsol: EVM→Solana bridge + mock Jupiter liquid staking (jupSOL).
+pub async fn solve_and_jupsol(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
+    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
+    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    info!(
+        order_id = %hex::encode(order_id),
+        amount_lamports,
+        actual_recipient = %recipient_b58,
+        "Starting bridge+jupsol_stake flow"
+    );
+
+    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+
+    let minted = run_mock_stake_script(
+        config, order_id, "jupsol_stake.js", "jupsol", recipient_b58, amount_lamports,
+    ).await?;
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence = wh_seq,
+        jupsol_minted = minted,
+        "Bridge+jupsol complete."
+    );
+
+    Ok((sig, wh_seq, minted))
+}
+
+/// solve_and_kamino: EVM→Solana bridge + mock Kamino lending (kSOL).
+pub async fn solve_and_kamino(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
+    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
+    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    info!(
+        order_id = %hex::encode(order_id),
+        amount_lamports,
+        actual_recipient = %recipient_b58,
+        "Starting bridge+kamino_stake flow"
+    );
+
+    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+
+    let minted = run_mock_stake_script(
+        config, order_id, "kamino_stake.js", "kamino", recipient_b58, amount_lamports,
+    ).await?;
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence = wh_seq,
+        ksol_minted = minted,
+        "Bridge+kamino complete."
+    );
+
+    Ok((sig, wh_seq, minted))
+}
+
 /// Parse the Wormhole sequence number from confirmed transaction logs.
 ///
 /// Wormhole Anchor SDK v0.30.x emits: "Program log: wormhole_sequence: N"

@@ -1,5 +1,130 @@
 # Naisu One — Session Handoff
 
+## Session 27 — COMPLETED (2026-03-21)
+
+### Summary
+Added mock yield platforms (Jito, Jupiter, Kamino) via SPL token mints on devnet. Added earn-via-agent tools (stake/unstake/check via Nesu chat). Fixed token label display (jitoSOL not JITO).
+
+### Major Changes
+
+**1. Mock Yield Platforms — Jito, Jupiter, Kamino**
+- Created 3 SPL token mints on devnet (solver = mint authority):
+  - jitoSOL: `Grq5gr41xiZaf2Grk8YfCsHF2RCQmpHGcuK6H4w8VEts`
+  - jupSOL: `HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP`
+  - kSOL: `GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF`
+- `scripts/create_mock_tokens.ts` — one-time setup script
+- `scripts/jito_stake.ts/jupsol_stake.ts/kamino_stake.ts` — mint tokens 1:1 to recipient
+- `handlers.rs`: intent_type mapping `"jito"=>4`, `"jupsol"=>5`, `"kamino"=>6`
+- `portfolio/mod.rs`: balance queries for 3 new tokens
+- `solana_executor.rs`: `solve_and_jito`, `solve_and_jupsol`, `solve_and_kamino`
+- `evm_listener.rs`: routing for intent_type 4/5/6
+
+**2. Yield Rates — DeFiLlama API**
+- `yield_rates/mod.rs`: now fetches from `https://yields.llama.fi/pools`
+- 5 platforms: Marinade, Jito, Jupiter, Kamino, marginfi
+- Pool IDs: Jito `0e7d0722...`, Jupiter `52bd72a7...`, Kamino `525b2dab...`
+- 5-min cache, fallback values if API down
+
+**3. Earn via Agent (Nesu chat)**
+- `toolkit.ts`: 4 new tools — `earn_yield_rates`, `earn_portfolio_balances`, `earn_unstake_msol`, `earn_withdraw_marginfi`
+- `nesu.md`: earn capabilities, guidelines, solana_tx widget format
+- `solana-tx-widget.tsx`: new frontend component for signing Solana tx from chat
+- `message-bubble.tsx`: renders solana_tx widget
+
+**4. Token Label Fix**
+- `message-bubble.tsx` + `gasless-intent-review-card.tsx`: `jito` → `jitoSOL`, `jupsol` → `jupSOL`, `kamino` → `kSOL`
+- Was showing "JITO" (JTO governance token confusion) — now shows "jitoSOL"
+
+### Known Issues / TODO
+- jitoSOL/jupSOL/kSOL not visible in Phantom (no on-chain metadata — add with Metaplex)
+- Unstake jitoSOL/jupSOL/kSOL not yet implemented (Step 10 optional)
+- marginfi devnet SOL bank paused (Custom:2000) — agent warns upfront
+
+### Key Files Changed
+| File | Change |
+|---|---|
+| `naisu-contracts/solana/scripts/jito_stake.ts` | New — mint jitoSOL to recipient |
+| `naisu-contracts/solana/scripts/jupsol_stake.ts` | New — mint jupSOL to recipient |
+| `naisu-contracts/solana/scripts/kamino_stake.ts` | New — mint kSOL to recipient |
+| `naisu-contracts/solana/scripts/dist/mock_tokens.json` | Mint addresses |
+| `naisu-backend-rs/src/feature/yield_rates/mod.rs` | DeFiLlama API + 5 platforms |
+| `naisu-backend-rs/src/feature/intent/handlers.rs` | intent_type 4/5/6 |
+| `naisu-backend-rs/src/feature/portfolio/mod.rs` | jito/jupsol/ksol balance queries |
+| `naisu-solver/src/executor/solana_executor.rs` | solve_and_jito/jupsol/kamino |
+| `naisu-solver/src/chains/evm_listener.rs` | Routing intent_type 4/5/6 |
+| `naisu-agent/src/tools/toolkit.ts` | 4 earn tools + outputToken enum |
+| `naisu-agent/projects/nesu.md` | Earn capabilities + guidelines |
+| `naisu-frontend/.../solana-tx-widget.tsx` | New Solana tx signing widget |
+| `naisu-frontend/.../message-bubble.tsx` | solana_tx widget render + token labels |
+| `naisu-frontend/.../gasless-intent-review-card.tsx` | Token labels fix |
+
+---
+
+## Session 25 — COMPLETED (2026-03-21)
+
+### Summary
+Session 25 fixed the Earn/Positions tab end-to-end: portfolio balance display (SOL + mSOL + marginfi), real on-chain data, unified architecture, and frontend cleanup.
+
+### Major Changes
+
+**1. Portfolio Balance Bug Fix (Positions tab showing 0)**
+- Root cause A: `getPortfolioBalances` frontend read `response.sol` instead of `response.data.sol` (Rust backend wraps in `ApiSuccess`). Fixed by unwrapping `response.data`.
+- Root cause B: Solana devnet RPC does not support `getParsedTokenAccountsByOwner`. Switched to `getTokenAccountsByOwner` with `base64` encoding + manual SPL token layout decode (amount at byte offset 64, u64 LE).
+- Added `base64 = "0.22"` crate to Rust backend.
+
+**2. marginfi Position — Real On-Chain SOL Balance**
+- Deposit goes to **solver's** marginfi account (devnet shortcut, not user's own account).
+- Added `marginfi_balance.js` script: queries solver's marginfi account via `@mrgnlabs/marginfi-client-v2`, reads `assetShares * assetShareValue` → SOL lamports.
+- Added `GET /api/v1/portfolio/marginfi-balance` Rust endpoint.
+- Display: **0.581735 SOL** (real on-chain, not "0.030 ETH").
+
+**3. marginfi Withdraw**
+- Added `marginfi_withdraw.js` script: withdraw from solver's marginfi → transfer SOL to recipient wallet.
+- Added `POST /api/v1/portfolio/withdraw-marginfi` Rust endpoint (uses `SOLVER_SOLANA_PRIVATE_KEY` env var).
+- Added "Withdraw SOL" button + modal in Positions tab.
+
+**4. Unified Positions Architecture**
+- Merged `GET /api/v1/portfolio/balances` to return `{ sol, msol, usdc, marginfiSol }` — all fetched in parallel via `tokio::join!`.
+- Replaced 3 separate frontend hooks (`usePortfolioBalances`, `useMarginfiPositions`, `useMarginfiBalance`) with single `usePositions(solWallet)`.
+- Eliminated race condition (marginfi appearing before mSOL) by using one loading state.
+- Removed native SOL card from Positions (it's a wallet balance, not a yield position).
+- mSOL card only shows when `msol > 0`; marginfi card only shows when `marginfiSol > 0`.
+- Loading skeleton shown until all data ready.
+
+**5. Frontend Cleanup (Redundancy Removal)**
+- Deleted dead `use-portfolio-balances.ts` (superseded by `use-positions.ts`).
+- Removed duplicate `API_BASE` const from `stake-tab` and `positions-tab` — both now use `apiClient`.
+- Removed unused imports in `stake-tab`: `useConnection`, `PublicKey`, `fmtUsd`, `YieldRate`.
+- Updated `earn/index.ts` to export `usePositions` instead of `usePortfolioBalances`.
+- Updated `portfolio-page.tsx` to use `usePositions`.
+
+**6. wagmi RPC Fix**
+- Replaced `http()` (MetaMask injected, rate-limited) with `fallback([sepolia.base.org, publicnode, injected])` in wagmi config.
+- Eliminates `ResourceUnavailableRpcError` on Base Sepolia transactions.
+
+### Key Files Changed
+| File | Change |
+|---|---|
+| `naisu-backend-rs/src/feature/portfolio/mod.rs` | Added `marginfiSol` field, parallel fetch via `get_marginfi_sol()`, new endpoints |
+| `naisu-backend-rs/.env` | Added `SOLVER_SOLANA_PRIVATE_KEY` |
+| `naisu-contracts/solana/scripts/dist/marginfi_balance.js` | New script |
+| `naisu-contracts/solana/scripts/dist/marginfi_withdraw.js` | New script |
+| `naisu-frontend/src/features/earn/api/get-portfolio-balances.ts` | Added `marginfiSol` field, unwrap `response.data` |
+| `naisu-frontend/src/features/earn/hooks/use-positions.ts` | New unified hook |
+| `naisu-frontend/src/features/earn/hooks/use-portfolio-balances.ts` | **Deleted** |
+| `naisu-frontend/src/features/earn/components/positions-tab/index.tsx` | Full rewrite with unified hook |
+| `naisu-frontend/src/features/earn/components/stake-tab/index.tsx` | Remove unused imports + API_BASE |
+| `naisu-frontend/src/config/wagmi.ts` | Add fallback RPC |
+
+### Contracts & Addresses
+- EVM IntentBridge (Base Sepolia): `0x26B7E5af3F1831ca938444c02CecFeBBb86F748e`
+- Solver Solana pubkey: `7WkNZxoz6xTScAEYQY2nohJQibvxrxevkMmMLPJNBzDW`
+- Solver marginfi account: `8abyuGPHjyozR8N2tTR3dAFpUvwQKRZSMmsRkYapmTYv`
+- User Solana wallet: `GeEac43TsWaPpEnEGQXtia4C2TJGJBx1GT4Troz4Vkrh`
+- mSOL ATA: `2LhsnYnWz633UXvi8SYavcnQ9CEDKL2MBSSkuvcJkabE`
+
+---
+
 ## Session 23 — COMPLETED (2026-03-21)
 
 ### Summary

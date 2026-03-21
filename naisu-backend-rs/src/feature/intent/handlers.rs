@@ -732,10 +732,13 @@ pub async fn build_tx(
             .with_message(&format!("unsupported destinationChain: {other}"))),
     };
 
-    // Intent type: 0=sol, 1=msol (Marinade), 3=marginfi
+    // Intent type: 0=sol, 1=msol (Marinade), 3=marginfi, 4=jito, 5=jupsol, 6=kamino
     let intent_type: u8 = match body.output_token.as_deref().unwrap_or("sol") {
         "msol"     => 1,
         "marginfi" => 3,
+        "jito"     => 4,
+        "jupsol"   => 5,
+        "kamino"   => 6,
         _          => 0,
     };
 

@@ -36,9 +36,12 @@ const DEST_LABELS: Record<string, string> = {
 };
 
 const OUTPUT_TOKEN_LABELS: Record<string, string> = {
-  sol: 'SOL',
-  msol: 'mSOL (Marinade)',
-  marginfi: 'marginfi',
+  sol:      'SOL',
+  msol:     'mSOL (Marinade)',
+  marginfi: 'marginfi SOL',
+  jito:     'jitoSOL',
+  jupsol:   'jupSOL',
+  kamino:   'kSOL',
 };
 
 export function GaslessIntentReviewCard({
@@ -203,7 +206,7 @@ export function GaslessIntentReviewCard({
                         <span className="text-[32px] font-bold text-green-400 tabular-nums leading-none">
                           {fillPrice || formatPrice(intent.floorPrice)}
                         </span>
-                        <span className="text-[14px] font-semibold text-green-400">SOL</span>
+                        <span className="text-[14px] font-semibold text-green-400">{OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase()}</span>
                       </div>
                       {getComparisonText() && (
                         <span className="text-[11px] text-green-400/70 mt-1">{getComparisonText()}</span>

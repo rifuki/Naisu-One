@@ -41,6 +41,7 @@ import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, R
 import LiveProgressCard from '@/components/LiveProgressCard';
 import { BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget } from '../widgets';
+import { SolanaTxWidget } from './solana-tx-widget';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import { useIntentStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
@@ -74,6 +75,13 @@ interface TxInfo {
   explorerBase: string;
 }
 
+interface SolanaTxData {
+  type: 'solana_tx';
+  action: string;
+  tx: string;
+  description: string;
+}
+
 interface GaslessIntentData {
   type: 'gasless_intent';
   recipientAddress: string;
@@ -90,7 +98,8 @@ interface GaslessIntentData {
 }
 
 type ParsedWidget = { widget: GaslessIntentData; text: string; kind: 'gasless_intent' }
-                  | { widget: AnyWidget; text: string; kind: 'quote_review' | 'balance_display' };
+                  | { widget: AnyWidget; text: string; kind: 'quote_review' | 'balance_display' }
+                  | { widget: SolanaTxData; text: string; kind: 'solana_tx' };
 
 function extractTxHashFromSubmitMsg(content: string): TxInfo | null {
   const m = content.match(/Hash:\s*(0x[0-9a-fA-F]{64})/);
@@ -137,6 +146,9 @@ function extractWidgetBlock(content: string): ParsedWidget | null {
     if (parsed.type === 'balance_display') {
       return { widget: parsed as AnyWidget, text, kind: 'balance_display' };
     }
+    if (parsed.type === 'solana_tx') {
+      return { widget: parsed as SolanaTxData, text, kind: 'solana_tx' };
+    }
     return null;
   } catch {
     return null;
@@ -152,6 +164,9 @@ const OUTPUT_TOKEN_LABELS: Record<string, string> = {
   sol:       'SOL',
   msol:      'mSOL',
   marginfi:  'marginfi SOL',
+  jito:      'jitoSOL',
+  jupsol:    'jupSOL',
+  kamino:    'kSOL',
 };
 
 function formatLamports(lamports: string): string {
@@ -334,6 +349,33 @@ export function MessageBubble({
         onDutchPlanConfirm={onDutchPlanConfirm}
         isHistoricalIntent={isHistoricalIntent}
       />
+    );
+  }
+
+  // For solana_tx widget — inline Solana signing card
+  if (parsed?.kind === 'solana_tx') {
+    const d = parsed.widget as SolanaTxData;
+    return (
+      <div
+        className="group flex gap-3 opacity-0 animate-fade-in-up"
+        style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
+      >
+        <div className="flex-shrink-0 mt-1 hidden sm:block">
+          <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
+            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0 max-w-md">
+          <MessageHeader name="Nesu" timestamp={message.timestamp} />
+          <SolanaTxWidget tx={d.tx} action={d.action} description={d.description} />
+          {parsed.text && !/^\s*$/.test(parsed.text) && (
+            <div className="mt-2 text-slate-400 text-sm leading-relaxed">
+              {renderContent(parsed.text)}
+            </div>
+          )}
+          <MessageActions text={message.content} />
+        </div>
+      </div>
     );
   }
 
@@ -619,7 +661,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
   const { fromUsd, toUsd } = usePythPrices(intent.amount, intent.destinationChain, intent.fromUsd, intent.toUsd);
 
   const destLabel = intent.destinationChain === 'solana' ? 'Solana' : intent.destinationChain;
-  const tokenLabel = intent.outputToken === 'sol' ? 'SOL' : intent.outputToken === 'msol' ? 'mSOL' : intent.outputToken.toUpperCase();
+  const tokenLabel = OUTPUT_TOKEN_LABELS[intent.outputToken] ?? intent.outputToken.toUpperCase();
 
   const formatSol = (lamports: string) => {
     try { return (Number(BigInt(lamports)) / 1e9).toFixed(4); } catch { return lamports; }
