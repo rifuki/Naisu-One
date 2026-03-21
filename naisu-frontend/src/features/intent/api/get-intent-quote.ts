@@ -26,20 +26,5 @@ export interface IntentQuote {
 
 export async function getIntentQuote(params: GetIntentQuoteParams): Promise<IntentQuote> {
   const { amount, fromChain = 'evm-base', toChain = 'solana', token = 'native' } = params
-  
-  const response = await apiClient.get<{ success: boolean; data: IntentQuote; error?: string }>(
-    '/intent/quote',
-    {
-      fromChain,
-      toChain,
-      amount,
-      token,
-    }
-  )
-  
-  if (!response.success) {
-    throw new Error(response.error || 'Failed to get quote')
-  }
-  
-  return response.data
+  return apiClient.get<IntentQuote>('/intent/quote', { fromChain, toChain, amount, token })
 }

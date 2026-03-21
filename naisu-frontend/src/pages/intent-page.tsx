@@ -12,8 +12,8 @@ import { PanelLeftOpen } from 'lucide-react';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
 import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
 import { useIntentStore, useChatStore, type ProgressStep } from '@/store';
+import { BACKEND_URL } from '@/lib/env'
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
 const PENDING_INTENT_KEY = 'naisu_pending_signed_intent';
 
 // Storage key for fulfilled intent state per session

@@ -24,40 +24,17 @@ export interface SubmitSignatureResponse {
   message: string
 }
 
-/**
- * Submit a gasless intent with EIP-712 signature to the backend.
- * The backend will verify the signature and run RFQ with solvers.
- */
 export async function submitIntentSignature(
   params: SubmitSignatureParams
 ): Promise<SubmitSignatureResponse> {
-  const response = await apiClient.post<{ success: boolean; data: SubmitSignatureResponse; error?: string }>(
-    '/intent/submit-signature',
-    params
-  )
-  
-  if (!response.success) {
-    throw new Error(response.error || 'Failed to submit signature')
-  }
-  
-  return response.data
+  return apiClient.post<SubmitSignatureResponse>('/intent/submit-signature', params)
 }
 
-/**
- * Get the current nonce for a user address.
- * Used to prevent replay attacks.
- */
 export async function getUserNonce(address: string): Promise<number> {
-  // For now, we'll fetch nonce from the contract
-  // In production, backend should cache this
-  const response = await apiClient.get<{ success: boolean; data: { nonce: number }; error?: string }>(
-    `/intent/nonce?address=${address}`
-  )
-  
-  if (!response.success) {
-    // Default to 0 if endpoint doesn't exist yet
+  try {
+    const data = await apiClient.get<{ nonce: number }>('/intent/nonce', { address })
+    return data.nonce
+  } catch {
     return 0
   }
-  
-  return response.data.nonce
 }

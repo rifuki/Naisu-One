@@ -38,10 +38,10 @@ function fromBackend(order: BackendOrder): IntentOrder {
     FULFILLED: 'Fulfilled',
     CANCELLED: 'Cancelled',
   }
-  
+
   const chain = order.chain === 'solana' ? 'solana' : 'evm'
   const sourceChain = order.chain === 'evm-base' ? 'Base' : undefined
-  
+
   return {
     id: order.orderId,
     txDigest: order.explorerUrl,
@@ -65,18 +65,9 @@ export interface GetIntentOrdersParams {
 
 export async function getIntentOrders(params: GetIntentOrdersParams): Promise<IntentOrder[]> {
   const { user, chain } = params
-  
   const queryParams: Record<string, string> = { user }
   if (chain) queryParams.chain = chain
-  
-  const response = await apiClient.get<{ success: boolean; data: BackendOrder[]; error?: string }>(
-    '/intent/orders',
-    queryParams
-  )
-  
-  if (!response.success) {
-    throw new Error(response.error || 'Failed to fetch orders')
-  }
-  
-  return response.data.map(fromBackend)
+
+  const orders = await apiClient.get<BackendOrder[]>('/intent/orders', queryParams)
+  return orders.map(fromBackend)
 }

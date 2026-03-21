@@ -22,8 +22,8 @@ import {
 import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi'
 import { BorshAccountsCoder } from '@coral-xyz/anchor'
 import IntentBridgeIDL from '@/lib/idl/intent_bridge_solana.json'
+import { BACKEND_URL } from '@/lib/env'
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000'
 const BACKEND_TIMEOUT_MS = 5_000
 const POLL_INTERVAL_MS   = 12_000
 

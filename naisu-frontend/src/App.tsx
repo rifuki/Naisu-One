@@ -1,5 +1,34 @@
 import React from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#080f0e] text-white p-8">
+          <div className="max-w-lg space-y-4 text-center">
+            <p className="text-slate-400 text-sm font-mono">Something went wrong</p>
+            <pre className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded p-4 text-left overflow-auto max-h-64">
+              {(this.state.error as Error).message}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary rounded text-sm hover:bg-primary/20 transition-colors"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import Navbar from '@/components/Navbar';
 import ActiveIntents from '@/components/ActiveIntents';
 import LandingPage from '@/pages/LandingPage';
@@ -60,12 +89,16 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <QueryProvider>
-      <HashRouter>
-        <AgentProvider>
-          <AppContent />
-        </AgentProvider>
-      </HashRouter>
-    </QueryProvider>
+    <ErrorBoundary>
+      <QueryProvider>
+        <HashRouter>
+          <AgentProvider>
+            <ErrorBoundary>
+              <AppContent />
+            </ErrorBoundary>
+          </AgentProvider>
+        </HashRouter>
+      </QueryProvider>
+    </ErrorBoundary>
   );
 }

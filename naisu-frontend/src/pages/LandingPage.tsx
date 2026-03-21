@@ -1,13 +1,12 @@
 import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GROQ_API_KEY } from '@/lib/env'
 
 const SUGGESTIONS = [
   'Bridge 0.001 ETH from Base Sepolia to Solana',
   'How much SUI will I get for 0.05 ETH?',
   'Check my SOL and ETH balances',
 ];
-
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
 
 const WHISPER_PROMPT =
   'Ethereum ETH Solana SOL Sui SUI Base Sepolia mSOL USDC USDT Bridge swap stake gasless EIP-712 Wormhole VAA intent solver RFQ Marinade';

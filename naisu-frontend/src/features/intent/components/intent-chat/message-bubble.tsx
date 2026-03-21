@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000';
+import { BACKEND_URL } from '@/lib/env'
 
 /** Fetch ETH and destination-token USD prices from backend quote endpoint */
 function usePythPrices(

@@ -11,19 +11,10 @@ export interface PortfolioBalances {
 }
 
 export async function getPortfolioBalances(wallet: string): Promise<PortfolioBalances> {
-  const response = await apiClient.get<{ data: PortfolioBalances }>('/portfolio/balances', { wallet });
-  return response.data;
+  return apiClient.get<PortfolioBalances>('/portfolio/balances', { wallet });
 }
 
 export async function buildUnstakeMsolTx(wallet: string, amount: string): Promise<string> {
-  const response = await apiClient.post<{ tx?: string; error?: string }>('/portfolio/unstake-msol', {
-    wallet,
-    amount,
-  });
-  
-  if (!response.tx) {
-    throw new Error(response.error || 'Failed to build unstake transaction');
-  }
-  
+  const response = await apiClient.post<{ tx: string }>('/portfolio/unstake-msol', { wallet, amount });
   return response.tx;
 }

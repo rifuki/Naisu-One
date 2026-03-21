@@ -4,11 +4,7 @@ import { parseEther, type Address, type Hex } from 'viem'
 import { PublicKey } from '@solana/web3.js'
 import { submitIntentSignature, type GaslessIntent, type SubmitSignatureResponse } from '../api/submit-intent-signature'
 
-// Contract address from environment variable
-const INTENT_BRIDGE_CONTRACT = (import.meta.env.VITE_CONTRACT_BASE_SEPOLIA ?? '') as Address
-
-// Chain ID from environment variable
-const BASE_SEPOLIA_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID_BASE_SEPOLIA ?? 84532)
+import { CONTRACT_BASE_SEPOLIA as INTENT_BRIDGE_CONTRACT, CHAIN_ID_BASE_SEPOLIA as BASE_SEPOLIA_CHAIN_ID } from '@/lib/env'
 
 // Validate contract address at module load time
 if (!INTENT_BRIDGE_CONTRACT || !/^0x[a-fA-F0-9]{40}$/.test(INTENT_BRIDGE_CONTRACT)) {

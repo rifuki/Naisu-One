@@ -1,11 +1,16 @@
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000/api/v1'
+import axios, { AxiosError } from 'axios'
+import { API_URL } from '@/lib/env'
 
-interface ApiResponse<T> {
+// Rust backend envelope: { success, code, data, message, timestamp }
+interface BackendEnvelope<T> {
+  success: boolean
+  code: number
   data: T
-  status: number
+  message: string
+  timestamp: number
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
@@ -16,61 +21,47 @@ class ApiError extends Error {
   }
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new ApiError(
-      errorData.error || errorData.message || `HTTP ${response.status}`,
-      response.status,
-      errorData
-    )
+const instance = axios.create({
+  baseURL: API_URL,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+// Auto-unwrap envelope and throw on failure
+instance.interceptors.response.use(
+  (res) => {
+    const envelope = res.data as BackendEnvelope<unknown>
+    if (envelope && typeof envelope === 'object' && 'success' in envelope) {
+      if (!envelope.success) {
+        throw new ApiError(envelope.message || 'Request failed', envelope.code ?? res.status, envelope)
+      }
+      res.data = envelope.data
+    }
+    return res
+  },
+  (err: AxiosError) => {
+    const envelope = err.response?.data as BackendEnvelope<unknown> | undefined
+    const message = envelope?.message || err.message || 'Request failed'
+    const status = err.response?.status ?? 0
+    throw new ApiError(message, status, envelope)
   }
-  return response.json()
-}
+)
 
 export const apiClient = {
   async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
-    const url = new URL(`${API_BASE}${path}`)
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.set(key, String(value))
-        }
-      })
-    }
-    
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    return handleResponse<T>(response)
+    const filteredParams = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined))
+      : undefined
+    const res = await instance.get<T>(path, { params: filteredParams })
+    return res.data
   },
 
   async post<T>(path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    
-    return handleResponse<T>(response)
+    const res = await instance.post<T>(path, body)
+    return res.data
   },
 
-  async delete<T>(path: string): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    
-    return handleResponse<T>(response)
+  async delete<T = void>(path: string): Promise<T> {
+    const res = await instance.delete<T>(path)
+    return res.data
   },
 }
-
-export { ApiError }

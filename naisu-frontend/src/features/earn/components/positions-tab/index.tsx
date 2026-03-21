@@ -31,11 +31,11 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
     setMarginfiWithdrawing(true);
     setMarginfiError(null);
     try {
-      const json = await apiClient.post<{ data?: { signature: string } }>(
+      const json = await apiClient.post<{ signature: string }>(
         '/portfolio/withdraw-marginfi',
         { wallet: solAddress, amount: marginfiWithdrawAmount },
       );
-      setMarginfiTxResult(json.data?.signature ?? null);
+      setMarginfiTxResult(json.signature ?? null);
       setShowMarginfiModal(false);
       setMarginfiWithdrawAmount('');
       refetch();

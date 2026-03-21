@@ -7,8 +7,7 @@
  */
 
 import { useState, useEffect } from 'react'
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000'
+import { BACKEND_URL } from '@/lib/env'
 
 // ── Types (mirrors backend solver.service.ts) ─────────────────────────────────
 

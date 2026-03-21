@@ -8,8 +8,7 @@
  * but we also force-reconnect when `user` changes or after server-sent `close`).
  */
 import { useEffect, useRef } from 'react'
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() || 'http://localhost:3000'
+import { BACKEND_URL } from '@/lib/env'
 
 export type OrderStatus = 'FULFILLED' | 'CANCELLED' | 'EXPIRED' | 'OPEN'
 

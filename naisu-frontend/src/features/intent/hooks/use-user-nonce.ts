@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000';
+import { API_URL } from '@/lib/env'
 
 interface NonceResponse {
   success: boolean;
@@ -15,7 +14,7 @@ interface NonceResponse {
  * Fetch the expected nonce for a user's next gasless intent
  */
 async function fetchUserNonce(address: string): Promise<number> {
-  const res = await fetch(`${API_URL}/api/v1/intent/nonce?address=${address}`);
+  const res = await fetch(`${API_URL}/intent/nonce?address=${address}`);
   if (!res.ok) {
     throw new Error('Failed to fetch nonce');
   }

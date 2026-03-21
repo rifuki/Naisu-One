@@ -2,8 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { decodeFunctionData, formatEther } from 'viem';
 import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi';
 
-const AGENT_URL = (import.meta.env.VITE_AGENT_URL as string | undefined)?.trim() || 'http://localhost:8787';
-const PROJECT_ID = (import.meta.env.VITE_AGENT_PROJECT_ID as string | undefined)?.trim() || 'nesu';
+import { AGENT_URL, AGENT_PROJECT_ID as PROJECT_ID } from '@/lib/env'
 
 export interface AgentMessage {
   role: 'user' | 'assistant';

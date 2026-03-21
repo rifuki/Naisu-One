@@ -16,11 +16,5 @@ export interface YieldRate {
 }
 
 export async function getYieldRates(): Promise<YieldRate[]> {
-  const response = await apiClient.get<{ success: boolean; data: YieldRate[]; error?: string }>('/yield/rates');
-  
-  if (!response.success || !Array.isArray(response.data)) {
-    throw new Error(response.error || 'Failed to fetch yield rates');
-  }
-  
-  return response.data;
+  return apiClient.get<YieldRate[]>('/yield/rates');
 }

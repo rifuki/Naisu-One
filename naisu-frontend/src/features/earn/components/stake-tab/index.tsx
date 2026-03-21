@@ -35,10 +35,10 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
   const { data: priceData } = useQuery<{ fromUsd: number }>({
     queryKey: ['eth-price'],
     queryFn: async () => {
-      const json = await apiClient.get<{ data?: { fromUsd: number } }>('/intent/price', {
+      const json = await apiClient.get<{ fromUsd: number }>('/intent/price', {
         fromChain: 'base_sepolia', toChain: 'solana',
       });
-      return { fromUsd: json.data?.fromUsd ?? 0 };
+      return { fromUsd: json.fromUsd ?? 0 };
     },
     staleTime: 60_000,
     refetchInterval: 60_000,

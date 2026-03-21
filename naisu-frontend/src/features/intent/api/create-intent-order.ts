@@ -22,18 +22,9 @@ export interface CreateIntentOrderResponse {
 export async function createIntentOrder(
   params: CreateIntentOrderParams
 ): Promise<CreateIntentOrderResponse> {
-  const response = await apiClient.post<{ success: boolean; data: CreateIntentOrderResponse; error?: string }>(
-    '/intent/build-tx',
-    {
-      chain: 'evm-base',
-      action: 'create_order',
-      ...params,
-    }
-  )
-  
-  if (!response.success) {
-    throw new Error(response.error || 'Failed to build transaction')
-  }
-  
-  return response.data
+  return apiClient.post<CreateIntentOrderResponse>('/intent/build-tx', {
+    chain: 'evm-base',
+    action: 'create_order',
+    ...params,
+  })
 }
