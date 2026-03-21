@@ -1,7 +1,7 @@
 use axum::Router;
 
 use crate::{
-    feature::{health::health_routes, intent::intent_routes, solver::solver_routes},
+    feature::{health::health_routes, intent::intent_routes, solver::solver_routes, yield_rates::yield_routes},
     state::AppState,
 };
 
@@ -11,6 +11,7 @@ pub fn app_routes(state: AppState) -> Router {
         .nest("/api/v1/solana", Router::new().route("/balance/{address}", axum::routing::get(crate::feature::intent::handlers::get_solana_balance)))
         .nest("/api/v1/intent", intent_routes())
         .nest("/api/v1/solver", solver_routes())
+        .nest("/api/v1/yield", yield_routes())
         .fallback(handle_404)
         .with_state(state)
 }
