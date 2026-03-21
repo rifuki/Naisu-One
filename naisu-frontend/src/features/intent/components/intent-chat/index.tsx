@@ -6,7 +6,6 @@ import { MessageInput } from './message-input';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 const SUGGESTIONS = [
-  'Bridge 0.1 ETH from Base Sepolia to Solana',
   'Bridge 0.001 ETH from Base Sepolia to Solana',
   'How much SOL will I get for 0.1 ETH?',
   'Check my portfolio across chains',

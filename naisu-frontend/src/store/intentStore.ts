@@ -101,28 +101,38 @@ export const useIntentStore = create<IntentState>()(
 
       markFulfilled: (fillPrice, winnerSolver) =>
         set((state) => {
+          const resolvedWinner = winnerSolver || state.activeIntent?.winnerSolver;
           const fulfilledIntent = state.activeIntent
             ? {
                 ...state.activeIntent,
                 isFulfilled: true,
                 fulfilledAt: Date.now(),
                 fillPrice: fillPrice || state.activeIntent.fillPrice,
-                winnerSolver: winnerSolver || state.activeIntent.winnerSolver,
+                winnerSolver: resolvedWinner,
                 progress: state.activeIntent.progress.map(s => {
                   // Keep settled active (spinner) if txHash hasn't arrived yet —
                   // the 'settled' SSE event arrives late and will mark it done.
                   if (s.key === 'settled' && !s.txHash) return { ...s, done: false, active: true };
+                  // If winner step label is still the placeholder, inject solver name
+                  if (s.key === 'winner' && resolvedWinner && s.label === 'Selecting solver') {
+                    return { ...s, done: true, active: false, label: `Solver: ${resolvedWinner}` };
+                  }
                   return { ...s, done: true, active: false };
                 }),
                 progressUpdatedAt: Date.now()
               }
             : null;
-          
-          // Save to completed intents history
-          const completedIntents = fulfilledIntent 
-            ? { ...state.completedIntents, [fulfilledIntent.intentId]: fulfilledIntent }
+
+          // Save to completed intents history — store under both intentId and contractOrderId
+          // so receipt cards (which may use the gasless intentId) can find the completed intent.
+          const completedIntents = fulfilledIntent
+            ? {
+                ...state.completedIntents,
+                [fulfilledIntent.intentId]: fulfilledIntent,
+                ...(fulfilledIntent.contractOrderId ? { [fulfilledIntent.contractOrderId]: fulfilledIntent } : {}),
+              }
             : state.completedIntents;
-          
+
           return {
             activeIntent: fulfilledIntent,
             completedIntents
@@ -131,7 +141,11 @@ export const useIntentStore = create<IntentState>()(
       
       clearActiveIntent: () => set({ activeIntent: null }),
       
-      getCompletedIntent: (intentId) => get().completedIntents[intentId],
+      getCompletedIntent: (intentId) => {
+        const map = get().completedIntents;
+        // Direct lookup by intentId first, then fallback to search by contractOrderId
+        return map[intentId] ?? Object.values(map).find(i => i.contractOrderId === intentId);
+      },
     }),
     {
       name: 'naisu-active-intent',

@@ -204,8 +204,9 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
 
           {/* You received — fulfilled only */}
           {isComplete && (
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="col-span-2 flex items-center justify-between py-3 px-4 rounded-xl bg-green-500/8 border border-green-500/20">
+            <div className="flex flex-col gap-2">
+              {/* YOU RECEIVED hero */}
+              <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-green-500/8 border border-green-500/20">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck size={12} className="text-green-500" />
                   <span className="text-[9px] text-green-500 uppercase tracking-widest font-bold">You received</span>
@@ -214,18 +215,29 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
                   {displayPrice} <span className="text-[11px] font-semibold">{tokenLabel}</span>
                 </div>
               </div>
-              {currentWinnerSolver && (
-                <>
-                  <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
-                    <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Filled by</div>
-                    <div className="text-[13px] font-semibold text-slate-200">{currentWinnerSolver}</div>
-                  </div>
-                  <div className="flex flex-col gap-1 p-3 rounded-xl bg-[#0F0F0F] border border-white/5">
-                    <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Fill time</div>
-                    <div className="text-[13px] font-semibold text-slate-200">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</div>
-                  </div>
-                </>
-              )}
+              {/* Stats grid — always show all fields */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex flex-col gap-0.5 px-3 py-2 rounded-lg bg-[#0F0F0F] border border-white/5">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Best offer</div>
+                  <div className="text-[12px] font-semibold text-slate-200 tabular-nums">{displayPrice} {tokenLabel}</div>
+                </div>
+                <div className="flex flex-col gap-0.5 px-3 py-2 rounded-lg bg-[#0F0F0F] border border-white/5">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Floor price</div>
+                  <div className="text-[12px] font-semibold text-slate-200 tabular-nums">{floorSol} {tokenLabel}</div>
+                </div>
+                <div className="flex flex-col gap-0.5 px-3 py-2 rounded-lg bg-[#0F0F0F] border border-white/5">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Auction</div>
+                  <div className="text-[12px] font-semibold text-slate-200">{Math.round(intent.durationSeconds / 60)} min</div>
+                </div>
+                <div className="flex flex-col gap-0.5 px-3 py-2 rounded-lg bg-[#0F0F0F] border border-white/5">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Fill time</div>
+                  <div className="text-[12px] font-semibold text-slate-200">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</div>
+                </div>
+                <div className="col-span-2 flex flex-col gap-0.5 px-3 py-2 rounded-lg bg-[#0F0F0F] border border-white/5">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Filled by</div>
+                  <div className="text-[12px] font-semibold text-slate-200">{currentWinnerSolver || '—'}</div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -249,6 +261,12 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
             {currentProgress.map((step, idx) => {
               const isLast = idx === currentProgress.length - 1;
               const StepIconComponent = stepIcons[step.key] || Circle;
+              // For winner step: if done but label is placeholder, inject solver name
+              const stepLabel =
+                step.key === 'winner' && step.done && currentWinnerSolver &&
+                (step.label === 'Selecting solver' || step.label === 'Solver selected')
+                  ? `Solver: ${currentWinnerSolver}`
+                  : step.label;
               return (
                 <div key={step.key} className="flex gap-2.5">
                   {/* Icon + line */}
@@ -277,7 +295,7 @@ export function IntentReceiptCard({ data }: IntentReceiptCardProps) {
                     <span className={`text-[11px] font-medium leading-tight ${
                       step.done ? 'text-green-400' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
                     }`}>
-                      {step.label}
+                      {stepLabel}
                     </span>
                     {step.detail && (
                       <span className={`text-[9px] mt-0.5 leading-snug ${

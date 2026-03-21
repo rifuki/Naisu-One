@@ -2,7 +2,7 @@ import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from '
 import { useNavigate } from 'react-router-dom';
 
 const SUGGESTIONS = [
-  'Bridge 0.1 ETH to Solana and stake as mSOL',
+  'Bridge 0.001 ETH from Base Sepolia to Solana',
   'How much SUI will I get for 0.05 ETH?',
   'Check my SOL and ETH balances',
 ];
