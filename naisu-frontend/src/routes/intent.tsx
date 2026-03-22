@@ -74,6 +74,8 @@ function IntentPage() {
 
   // Local state for UI feedback
   const [signedIntentSnapshot, setSignedIntentSnapshot] = useState<SignIntentParams | undefined>(undefined);
+  const signedIntentSnapshotRef = useRef<SignIntentParams | undefined>(undefined);
+  signedIntentSnapshotRef.current = signedIntentSnapshot;
   const [signedAt, setSignedAt] = useState<number | undefined>();
 
   // Derive from store
@@ -82,6 +84,15 @@ function IntentPage() {
   const fillPrice = activeIntent?.fillPrice;
   const winnerSolver = activeIntent?.winnerSolver;
   const fulfilledAt = activeIntent?.fulfilledAt;
+
+  // Contextual suggestion chips — generated from app state, not parsed from chat
+  const contextSuggestions = intentFulfilled
+    ? [
+        'Bridge more ETH to Solana',
+        fillPrice ? `Stake ${fillPrice} SOL for yield` : 'Stake my SOL for yield',
+        'Check my balance',
+      ]
+    : undefined;
 
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
@@ -152,9 +163,11 @@ function IntentPage() {
   // Sync activeSessionId with URL search params
   useEffect(() => {
     const chatParam = searchParams.chat;
+    // Normalize: treat missing param (undefined) and null session the same
+    const chatParamNorm = chatParam ?? null;
 
     // If they match, clear the programmatic navigation lock
-    if (chatParam === activeSessionId) {
+    if (chatParamNorm === activeSessionId) {
       isNavigatingRef.current = false;
       prevActiveSessionIdRef.current = activeSessionId;
       return;
@@ -166,7 +179,7 @@ function IntentPage() {
     }
 
     // Only act if URL and local state mismatch
-    if (chatParam !== activeSessionId) {
+    if (chatParamNorm !== activeSessionId) {
       if (chatParam && sessions.some(s => s.id === chatParam)) {
         // URL says chat X, state says chat Y -> User navigated via Browser Back/Forward or direct link
         handleSwitchSession(chatParam);
@@ -264,7 +277,9 @@ function IntentPage() {
         setPendingGaslessIntent(undefined);
         setGaslessStatus(null);
         window.dispatchEvent(new CustomEvent('optimistic-intent-created'));
-        sendMessage(`[System] ✅ Intent fulfilled! ID: ${event.orderId}\nThe bridge has completed successfully. The user can verify the transaction on the explorer.`);
+        const recipientAddr = signedIntentSnapshotRef.current?.recipientAddress ?? '';
+        const { fillPrice: fp2, winnerSolver: ws2 } = useIntentStore.getState().activeIntent ?? {};
+        sendMessage(`[System] ✅ Intent fulfilled! ID: ${event.orderId}\nRecipient address: ${recipientAddr}${fp2 ? `\nReceived: ${fp2} SOL` : ''}${ws2 ? `\nSolver: ${ws2}` : ''}\nThe bridge has completed successfully. Always show wallet addresses in full — never truncate them.`);
       } else if (event.status === 'EXPIRED') {
         if (intentFulfilled) return;
         console.log('[intent-page] Order EXPIRED, updating UI');
@@ -387,11 +402,14 @@ function IntentPage() {
         }));
       } else if (evt.type === 'vaa_ready') {
         // sol_sent DONE, vaa_ready DONE, settled ACTIVE — waiting for EVM settle tx
+        // Attach the Solana tx hash to vaa_ready so the UI can link to Wormholescan
+        const solTx = currentProgress.find(s => s.key === 'sol_sent')?.txHash
+          ?? useIntentStore.getState().activeIntent?.destinationTxHash;
         updateProgress(currentProgress.map(s => {
           if (s.key === 'signed' || s.key === 'rfq' || s.key === 'winner') return { ...s, done: true, active: false };
           if (s.key === 'evm_submitted') return { ...s, done: true, active: false, detail: 'Submitted on-chain' };
           if (s.key === 'sol_sent') return { ...s, done: true, active: false, detail: 'Transfer complete' };
-          if (s.key === 'vaa_ready') return { ...s, done: true, active: false, detail: 'VAA verified' };
+          if (s.key === 'vaa_ready') return { ...s, done: true, active: false, detail: 'VAA verified', txHash: solTx ?? undefined };
           if (s.key === 'settled') return { ...s, active: true };
           return s;
         }));
@@ -717,6 +735,7 @@ function IntentPage() {
           onRetry={handleRetry}
           onNewChat={handleNewChat}
           onDutchPlanConfirm={handleDutchPlanConfirm}
+          contextSuggestions={contextSuggestions}
           pendingSignIntent={pendingGaslessIntent && !intentProgress ? pendingGaslessIntent : undefined}
           signIntentStatus={gaslessStatus}
           isSignIntentFailed={isGaslessFailed}

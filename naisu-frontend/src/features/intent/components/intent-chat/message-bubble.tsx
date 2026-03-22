@@ -1152,13 +1152,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
     // tx hash chip config per step key
     const stepTxChip = (step: import('@/store').ProgressStep) => {
       if (!step.txHash) return null;
-      const isSolana = step.key === 'sol_sent';
-      return {
-        href: isSolana
-          ? `https://solscan.io/tx/${step.txHash}?cluster=devnet`
-          : `https://sepolia.basescan.org/tx/${step.txHash}`,
-        label: isSolana ? 'Solscan' : 'BaseScan',
-      };
+      if (step.key === 'sol_sent') return { href: `https://solscan.io/tx/${step.txHash}?cluster=devnet`, label: 'Solscan' };
+      if (step.key === 'vaa_ready') return { href: `https://wormholescan.io/#/tx/${step.txHash}?network=Testnet`, label: 'Wormhole' };
+      return { href: `https://sepolia.basescan.org/tx/${step.txHash}`, label: 'BaseScan' };
     };
 
     return (
@@ -1282,23 +1278,47 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                 {/* Execution phase: bridge status card */}
                 {!isComplete && !isError && isExecPhase && activeStep && (
-                  <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/10 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="size-7 rounded-full bg-[#0df2df]/10 border border-[#0df2df]/20 flex items-center justify-center shrink-0">
-                        <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                  <>
+                    <div className="p-3.5 rounded-xl bg-[#0F0F0F] border border-[#0df2df]/10 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="size-7 rounded-full bg-[#0df2df]/10 border border-[#0df2df]/20 flex items-center justify-center shrink-0">
+                          <div className="w-3 h-3 rounded-full border-[1.5px] border-[#0df2df]/30 border-t-[#0df2df] animate-spin" />
+                        </div>
+                        <div>
+                          <div className="text-[12px] font-semibold text-[#0df2df]">{activeStep.label}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{activeStep.detail ?? 'In progress…'}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-[12px] font-semibold text-[#0df2df]">{activeStep.label}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{activeStep.detail ?? 'In progress…'}</div>
+                      {winnerSolver && (
+                        <div className="flex items-center justify-between text-[10px] border-t border-white/5 pt-2.5">
+                          <span className="text-slate-600">Filled by</span>
+                          <span className="text-slate-300 font-semibold">{winnerSolver}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Auction params — fills left col to match right col height */}
+                    <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-white/[0.015]">
+                      <div className="px-3 py-1.5 border-b border-white/[0.05]">
+                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Auction Parameters</span>
+                      </div>
+                      <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                        <span className="text-[10px] text-slate-600">Start price</span>
+                        <span className="text-[10px] font-mono text-slate-400">{startSol} {tokenLabel}</span>
+                      </div>
+                      <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                        <span className="text-[10px] text-slate-600">Floor price</span>
+                        <span className="text-[10px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
+                      </div>
+                      <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                        <span className="text-[10px] text-slate-600">Duration</span>
+                        <span className="text-[10px] font-semibold text-slate-400">{Math.round(intent.durationSeconds / 60)} min</span>
+                      </div>
+                      <div className="px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-600">Elapsed</span>
+                        <span className="text-[10px] font-semibold tabular-nums text-slate-400">~{elapsedSec}s</span>
                       </div>
                     </div>
-                    {winnerSolver && (
-                      <div className="flex items-center justify-between text-[10px] border-t border-white/5 pt-2.5">
-                        <span className="text-slate-600">Filled by</span>
-                        <span className="text-slate-300 font-semibold">{winnerSolver}</span>
-                      </div>
-                    )}
-                  </div>
+                  </>
                 )}
 
                 {/* Complete: you received */}

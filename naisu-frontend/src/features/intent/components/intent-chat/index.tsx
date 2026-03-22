@@ -7,7 +7,7 @@ import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
-const SUGGESTIONS = [
+const STATIC_SUGGESTIONS = [
   'Bridge 0.001 ETH from Base Sepolia to Solana',
   'How much SOL will I get for 0.1 ETH?',
   'Check my portfolio across chains',
@@ -37,6 +37,8 @@ interface IntentChatProps {
   onRetry: () => void;
   onNewChat: () => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
+  /** Contextual suggestions to show above input based on app state (not parsed from chat) */
+  contextSuggestions?: string[];
   // Sign intent card props (rendered inline in chat instead of floating)
   pendingSignIntent?: SignIntentParams | null;
   signIntentStatus?: string | null;
@@ -104,6 +106,7 @@ export function IntentChat({
   onRetry,
   onNewChat,
   onDutchPlanConfirm,
+  contextSuggestions,
   pendingSignIntent,
   signIntentStatus,
   isSignIntentFailed,
@@ -118,6 +121,9 @@ export function IntentChat({
     onInputChange(text);
     inputRef.current?.focus();
   };
+
+  const suggestions = isEmpty ? STATIC_SUGGESTIONS : (contextSuggestions ?? []);
+  const showSuggestions = suggestions.length > 0 && !inputValue.trim() && !isLoading;
 
   return (
     <div className="flex-1 flex flex-col bg-[#070a09] relative overflow-hidden">
@@ -142,10 +148,10 @@ export function IntentChat({
       {/* Input area */}
       <div className="w-full px-4 sm:px-8 pb-6 pt-3 relative z-20 shrink-0">
         <div className="max-w-3xl mx-auto opacity-0 animate-fade-in-up" style={{ animationFillMode: 'forwards' }}>
-          {/* Suggestion chips — only when chat is empty and user hasn't typed */}
-          {isEmpty && !inputValue.trim() && (
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
-              {SUGGESTIONS.map((text, i) => (
+          {/* Suggestion chips */}
+          {showSuggestions && (
+            <div className={`flex flex-wrap items-center ${isEmpty ? 'justify-center' : 'justify-start'} gap-2 mb-3`}>
+              {suggestions.map((text, i) => (
                 <Button
                   key={text}
                   onClick={() => handleSuggestionClick(text)}
