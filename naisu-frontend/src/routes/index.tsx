@@ -214,13 +214,13 @@ const LandingPage: React.FC = () => {
                       style={{
                         width: 38, height: 38,
                         background: isListening ? 'rgba(13,242,223,0.12)' : 'transparent',
-                        color: isListening ? '#0df2df' : isTranscribing ? '#4f46e5' : '#3a4a47',
+                        color: isListening ? '#0df2df' : isTranscribing ? '#4f46e5' : '#6b8f8a',
                         boxShadow: isListening ? '0 0 12px rgba(13,242,223,0.3)' : 'none',
                         cursor: isTranscribing ? 'default' : 'pointer',
                         transition: 'all 0.2s ease',
                       }}
-                      onMouseEnter={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#fff'; }}
-                      onMouseLeave={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#3a4a47'; }}
+                      onMouseEnter={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#0df2df'; }}
+                      onMouseLeave={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#6b8f8a'; }}
                     >
                       {isTranscribing
                         ? <Loader2 size={20} strokeWidth={1.5} className="animate-spin" />
@@ -242,10 +242,10 @@ const LandingPage: React.FC = () => {
                 style={{
                   width: 40,
                   height: 40,
-                  background: inputValue.trim() ? '#0df2df' : 'rgba(13,242,223,0.1)',
-                  color: inputValue.trim() ? '#000' : '#1a4a45',
+                  background: inputValue.trim() ? '#0df2df' : 'rgba(13,242,223,0.15)',
+                  color: inputValue.trim() ? '#000' : '#0df2df',
                   boxShadow: inputValue.trim() ? '0 0 20px rgba(13,242,223,0.4)' : 'none',
-                  cursor: inputValue.trim() ? 'pointer' : 'not-allowed',
+                  cursor: inputValue.trim() ? 'pointer' : 'default',
                   transition: 'all 0.2s ease',
                 }}
               >
