@@ -122,7 +122,7 @@ async fn process_evm_order(
 
             match order.intent_type {
                 1 => {
-                    match executor::solana_executor::solve_and_liquid_stake(
+                    match executor::solana_executor::solve_marinade_and_prove(
                         &config, order.order_id, &recipient_b58, price,
                     ).await {
                         Ok((sig, seq, msol_minted)) => {
@@ -141,7 +141,7 @@ async fn process_evm_order(
                         }
                         Err(e) => {
                             let err_str = e.to_string();
-                            error!(" [{short}] STEP 1/3 ✗  |  solve_and_liquid_stake failed: {e}");
+                            error!(" [{short}] STEP 1/3 ✗  |  solve_marinade_and_prove failed: {e}");
                             if !err_str.contains("SolanaTransactionFailed") {
                                 seen_orders.lock().await.remove(&order.order_id);
                                 warn!(" [{short}]  → removed from dedup, will retry");
@@ -155,7 +155,7 @@ async fn process_evm_order(
                 }
                 it @ (4 | 5 | 6) => {
                     let (label, fn_call) = match it {
-                        4 => ("jito_stake",   executor::solana_executor::solve_and_jito(&config, order.order_id, &recipient_b58, price).await),
+                        4 => ("jito_stake",   executor::solana_executor::solve_jito_and_prove(&config, order.order_id, &recipient_b58, price).await),
                         5 => ("jupsol_stake", executor::solana_executor::solve_and_jupsol(&config, order.order_id, &recipient_b58, price).await),
                         _ => ("kamino_stake", executor::solana_executor::solve_and_kamino(&config, order.order_id, &recipient_b58, price).await),
                     };

@@ -379,6 +379,71 @@ pub mod intent_bridge_solana {
         Ok(())
     }
 
+    // Prove stake via Wormhole (no SOL transfer — staking already done in prior tx instructions)
+    //
+    // Used for atomic staking: the caller's transaction includes external staking instructions
+    // (Marinade deposit, Jito depositSol, etc.) BEFORE this instruction. If any staking
+    // instruction fails the whole tx reverts and this VAA is never emitted — fully atomic.
+    pub fn prove_stake(
+        ctx: Context<ProveStake>,
+        order_id: [u8; 32],
+        solver_address: [u8; 32],
+        amount_lamports: u64,
+    ) -> Result<()> {
+        // ── Pay Wormhole fee ─────────────────────────────────────────────────
+        {
+            let fee = ctx.accounts.wormhole_bridge.fee();
+            let last_lamports = ctx.accounts.wormhole_bridge.last_lamports;
+            let current = ctx.accounts.wormhole_fee_collector.to_account_info().lamports();
+            let topup = fee.saturating_add(last_lamports.saturating_sub(current));
+            if topup > 0 {
+                anchor_lang::system_program::transfer(
+                    CpiContext::new(
+                        ctx.accounts.system_program.to_account_info(),
+                        anchor_lang::system_program::Transfer {
+                            from: ctx.accounts.solver.to_account_info(),
+                            to: ctx.accounts.wormhole_fee_collector.to_account_info(),
+                        },
+                    ),
+                    topup,
+                )?;
+            }
+        }
+
+        // ── Build 96-byte payload (action=AUTO_STAKE) ────────────────────────
+        let mut payload = Vec::with_capacity(96);
+        payload.extend_from_slice(&order_id);
+        payload.extend_from_slice(&solver_address);
+        payload.extend_from_slice(&[0u8; 23]);
+        payload.push(TARGET_ACTION_AUTO_STAKE); // byte 87: action flag
+        payload.extend_from_slice(&amount_lamports.to_be_bytes());
+
+        // ── CPI to Wormhole post_message ─────────────────────────────────────
+        let bump = ctx.bumps.wormhole_emitter;
+        let signer_seeds: &[&[&[u8]]; 1] = &[&[EMITTER_SEED, &[bump]]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.wormhole_program.to_account_info(),
+            wormhole::PostMessage {
+                config: ctx.accounts.wormhole_bridge.to_account_info(),
+                message: ctx.accounts.wormhole_message.to_account_info(),
+                emitter: ctx.accounts.wormhole_emitter.to_account_info(),
+                sequence: ctx.accounts.wormhole_sequence.to_account_info(),
+                payer: ctx.accounts.solver.to_account_info(),
+                fee_collector: ctx.accounts.wormhole_fee_collector.to_account_info(),
+                clock: ctx.accounts.clock.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            },
+            signer_seeds,
+        );
+
+        wormhole::post_message(cpi_ctx, 0, payload, wormhole::Finality::Confirmed)?;
+
+        msg!("Stake proved via Wormhole (action=AUTO_STAKE)");
+        Ok(())
+    }
+
     // Claim with VAA
     pub fn claim_with_vaa(ctx: Context<ClaimWithVaa>) -> Result<()> {
         let posted_vaa = &ctx.accounts.posted_vaa;
@@ -541,6 +606,29 @@ pub struct SolveStakeAndProve<'info> {
     pub token_program: AccountInfo<'info>,
     /// CHECK: Associated Token program
     pub associated_token_program: AccountInfo<'info>,
+    #[account(seeds = [CONFIG_SEED], bump)]
+    pub config: Account<'info, Config>,
+    pub wormhole_program: Program<'info, Wormhole>,
+    #[account(mut, seeds = [wormhole::BridgeData::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_bridge: Account<'info, wormhole::BridgeData>,
+    #[account(mut)]
+    pub wormhole_message: Signer<'info>,
+    /// CHECK: Wormhole Emitter PDA — our program's emitter, validated by seeds
+    #[account(seeds = [EMITTER_SEED], bump)]
+    pub wormhole_emitter: AccountInfo<'info>,
+    #[account(mut, seeds = [wormhole::SequenceTracker::SEED_PREFIX, wormhole_emitter.key().as_ref()], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_sequence: Account<'info, wormhole::SequenceTracker>,
+    #[account(mut, seeds = [wormhole::FeeCollector::SEED_PREFIX], bump, seeds::program = wormhole::program::ID)]
+    pub wormhole_fee_collector: Account<'info, wormhole::FeeCollector>,
+    pub clock: Sysvar<'info, Clock>,
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ProveStake<'info> {
+    #[account(mut)]
+    pub solver: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
     pub wormhole_program: Program<'info, Wormhole>,

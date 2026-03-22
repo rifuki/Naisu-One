@@ -167,6 +167,58 @@ fn build_and_sign_transaction(
     tx
 }
 
+/// Build and sign a Solana legacy transaction with multiple instructions.
+///
+/// `accounts`: pre-sorted (writable signers, readonly signers, writable non-signers,
+///             readonly non-signers) — all accounts referenced by ALL instructions.
+/// `instructions`: list of (program_id_index, account_indices_slice, instruction_data).
+/// `signers`: signing keys in the exact order signer accounts appear in `accounts`.
+fn build_and_sign_multi_ix(
+    accounts: &[AccountRef],
+    instructions: &[(u8, &[u8], &[u8])],
+    recent_blockhash: [u8; 32],
+    signers: &[&ed25519_dalek::SigningKey],
+) -> Vec<u8> {
+    use ed25519_dalek::Signer;
+
+    let num_signers = accounts.iter().filter(|a| a.is_signer).count() as u8;
+    let num_readonly_signers = accounts
+        .iter()
+        .filter(|a| a.is_signer && !a.is_writable)
+        .count() as u8;
+    let num_readonly_unsigned = accounts
+        .iter()
+        .filter(|a| !a.is_signer && !a.is_writable)
+        .count() as u8;
+
+    let mut msg = Vec::new();
+    msg.push(num_signers);
+    msg.push(num_readonly_signers);
+    msg.push(num_readonly_unsigned);
+    msg.extend_from_slice(&compact_u16(accounts.len() as u16));
+    for acc in accounts {
+        msg.extend_from_slice(&acc.pubkey);
+    }
+    msg.extend_from_slice(&recent_blockhash);
+    msg.extend_from_slice(&compact_u16(instructions.len() as u16));
+    for (prog_idx, acct_idxs, data) in instructions {
+        msg.push(*prog_idx);
+        msg.extend_from_slice(&compact_u16(acct_idxs.len() as u16));
+        msg.extend_from_slice(acct_idxs);
+        msg.extend_from_slice(&compact_u16(data.len() as u16));
+        msg.extend_from_slice(data);
+    }
+
+    let mut tx = Vec::new();
+    tx.extend_from_slice(&compact_u16(signers.len() as u16));
+    for key in signers {
+        let sig = key.sign(&msg);
+        tx.extend_from_slice(&sig.to_bytes());
+    }
+    tx.extend_from_slice(&msg);
+    tx
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
 // ──────────────────────────────────────────────────────────────────────────────
@@ -309,6 +361,22 @@ async fn fetch_transaction_logs(rpc_url: &str, signature: &str) -> String {
         },
         Err(e) => format!("(failed to call getTransaction: {e})"),
     }
+}
+
+/// Fetch raw base64-decoded account data from the RPC.
+async fn fetch_account_data(rpc_url: &str, address: &[u8; 32]) -> Result<Vec<u8>> {
+    let client = reqwest::Client::new();
+    let addr_b58 = bs58::encode(address).into_string();
+    let body = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1,
+        "method": "getAccountInfo",
+        "params": [addr_b58, {"encoding": "base64"}]
+    });
+    let resp: serde_json::Value = client.post(rpc_url).json(&body).send().await?.json().await?;
+    let data_b64 = resp["result"]["value"]["data"][0]
+        .as_str()
+        .ok_or_else(|| eyre::eyre!("Account not found: {addr_b58}"))?;
+    Ok(base64::engine::general_purpose::STANDARD.decode(data_b64)?)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -746,112 +814,213 @@ async fn solve_and_prove_inner(
     Ok((sig, wormhole_sequence))
 }
 
-/// solve_and_liquid_stake: EVM→Solana bridge + Marinade liquid staking.
+// ──────────────────────────────────────────────────────────────────────────────
+// Marinade liquid staking — atomic single-transaction (deposit + prove)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const MARINADE_PROGRAM_B58: &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
+const MARINADE_STATE_B58:   &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
+const MSOL_MINT_B58:        &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+
+/// Solve (Marinade: deposit SOL → mSOL directly to recipient ATA) and prove via Wormhole.
 ///
-/// Correct flow (solver does NOT lose SOL):
-///   1. Call solve_and_prove with SOLVER as recipient — solver receives the SOL back.
-///      This emits the Wormhole proof needed to settle on EVM (solver gets ETH back).
-///   2. Call marinade_stake.js TypeScript helper which:
-///      a. Deposits solver's SOL into Marinade Finance → mints mSOL to solver's mSOL ATA
-///      b. Transfers mSOL from solver to actual recipient's mSOL ATA
+/// Single atomic transaction with 3 instructions:
+///   1. CreateATA (idempotent) — ensure recipient's mSOL ATA exists
+///   2. Marinade deposit — solver deposits SOL, mSOL minted directly to recipient ATA
+///   3. prove_stake — emit Wormhole VAA with AUTO_STAKE payload
 ///
-/// Net result:
-///   - Solver spends SOL, gets back ETH (via EVM settle) → break-even (minus gas)
-///   - Recipient gets mSOL (Marinade staked SOL), NOT raw SOL
-///
-/// Returns (tx_signature, wormhole_sequence, msol_minted).
-/// The tx_signature and wormhole_sequence are from solve_and_prove (used for EVM settlement).
-/// msol_minted is informational (logged, displayed to user).
-pub async fn solve_and_liquid_stake(
+/// VAA is only emitted after mSOL delivery succeeds — fully atomic.
+/// Returns (tx_signature, wormhole_sequence, amount_lamports).
+pub async fn solve_marinade_and_prove(
     config: &Config,
     order_id: [u8; 32],
     recipient_b58: &str,
     amount_lamports: u64,
 ) -> Result<(String, u64, u64)> {
-    // Derive solver's own Solana pubkey (used as solve_and_prove recipient)
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err = eyre::eyre!("no attempts made");
+    for attempt in 1..=MAX_ATTEMPTS {
+        match solve_marinade_and_prove_inner(config, order_id, recipient_b58, amount_lamports).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("SolanaTransactionTimeout") {
+                    warn!(
+                        order_id = %hex::encode(order_id),
+                        attempt, max_attempts = MAX_ATTEMPTS,
+                        "Solana tx timed out — retrying with fresh blockhash..."
+                    );
+                    if attempt < MAX_ATTEMPTS {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        last_err = e;
+                        continue;
+                    }
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err)
+}
+
+async fn solve_marinade_and_prove_inner(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    // ── Load solver keypair ──────────────────────────────────────────────────
     let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
     let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
-    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    // ── Decode addresses ─────────────────────────────────────────────────────
+    let program_id       = decode_b58(&config.solana_program_id)?;
+    let wormhole_prog    = decode_b58(&config.solana_wormhole_program_id)?;
+    let token_program    = decode_b58(TOKEN_PROGRAM_B58)?;
+    let assoc_token_prog = decode_b58(ASSOC_TOKEN_PROGRAM_B58)?;
+    let marinade_program = decode_b58(MARINADE_PROGRAM_B58)?;
+    let marinade_state   = decode_b58(MARINADE_STATE_B58)?;
+    let msol_mint        = decode_b58(MSOL_MINT_B58)?;
+    let recipient        = decode_b58(recipient_b58)?;
+
+    // ── Derive all Marinade PDAs (no on-chain fetch needed) ──────────────────
+    // Seeds: [state_key, "<seed_str>"] @ marinade_program
+    let (liq_pool_sol_leg_pda, _)        = find_pda(&[&marinade_state, b"liq_sol"],                &marinade_program);
+    let (liq_pool_msol_leg_authority, _) = find_pda(&[&marinade_state, b"liq_st_sol_authority"],  &marinade_program);
+    let (reserve_pda, _)                 = find_pda(&[&marinade_state, b"reserve"],               &marinade_program);
+    let (msol_mint_authority, _)         = find_pda(&[&marinade_state, b"st_mint"],               &marinade_program);
+    // liq_pool_msol_leg = ATA owned by liq_pool_msol_leg_authority for mSOL mint
+    let (liq_pool_msol_leg, _)  = find_pda(&[&liq_pool_msol_leg_authority, &token_program, &msol_mint], &assoc_token_prog);
+    // Recipient's mSOL ATA
+    let (recipient_msol_ata, _) = find_pda(&[&recipient, &token_program, &msol_mint], &assoc_token_prog);
+
+    // ── Derive Wormhole PDAs ─────────────────────────────────────────────────
+    let (config_pda, _)           = find_pda(&[b"config"],                          &program_id);
+    let (wh_bridge_pda, _)        = find_pda(&[b"Bridge"],                          &wormhole_prog);
+    let (wh_emitter_pda, _)       = find_pda(&[b"emitter"],                         &program_id);
+    let (wh_sequence_pda, _)      = find_pda(&[b"Sequence", &wh_emitter_pda],       &wormhole_prog);
+    let (wh_fee_collector_pda, _) = find_pda(&[b"fee_collector"],                   &wormhole_prog);
+
+    // ── Fresh wormhole_message keypair ────────────────────────────────────────
+    let wh_message_key = {
+        use sha2::Digest;
+        let now_ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let mut h = sha2::Sha256::new();
+        h.update(order_id); h.update(solver_pubkey); h.update(amount_lamports.to_le_bytes());
+        h.update(b"solve_marinade_and_prove"); h.update(now_ns.to_le_bytes());
+        ed25519_dalek::SigningKey::from_bytes(&h.finalize().into())
+    };
+    let wh_message_pubkey: [u8; 32] = wh_message_key.verifying_key().to_bytes();
+
+    // ── Solver EVM address (for VAA payload) ─────────────────────────────────
+    let solver_evm: ethers::signers::LocalWallet = config.evm_private_key.parse()
+        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
+    let mut solver_evm_addr = [0u8; 32];
+    solver_evm_addr[12..].copy_from_slice(solver_evm.address().as_bytes());
+
+    // ── Sysvars ──────────────────────────────────────────────────────────────
+    let clock_sysvar = decode_b58("SysvarC1ock11111111111111111111111111111111")?;
+    let rent_sysvar  = decode_b58("SysvarRent111111111111111111111111111111111")?;
+
+    // ── Instruction A: CreateATA (idempotent) for recipient mSOL ATA ─────────
+    // data = [1] — idempotent discriminator, succeeds even if ATA already exists
+    let create_ata_data: &[u8] = &[1u8];
+
+    // ── Instruction B: Marinade deposit ──────────────────────────────────────
+    // Anchor: disc(8) + lamports(8 LE) = 16 bytes
+    let mut marinade_data = instruction_discriminator("deposit").to_vec();
+    marinade_data.extend_from_slice(&amount_lamports.to_le_bytes());
+
+    // ── Instruction C: prove_stake (our program) ──────────────────────────────
+    // disc(8) + order_id(32) + solver_evm(32) + amount(8) = 80 bytes
+    let mut prove_data = instruction_discriminator("prove_stake").to_vec();
+    prove_data.extend_from_slice(&order_id);
+    prove_data.extend_from_slice(&solver_evm_addr);
+    prove_data.extend_from_slice(&amount_lamports.to_le_bytes());
+
+    // ── Merged account list (Solana ordering) ─────────────────────────────────
+    // Writable signers:   [0] solver  [1] wh_message
+    // Writable non-sig:   [2] marinade_state  [3] msol_mint  [4] liq_pool_sol_leg_pda
+    //                     [5] liq_pool_msol_leg  [6] reserve_pda  [7] recipient_msol_ata
+    //                     [8] wh_bridge  [9] wh_sequence  [10] wh_fee_collector
+    // Readonly non-sig:   [11] recipient  [12] liq_pool_msol_leg_authority
+    //                     [13] msol_mint_authority  [14] assoc_token_prog (ix A prog)
+    //                     [15] marinade_program (ix B prog)  [16] token_program
+    //                     [17] system_program  [18] config_pda  [19] wormhole_prog
+    //                     [20] wh_emitter  [21] clock  [22] rent  [23] program_id (ix C prog)
+    let accounts = vec![
+        AccountRef { pubkey: solver_pubkey,               is_signer: true,  is_writable: true  }, //  0
+        AccountRef { pubkey: wh_message_pubkey,           is_signer: true,  is_writable: true  }, //  1
+        AccountRef { pubkey: marinade_state,              is_signer: false, is_writable: true  }, //  2
+        AccountRef { pubkey: msol_mint,                   is_signer: false, is_writable: true  }, //  3
+        AccountRef { pubkey: liq_pool_sol_leg_pda,        is_signer: false, is_writable: true  }, //  4
+        AccountRef { pubkey: liq_pool_msol_leg,           is_signer: false, is_writable: true  }, //  5
+        AccountRef { pubkey: reserve_pda,                 is_signer: false, is_writable: true  }, //  6
+        AccountRef { pubkey: recipient_msol_ata,          is_signer: false, is_writable: true  }, //  7
+        AccountRef { pubkey: wh_bridge_pda,               is_signer: false, is_writable: true  }, //  8
+        AccountRef { pubkey: wh_sequence_pda,             is_signer: false, is_writable: true  }, //  9
+        AccountRef { pubkey: wh_fee_collector_pda,        is_signer: false, is_writable: true  }, // 10
+        AccountRef { pubkey: recipient,                   is_signer: false, is_writable: false }, // 11
+        AccountRef { pubkey: liq_pool_msol_leg_authority, is_signer: false, is_writable: false }, // 12
+        AccountRef { pubkey: msol_mint_authority,         is_signer: false, is_writable: false }, // 13
+        AccountRef { pubkey: assoc_token_prog,            is_signer: false, is_writable: false }, // 14
+        AccountRef { pubkey: marinade_program,            is_signer: false, is_writable: false }, // 15
+        AccountRef { pubkey: token_program,               is_signer: false, is_writable: false }, // 16
+        AccountRef { pubkey: SYSTEM_PROGRAM,              is_signer: false, is_writable: false }, // 17
+        AccountRef { pubkey: config_pda,                  is_signer: false, is_writable: false }, // 18
+        AccountRef { pubkey: wormhole_prog,               is_signer: false, is_writable: false }, // 19
+        AccountRef { pubkey: wh_emitter_pda,              is_signer: false, is_writable: false }, // 20
+        AccountRef { pubkey: clock_sysvar,                is_signer: false, is_writable: false }, // 21
+        AccountRef { pubkey: rent_sysvar,                 is_signer: false, is_writable: false }, // 22
+        AccountRef { pubkey: program_id,                  is_signer: false, is_writable: false }, // 23
+    ];
+
+    // Instruction A (CreateATA idempotent): prog=14, accounts=[funding=0, ata=7, wallet=11, mint=3, sys=17, tok=16]
+    let ix_a_accounts: &[u8] = &[0, 7, 11, 3, 17, 16];
+    // Instruction B (Marinade deposit): prog=15, accounts=[state=2,msol_mint=3,sol_leg=4,msol_leg=5,
+    //   msol_leg_auth=12,reserve=6,transfer_from=0,mint_to=7,msol_mint_auth=13,sys=17,tok=16]
+    let ix_b_accounts: &[u8] = &[2, 3, 4, 5, 12, 6, 0, 7, 13, 17, 16];
+    // Instruction C (prove_stake): prog=23, accounts=[solver=0,config=18,wh_prog=19,wh_bridge=8,
+    //   wh_msg=1,wh_emitter=20,wh_seq=9,wh_fee=10,clock=21,rent=22,sys=17]
+    let ix_c_accounts: &[u8] = &[0, 18, 19, 8, 1, 20, 9, 10, 21, 22, 17];
+
+    let instructions: &[(u8, &[u8], &[u8])] = &[
+        (14, ix_a_accounts, create_ata_data),
+        (15, ix_b_accounts, &marinade_data),
+        (23, ix_c_accounts, &prove_data),
+    ];
+
+    // ── Fetch blockhash and submit ────────────────────────────────────────────
+    let blockhash = get_latest_blockhash(&config.solana_rpc_url).await?;
+    let tx_bytes = build_and_sign_multi_ix(&accounts, instructions, blockhash, &[&signing_key, &wh_message_key]);
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
 
     info!(
-        order_id = %hex::encode(order_id),
-        amount_lamports,
-        actual_recipient = %recipient_b58,
-        solver = %solver_b58,
-        "Starting bridge+marinade_stake flow — SOL goes to solver, mSOL goes to recipient"
+        order_id = %hex::encode(order_id), amount_lamports, recipient = %recipient_b58,
+        "Submitting Marinade+prove_stake atomic transaction..."
     );
 
-    // ── Step 1: solve_and_prove with SOLVER as recipient ─────────────────────────
-    // Solver receives the SOL (not the user). This emits the Wormhole proof for EVM settle.
-    // Solver will then deposit that SOL into Marinade and send mSOL to the actual recipient.
-    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+    let sig = send_and_confirm_transaction(&config.solana_rpc_url, &tx_b64).await?;
+
+    let tx_logs = fetch_transaction_logs(&config.solana_rpc_url, &sig).await;
+    let wormhole_sequence = match parse_sequence_from_logs(&tx_logs) {
+        Some(seq) => seq,
+        None => {
+            warn!(signature = %sig, "Could not parse Wormhole sequence — falling back to account read");
+            get_account_sequence(&config.solana_rpc_url, &wh_sequence_pda).await.unwrap_or(0).saturating_sub(1)
+        }
+    };
 
     info!(
-        order_id = %hex::encode(order_id),
-        signature = %sig,
-        wormhole_sequence = wh_seq,
-        solver = %solver_b58,
-        "solve_and_prove confirmed — SOL received by solver, now depositing into Marinade for recipient..."
+        order_id = %hex::encode(order_id), sig = %sig, wormhole_sequence,
+        "Marinade+prove_stake confirmed — mSOL delivered to recipient atomically."
     );
 
-    // ── Step 2: marinade_stake.js helper ────────────────────────────────────────
-    let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("naisu-contracts/solana/scripts");
-
-    let marinade_stake_js = scripts_dir.join("dist/marinade_stake.js");
-
-    let output = tokio::process::Command::new("node")
-        .current_dir(scripts_dir.parent().unwrap())
-        .arg(&marinade_stake_js)
-        .arg(recipient_b58)
-        .arg(amount_lamports.to_string())
-        .arg(&config.solana_rpc_url)
-        .arg(&config.solana_private_key)
-        .output()
-        .await
-        .map_err(|e| eyre::eyre!("Failed to run marinade_stake.js: {e}"))?;
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-    if !stderr_str.is_empty() {
-        info!(
-            order_id = %hex::encode(order_id),
-            "marinade_stake.js stderr:\n{stderr_str}"
-        );
-    }
-
-    if !output.status.success() {
-        return Err(eyre::eyre!(
-            "marinade_stake.js failed (exit {}): {}",
-            output.status,
-            stderr_str
-        ));
-    }
-
-    // Parse "MSOL_MINTED:<amount>" from stdout
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let msol_minted = stdout_str
-        .lines()
-        .find(|l| l.starts_with("MSOL_MINTED:"))
-        .and_then(|l| l.trim_start_matches("MSOL_MINTED:").trim().parse::<u64>().ok())
-        .unwrap_or(0);
-
-    info!(
-        order_id = %hex::encode(order_id),
-        signature = %sig,
-        wormhole_sequence = wh_seq,
-        msol_minted,
-        recipient = %recipient_b58,
-        "Bridge+marinade_stake complete! Recipient received mSOL tokens."
-    );
-
-    Ok((sig, wh_seq, msol_minted))
+    // mSOL received ≈ amount_lamports (Marinade ~1:1 minus small fee)
+    Ok((sig, wormhole_sequence, amount_lamports))
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Mock yield platform executors (Jito, Jupiter, Kamino)
 // ──────────────────────────────────────────────────────────────────────────────
 // Mock vault platforms: jupSOL + kSOL (solve_stake_and_prove)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -859,9 +1028,6 @@ pub async fn solve_and_liquid_stake(
 // These use the `solve_stake_and_prove` Solana program instruction which atomically:
 //   1. CPI to mock-staking vault (solver deposits SOL → recipient gets LST)
 //   2. Emits Wormhole VAA *after* staking — proof is correct + no self-transfer waste
-//
-// Jito uses the old `solve_and_prove + JS script` pattern because the real Jito
-// devnet program cannot be CPI'd from our intent-bridge program without redeploying.
 
 /// Known mint addresses for mock vault platforms (devnet).
 const JUPSOL_MINT_B58: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
@@ -1055,68 +1221,85 @@ async fn solve_stake_and_prove_inner(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Old pattern: solve_and_prove + JS script (kept for Jito real devnet,
-// which cannot be CPI'd from the intent-bridge program without redeploying)
+// Jito real devnet stake pool — atomic single-transaction (depositSol + prove)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Helper: run a mock stake script and parse TOKEN_MINTED:<amount> from stdout.
-async fn run_mock_stake_script(
-    config: &Config,
-    order_id: [u8; 32],
-    script_name: &str,
-    platform: &str,
-    recipient_b58: &str,
-    amount_lamports: u64,
-) -> Result<u64> {
-    let scripts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("naisu-contracts/solana/scripts");
+const JITO_PROGRAM_B58:       &str = "DPoo15wWDqpPJJtS2MUZ49aRxqz5ZaaJCJP4z8bLuib";
+const JITO_STAKE_POOL_B58:    &str = "JitoY5pcAxWX6iyP2QdFwTznGb8A99PRCUCVVxB46WZ";
+const JITO_SOL_MINT_B58:      &str = "J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpLZU7pPGHxSYi";
+const JITO_RESERVE_B58:       &str = "Dsd1zgN4XtxC6239vNznTNb6akTLNQeSBKoJqYjNps5e";
+const JITO_WITHDRAW_AUTH_B58: &str = "8HPpFV5PFqGmDumjRTFw9BhsjrZYjJBDuHX2p6H5nBmd";
 
-    let script_path = scripts_dir.join(format!("dist/{script_name}"));
-
-    let output = tokio::process::Command::new("node")
-        .current_dir(scripts_dir.parent().unwrap())
-        .arg(&script_path)
-        .arg(recipient_b58)
-        .arg(amount_lamports.to_string())
-        .arg(&config.solana_rpc_url)
-        .arg(&config.solana_private_key)
-        .output()
-        .await
-        .map_err(|e| eyre::eyre!("Failed to run {script_name}: {e}"))?;
-
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-    if !stderr_str.is_empty() {
-        info!(order_id = %hex::encode(order_id), "{script_name} stderr:\n{stderr_str}");
+/// Fetch manager_fee_account from the Jito stake pool account.
+///
+/// SPL stake pool layout (borsh, u8 account_type discriminator):
+///   [0]       account_type: u8
+///   [1..33]   manager: Pubkey
+///   [33..65]  staker: Pubkey
+///   [65..97]  stake_deposit_authority: Pubkey
+///   [97]      stake_withdraw_bump_seed: u8
+///   [98..130] validator_list: Pubkey
+///   [130..162] reserve_stake: Pubkey
+///   [162..194] pool_mint: Pubkey       ← verified against JITO_SOL_MINT_B58
+///   [194..226] manager_fee_account     ← what we need
+async fn fetch_jito_manager_fee_account(rpc_url: &str) -> Result<[u8; 32]> {
+    let stake_pool_addr = decode_b58(JITO_STAKE_POOL_B58)?;
+    let data = fetch_account_data(rpc_url, &stake_pool_addr).await?;
+    if data.len() < 226 {
+        return Err(eyre::eyre!("Jito stake pool account too short: {} bytes", data.len()));
     }
-
-    if !output.status.success() {
+    let pool_mint_at_162: [u8; 32] = data[162..194].try_into().unwrap();
+    let expected_mint = decode_b58(JITO_SOL_MINT_B58)?;
+    if pool_mint_at_162 != expected_mint {
         return Err(eyre::eyre!(
-            "{script_name} failed (exit {}): {stderr_str}",
-            output.status,
+            "Jito pool_mint mismatch at offset 162 — layout may have changed. \
+             Expected {JITO_SOL_MINT_B58}, got {}",
+            bs58::encode(pool_mint_at_162).into_string()
         ));
     }
-
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let minted = stdout_str
-        .lines()
-        .find(|l| l.starts_with("TOKEN_MINTED:"))
-        .and_then(|l| l.trim_start_matches("TOKEN_MINTED:").trim().parse::<u64>().ok())
-        .unwrap_or(0);
-
-    info!(
-        order_id = %hex::encode(order_id),
-        minted,
-        recipient = %recipient_b58,
-        "Bridge+{platform} complete! Recipient received mock tokens."
-    );
-
-    Ok(minted)
+    Ok(data[194..226].try_into().unwrap())
 }
 
-/// solve_and_jito: EVM→Solana bridge + mock Jito liquid staking (jitoSOL).
-pub async fn solve_and_jito(
+/// Solve (Jito: depositSol → jitoSOL directly to recipient ATA) and prove via Wormhole.
+///
+/// Single atomic transaction with 4 instructions:
+///   1. CreateATA (idempotent) — ensure recipient's jitoSOL ATA exists
+///   2. SystemProgram::transfer(solver → ephemeral, amount_lamports)
+///   3. Jito DepositSol (ephemeral as fundingAccount → jitoSOL to recipient ATA)
+///   4. prove_stake — emit Wormhole VAA with AUTO_STAKE payload
+pub async fn solve_jito_and_prove(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err = eyre::eyre!("no attempts made");
+    for attempt in 1..=MAX_ATTEMPTS {
+        match solve_jito_and_prove_inner(config, order_id, recipient_b58, amount_lamports).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("SolanaTransactionTimeout") {
+                    warn!(
+                        order_id = %hex::encode(order_id),
+                        attempt, max_attempts = MAX_ATTEMPTS,
+                        "Solana tx timed out — retrying with fresh blockhash..."
+                    );
+                    if attempt < MAX_ATTEMPTS {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        last_err = e;
+                        continue;
+                    }
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err)
+}
+
+async fn solve_jito_and_prove_inner(
     config: &Config,
     order_id: [u8; 32],
     recipient_b58: &str,
@@ -1125,30 +1308,160 @@ pub async fn solve_and_jito(
     let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
     let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
-    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
+
+    let program_id       = decode_b58(&config.solana_program_id)?;
+    let wormhole_prog    = decode_b58(&config.solana_wormhole_program_id)?;
+    let token_program    = decode_b58(TOKEN_PROGRAM_B58)?;
+    let assoc_token_prog = decode_b58(ASSOC_TOKEN_PROGRAM_B58)?;
+    let jito_program     = decode_b58(JITO_PROGRAM_B58)?;
+    let stake_pool       = decode_b58(JITO_STAKE_POOL_B58)?;
+    let jitosol_mint     = decode_b58(JITO_SOL_MINT_B58)?;
+    let reserve_stake    = decode_b58(JITO_RESERVE_B58)?;
+    let withdraw_auth    = decode_b58(JITO_WITHDRAW_AUTH_B58)?;
+    let recipient        = decode_b58(recipient_b58)?;
+
+    let manager_fee_account = fetch_jito_manager_fee_account(&config.solana_rpc_url).await?;
+    info!(manager_fee = %bs58::encode(manager_fee_account).into_string(), "Fetched Jito manager_fee_account");
+
+    let (recipient_jitosol_ata, _) = find_pda(&[&recipient, &token_program, &jitosol_mint], &assoc_token_prog);
+
+    // Ephemeral keypair — fundingAccount for Jito DepositSol. Pre-funded by ix 2, drained by ix 3.
+    let ephemeral_key = {
+        use sha2::Digest;
+        let now_ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let mut h = sha2::Sha256::new();
+        h.update(order_id); h.update(solver_pubkey); h.update(amount_lamports.to_le_bytes());
+        h.update(b"jito_ephemeral"); h.update(now_ns.to_le_bytes());
+        ed25519_dalek::SigningKey::from_bytes(&h.finalize().into())
+    };
+    let ephemeral_pubkey: [u8; 32] = ephemeral_key.verifying_key().to_bytes();
+
+    let (config_pda, _)           = find_pda(&[b"config"],                    &program_id);
+    let (wh_bridge_pda, _)        = find_pda(&[b"Bridge"],                    &wormhole_prog);
+    let (wh_emitter_pda, _)       = find_pda(&[b"emitter"],                   &program_id);
+    let (wh_sequence_pda, _)      = find_pda(&[b"Sequence", &wh_emitter_pda], &wormhole_prog);
+    let (wh_fee_collector_pda, _) = find_pda(&[b"fee_collector"],             &wormhole_prog);
+
+    let wh_message_key = {
+        use sha2::Digest;
+        let now_ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let mut h = sha2::Sha256::new();
+        h.update(order_id); h.update(solver_pubkey); h.update(amount_lamports.to_le_bytes());
+        h.update(b"solve_jito_and_prove"); h.update(now_ns.to_le_bytes());
+        ed25519_dalek::SigningKey::from_bytes(&h.finalize().into())
+    };
+    let wh_message_pubkey: [u8; 32] = wh_message_key.verifying_key().to_bytes();
+
+    let solver_evm: ethers::signers::LocalWallet = config.evm_private_key.parse()
+        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
+    let mut solver_evm_addr = [0u8; 32];
+    solver_evm_addr[12..].copy_from_slice(solver_evm.address().as_bytes());
+
+    let clock_sysvar = decode_b58("SysvarC1ock11111111111111111111111111111111")?;
+    let rent_sysvar  = decode_b58("SysvarRent111111111111111111111111111111111")?;
+
+    // ix A: CreateATA idempotent — data = [1]
+    let create_ata_data: &[u8] = &[1u8];
+
+    // ix B: SystemProgram transfer(solver → ephemeral) — [u32 LE type=2] + [u64 LE lamports]
+    let mut sys_transfer_data = Vec::with_capacity(12);
+    sys_transfer_data.extend_from_slice(&2u32.to_le_bytes());
+    sys_transfer_data.extend_from_slice(&amount_lamports.to_le_bytes());
+
+    // ix C: Jito DepositSol — [u8 disc=14] + [i64 LE lamports]
+    let mut jito_data = Vec::with_capacity(9);
+    jito_data.push(14u8);
+    jito_data.extend_from_slice(&(amount_lamports as i64).to_le_bytes());
+
+    // ix D: prove_stake — disc(8) + order_id(32) + solver_evm(32) + amount(8)
+    let mut prove_data = instruction_discriminator("prove_stake").to_vec();
+    prove_data.extend_from_slice(&order_id);
+    prove_data.extend_from_slice(&solver_evm_addr);
+    prove_data.extend_from_slice(&amount_lamports.to_le_bytes());
+
+    // Merged account list:
+    // Writable signers:  [0] solver  [1] ephemeral  [2] wh_message
+    // Writable non-sig:  [3] stake_pool  [4] reserve_stake  [5] recipient_jitosol_ata
+    //                    [6] manager_fee_account  [7] jitosol_mint
+    //                    [8] wh_bridge  [9] wh_sequence  [10] wh_fee_collector
+    // Readonly non-sig:  [11] recipient  [12] withdraw_auth
+    //                    [13] assoc_token_prog  [14] jito_program  [15] token_program
+    //                    [16] SYSTEM_PROGRAM  [17] config_pda  [18] wormhole_prog
+    //                    [19] wh_emitter  [20] clock  [21] rent  [22] program_id
+    let accounts = vec![
+        AccountRef { pubkey: solver_pubkey,        is_signer: true,  is_writable: true  }, //  0
+        AccountRef { pubkey: ephemeral_pubkey,      is_signer: true,  is_writable: true  }, //  1
+        AccountRef { pubkey: wh_message_pubkey,     is_signer: true,  is_writable: true  }, //  2
+        AccountRef { pubkey: stake_pool,            is_signer: false, is_writable: true  }, //  3
+        AccountRef { pubkey: reserve_stake,         is_signer: false, is_writable: true  }, //  4
+        AccountRef { pubkey: recipient_jitosol_ata, is_signer: false, is_writable: true  }, //  5
+        AccountRef { pubkey: manager_fee_account,   is_signer: false, is_writable: true  }, //  6
+        AccountRef { pubkey: jitosol_mint,          is_signer: false, is_writable: true  }, //  7
+        AccountRef { pubkey: wh_bridge_pda,         is_signer: false, is_writable: true  }, //  8
+        AccountRef { pubkey: wh_sequence_pda,       is_signer: false, is_writable: true  }, //  9
+        AccountRef { pubkey: wh_fee_collector_pda,  is_signer: false, is_writable: true  }, // 10
+        AccountRef { pubkey: recipient,             is_signer: false, is_writable: false }, // 11
+        AccountRef { pubkey: withdraw_auth,         is_signer: false, is_writable: false }, // 12
+        AccountRef { pubkey: assoc_token_prog,      is_signer: false, is_writable: false }, // 13
+        AccountRef { pubkey: jito_program,          is_signer: false, is_writable: false }, // 14
+        AccountRef { pubkey: token_program,         is_signer: false, is_writable: false }, // 15
+        AccountRef { pubkey: SYSTEM_PROGRAM,        is_signer: false, is_writable: false }, // 16
+        AccountRef { pubkey: config_pda,            is_signer: false, is_writable: false }, // 17
+        AccountRef { pubkey: wormhole_prog,         is_signer: false, is_writable: false }, // 18
+        AccountRef { pubkey: wh_emitter_pda,        is_signer: false, is_writable: false }, // 19
+        AccountRef { pubkey: clock_sysvar,          is_signer: false, is_writable: false }, // 20
+        AccountRef { pubkey: rent_sysvar,           is_signer: false, is_writable: false }, // 21
+        AccountRef { pubkey: program_id,            is_signer: false, is_writable: false }, // 22
+    ];
+
+    // ix A (CreateATA): prog=13, [funding=0, ata=5, wallet=11, mint=7, sys=16, tok=15]
+    let ix_a: &[u8] = &[0, 5, 11, 7, 16, 15];
+    // ix B (SystemTransfer): prog=16, [from=0, to=1]
+    let ix_b: &[u8] = &[0, 1];
+    // ix C (Jito DepositSol): prog=14,
+    //   [pool=3, withdraw_auth=12, reserve=4, funding=1, dest=5, mgr_fee=6, referral=5, mint=7, sys=16, tok=15]
+    let ix_c: &[u8] = &[3, 12, 4, 1, 5, 6, 5, 7, 16, 15];
+    // ix D (prove_stake): prog=22,
+    //   [solver=0, config=17, wh_prog=18, wh_bridge=8, wh_msg=2, wh_emitter=19,
+    //    wh_seq=9, wh_fee=10, clock=20, rent=21, sys=16]
+    let ix_d: &[u8] = &[0, 17, 18, 8, 2, 19, 9, 10, 20, 21, 16];
+
+    let instructions: &[(u8, &[u8], &[u8])] = &[
+        (13, ix_a, create_ata_data),
+        (16, ix_b, &sys_transfer_data),
+        (14, ix_c, &jito_data),
+        (22, ix_d, &prove_data),
+    ];
+
+    let blockhash = get_latest_blockhash(&config.solana_rpc_url).await?;
+    let tx_bytes = build_and_sign_multi_ix(
+        &accounts, instructions, blockhash,
+        &[&signing_key, &ephemeral_key, &wh_message_key],
+    );
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
 
     info!(
-        order_id = %hex::encode(order_id),
-        amount_lamports,
-        actual_recipient = %recipient_b58,
-        "Starting bridge+jito_stake flow"
+        order_id = %hex::encode(order_id), amount_lamports, recipient = %recipient_b58,
+        "Submitting Jito+prove_stake atomic transaction..."
     );
 
-    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
+    let sig = send_and_confirm_transaction(&config.solana_rpc_url, &tx_b64).await?;
 
-    let minted = run_mock_stake_script(
-        config, order_id, "jito_stake.js", "jito", recipient_b58, amount_lamports,
-    ).await?;
+    let tx_logs = fetch_transaction_logs(&config.solana_rpc_url, &sig).await;
+    let wormhole_sequence = match parse_sequence_from_logs(&tx_logs) {
+        Some(seq) => seq,
+        None => {
+            warn!(signature = %sig, "Could not parse Wormhole sequence — falling back to account read");
+            get_account_sequence(&config.solana_rpc_url, &wh_sequence_pda).await.unwrap_or(0).saturating_sub(1)
+        }
+    };
 
     info!(
-        order_id = %hex::encode(order_id),
-        signature = %sig,
-        wormhole_sequence = wh_seq,
-        jito_minted = minted,
-        "Bridge+jito complete."
+        order_id = %hex::encode(order_id), sig = %sig, wormhole_sequence,
+        "Jito+prove_stake confirmed — jitoSOL delivered to recipient atomically."
     );
 
-    Ok((sig, wh_seq, minted))
+    Ok((sig, wormhole_sequence, amount_lamports))
 }
 
 /// solve_and_jupsol: EVM→Solana bridge + jupSOL vault staking (atomic proof).
