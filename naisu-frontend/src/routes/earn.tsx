@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { StakeTab } from '@/features/earn/components/stake-tab';
 import { PositionsTab } from '@/features/earn/components/positions-tab';
@@ -25,19 +25,16 @@ function EarnPage() {
           <p className="text-sm text-slate-500">Bridge ETH and earn yield on Solana</p>
         </div>
 
-        <div className="flex gap-2 p-1 bg-white/5 rounded-xl">
-          {(['stake', 'positions'] as Tab[]).map((tab) => (
-            <Button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab ? 'bg-primary text-black' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {tab === 'stake' ? 'Stake' : 'Positions'}
-            </Button>
-          ))}
-        </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+          <TabsList className="w-full bg-white/5 rounded-xl p-1">
+            <TabsTrigger value="stake" className="flex-1 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-black text-slate-400">
+              Stake
+            </TabsTrigger>
+            <TabsTrigger value="positions" className="flex-1 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-black text-slate-400">
+              Positions
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="glass-panel rounded-2xl p-4">
           {activeTab === 'stake' ? (

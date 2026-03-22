@@ -67,6 +67,7 @@ function WalletDropdown({
       {items.map((item) => (
         <Button
           key={item.label}
+          variant="ghost"
           onClick={() => { item.onClick(); onClose(); }}
           className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors
             ${item.danger
@@ -151,6 +152,7 @@ function MultiWalletDropdown({
   return (
     <div className="relative" ref={ref}>
       <Button
+        variant="ghost"
         onClick={() => setShowDropdown((v) => !v)}
         className={`flex items-center gap-2 rounded-xl px-4 py-2 h-9 border text-xs font-semibold transition-all hover:scale-105 active:scale-95 ${
           connectedCount > 0
@@ -176,6 +178,8 @@ function MultiWalletDropdown({
                     <span>{fullEvmAddress}</span>
                   </div>
                   <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => {
                       navigator.clipboard.writeText(fullEvmAddress);
                     }}
@@ -187,6 +191,7 @@ function MultiWalletDropdown({
                 </div>
                 <div className="flex gap-2">
                   <Button
+                    variant="ghost"
                     onClick={() => {
                       window.open(`https://sepolia.basescan.org/address/${fullEvmAddress}`, '_blank');
                       setShowDropdown(false);
@@ -196,6 +201,7 @@ function MultiWalletDropdown({
                     Explorer
                   </Button>
                   <Button
+                    variant="ghost"
                     onClick={() => {
                       onDisconnectEvm();
                       setShowDropdown(false);
@@ -208,6 +214,7 @@ function MultiWalletDropdown({
               </div>
             ) : (
               <Button
+                variant="ghost"
                 onClick={() => {
                   onConnectEvm();
                   setShowDropdown(false);
@@ -237,6 +244,8 @@ function MultiWalletDropdown({
                     <span className="mt-[1px]">{fullSolAddress}</span>
                   </div>
                   <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => {
                       navigator.clipboard.writeText(fullSolAddress);
                     }}
@@ -248,6 +257,7 @@ function MultiWalletDropdown({
                 </div>
                 <div className="flex gap-2">
                   <Button
+                    variant="ghost"
                     onClick={() => {
                       window.open(`https://solscan.io/account/${fullSolAddress}?cluster=devnet`, '_blank');
                       setShowDropdown(false);
@@ -257,6 +267,7 @@ function MultiWalletDropdown({
                     Explorer
                   </Button>
                   <Button
+                    variant="ghost"
                     onClick={() => {
                       onDisconnectSol();
                       setShowDropdown(false);
@@ -269,6 +280,7 @@ function MultiWalletDropdown({
               </div>
             ) : (
               <Button
+                variant="ghost"
                 onClick={() => {
                   onConnectSol();
                   setShowDropdown(false);
@@ -393,6 +405,7 @@ const Navbar: React.FC = () => {
 
             {/* Mobile Menu toggle */}
             <Button
+              variant="ghost"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="md:hidden size-9 flex items-center justify-center rounded-full bg-surface border border-white/10 text-slate-400 hover:text-white hover:border-primary/30 transition-colors ml-1"
             >
@@ -421,20 +434,20 @@ const Navbar: React.FC = () => {
             </nav>
             <div className="mt-2 pt-2 border-t border-white/5 grid grid-cols-2 gap-2">
               {shortSol ? (
-                <Button onClick={handleSolanaDisconnect} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-bold">
+                <Button variant="ghost" onClick={handleSolanaDisconnect} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-bold">
                   <SolanaLogo /> Disconnect
                 </Button>
               ) : (
-                <Button onClick={() => setVisible(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface border border-white/5 text-slate-400 text-xs font-medium">
+                <Button variant="ghost" onClick={() => setVisible(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface border border-white/5 text-slate-400 text-xs font-medium">
                   <SolanaLogo /> Connect SOL
                 </Button>
               )}
               {isConnected ? (
-                <Button onClick={() => disconnect()} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold">
+                <Button variant="ghost" onClick={() => disconnect()} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold">
                   <EthLogo /> Disconnect
                 </Button>
               ) : (
-                <Button onClick={() => connect({ connector: injected() })} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-primary text-black text-xs font-bold">
+                <Button variant="ghost" onClick={() => connect({ connector: injected() })} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-primary text-black text-xs font-bold">
                   <EthLogo className="text-black" /> Connect EVM
                 </Button>
               )}

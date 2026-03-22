@@ -105,9 +105,10 @@ export function TokenInput({
             Balance: {balance}
             {onMaxClick && (
               <Button
+                variant="ghost"
                 type="button"
                 onClick={onMaxClick}
-                className="text-[10px] font-bold text-primary hover:text-primary/70 uppercase transition-colors"
+                className="p-0 h-auto leading-none text-[10px] font-bold text-primary hover:text-primary/70 uppercase transition-colors"
               >
                 Max
               </Button>
