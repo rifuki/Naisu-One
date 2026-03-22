@@ -43,6 +43,23 @@ pub struct Config {
     // Wormhole API
     pub wormhole_api_url: String,
 
+    // Marinade liquid staking
+    pub marinade_program_id: String,
+    pub marinade_state_id:   String,
+    pub msol_mint:           String,
+
+    // Jito stake pool
+    pub jito_program_id:  String,
+    pub jito_stake_pool:  String,
+    pub jito_sol_mint:    String,
+
+    // Mock vault mints
+    pub jupsol_mint: String,
+    pub ksol_mint:   String,
+
+    // Explorer
+    pub solana_cluster: String,
+
     // Strategy
     pub min_profit_bps: u64,
 
@@ -97,6 +114,20 @@ impl Config {
 
             wormhole_api_url: env::var("WORMHOLE_RPC_URL")
                 .unwrap_or_else(|_| "https://api.testnet.wormholescan.io".to_string()),
+
+            marinade_program_id: require_env("MARINADE_PROGRAM_ID")?,
+            marinade_state_id:   require_env("MARINADE_STATE_ID")?,
+            msol_mint:           require_env("MSOL_MINT")?,
+
+            jito_program_id: require_env("JITO_PROGRAM_ID")?,
+            jito_stake_pool: require_env("JITO_STAKE_POOL")?,
+            jito_sol_mint:   require_env("JITO_SOL_MINT")?,
+
+            jupsol_mint: require_env("JUPSOL_MINT")?,
+            ksol_mint:   require_env("KSOL_MINT")?,
+
+            solana_cluster: env::var("SOLANA_CLUSTER")
+                .unwrap_or_else(|_| "devnet".to_string()),
 
             min_profit_bps: env::var("MIN_PROFIT_BPS")
                 .unwrap_or_else(|_| "50".to_string())

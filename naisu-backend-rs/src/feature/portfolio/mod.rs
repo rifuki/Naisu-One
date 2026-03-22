@@ -4,20 +4,12 @@ use axum::{Json, Router, extract::Query, routing::{get, post}};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use axum::extract::State;
+
 use crate::{
     infrastructure::web::response::{ApiError, ApiResult, ApiSuccess},
     state::AppState,
 };
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const SOLANA_RPC:  &str = "https://api.devnet.solana.com";
-const MSOL_MINT:   &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
-const USDC_MINT:   &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-// Yield platform tokens (devnet)
-const JITO_MINT:   &str = "J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpLZU7pPGHxSYi"; // Jito real devnet jitoSOL
-const JUPSOL_MINT: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
-const KSOL_MINT:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +29,7 @@ pub struct PortfolioBalances {
 
 // ─── Solana JSON-RPC helpers ──────────────────────────────────────────────────
 
-async fn rpc_call(method: &str, params: serde_json::Value) -> eyre::Result<serde_json::Value> {
+async fn rpc_call(rpc_url: &str, method: &str, params: serde_json::Value) -> eyre::Result<serde_json::Value> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
@@ -50,7 +42,7 @@ async fn rpc_call(method: &str, params: serde_json::Value) -> eyre::Result<serde
     });
 
     let resp = client
-        .post(SOLANA_RPC)
+        .post(rpc_url)
         .json(&body)
         .send()
         .await?
@@ -60,8 +52,9 @@ async fn rpc_call(method: &str, params: serde_json::Value) -> eyre::Result<serde
     Ok(resp)
 }
 
-async fn get_sol_balance(wallet: &str) -> eyre::Result<u64> {
+async fn get_sol_balance(rpc_url: &str, wallet: &str) -> eyre::Result<u64> {
     let resp = rpc_call(
+        rpc_url,
         "getBalance",
         serde_json::json!([wallet, { "commitment": "confirmed" }]),
     ).await?;
@@ -90,27 +83,40 @@ fn extract_spl_amount(resp: eyre::Result<serde_json::Value>) -> String {
         .unwrap_or_else(|| "0".to_string())
 }
 
-async fn get_token_balances(wallet: &str) -> eyre::Result<(String, String, String, String, String)> {
+async fn get_token_balances(
+    rpc_url: &str,
+    msol_mint: &str,
+    usdc_mint: &str,
+    jito_mint: &str,
+    jupsol_mint: &str,
+    ksol_mint: &str,
+    wallet: &str,
+) -> eyre::Result<(String, String, String, String, String)> {
     let (msol_resp, usdc_resp, jito_resp, jupsol_resp, ksol_resp) = tokio::join!(
         rpc_call(
+            rpc_url,
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": MSOL_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": msol_mint },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
         rpc_call(
+            rpc_url,
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": USDC_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": usdc_mint },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
         rpc_call(
+            rpc_url,
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": JITO_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": jito_mint },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
         rpc_call(
+            rpc_url,
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": JUPSOL_MINT }, { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": jupsol_mint }, { "encoding": "base64", "commitment": "confirmed" }]),
         ),
         rpc_call(
+            rpc_url,
             "getTokenAccountsByOwner",
-            serde_json::json!([wallet, { "mint": KSOL_MINT },   { "encoding": "base64", "commitment": "confirmed" }]),
+            serde_json::json!([wallet, { "mint": ksol_mint },   { "encoding": "base64", "commitment": "confirmed" }]),
         ),
     );
 
@@ -131,13 +137,15 @@ pub struct BalancesQuery {
 }
 
 pub async fn get_balances(
+    State(state): State<AppState>,
     Query(params): Query<BalancesQuery>,
 ) -> ApiResult<PortfolioBalances> {
     info!(wallet = %params.wallet, "Portfolio balances requested");
 
+    let sol = &state.config.solana;
     let (sol_result, token_result) = tokio::join!(
-        get_sol_balance(&params.wallet),
-        get_token_balances(&params.wallet),
+        get_sol_balance(&sol.rpc_url, &params.wallet),
+        get_token_balances(&sol.rpc_url, &sol.msol_mint, &sol.usdc_mint, &sol.jito_mint, &sol.jupsol_mint, &sol.ksol_mint, &params.wallet),
     );
 
     let sol = match sol_result {
@@ -178,6 +186,7 @@ pub struct UnstakeMsolBody {
 }
 
 pub async fn unstake_msol(
+    State(state): State<AppState>,
     Json(body): Json<UnstakeMsolBody>,
 ) -> ApiResult<serde_json::Value> {
     use std::path::PathBuf;
@@ -207,7 +216,7 @@ pub async fn unstake_msol(
         .arg(&script)
         .arg(&body.wallet)
         .arg(&body.amount)
-        .arg(SOLANA_RPC)
+        .arg(&state.config.solana.rpc_url)
         .output()
         .await
         .map_err(|e| {
@@ -243,6 +252,7 @@ pub struct UnstakeTokenBody {
 }
 
 async fn run_mock_unstake(
+    rpc_url: &str,
     wallet: &str,
     amount: &str,
     script_name: &str,
@@ -265,7 +275,7 @@ async fn run_mock_unstake(
         .arg(&script)
         .arg(wallet)
         .arg(amount)
-        .arg(SOLANA_RPC)
+        .arg(rpc_url)
         .arg(&solver_key)
         .output()
         .await
@@ -294,6 +304,7 @@ async fn run_mock_unstake(
 }
 
 pub async fn unstake_jito(
+    State(state): State<AppState>,
     Json(body): Json<UnstakeTokenBody>,
 ) -> ApiResult<serde_json::Value> {
     info!(wallet = %body.wallet, amount = %body.amount, "jitoSOL unstake tx requested");
@@ -307,10 +318,11 @@ pub async fn unstake_jito(
             .with_code(axum::http::StatusCode::BAD_REQUEST)
             .with_message("amount must be > 0"));
     }
-    run_mock_unstake(&body.wallet, &body.amount, "jito_unstake.js").await
+    run_mock_unstake(&state.config.solana.rpc_url, &body.wallet, &body.amount, "jito_unstake.js").await
 }
 
 pub async fn unstake_jupsol(
+    State(state): State<AppState>,
     Json(body): Json<UnstakeTokenBody>,
 ) -> ApiResult<serde_json::Value> {
     info!(wallet = %body.wallet, amount = %body.amount, "jupSOL unstake tx requested");
@@ -324,10 +336,11 @@ pub async fn unstake_jupsol(
             .with_code(axum::http::StatusCode::BAD_REQUEST)
             .with_message("amount must be > 0"));
     }
-    run_mock_unstake(&body.wallet, &body.amount, "jupsol_unstake.js").await
+    run_mock_unstake(&state.config.solana.rpc_url, &body.wallet, &body.amount, "jupsol_unstake.js").await
 }
 
 pub async fn unstake_kamino(
+    State(state): State<AppState>,
     Json(body): Json<UnstakeTokenBody>,
 ) -> ApiResult<serde_json::Value> {
     info!(wallet = %body.wallet, amount = %body.amount, "kSOL unstake tx requested");
@@ -341,7 +354,7 @@ pub async fn unstake_kamino(
             .with_code(axum::http::StatusCode::BAD_REQUEST)
             .with_message("amount must be > 0"));
     }
-    run_mock_unstake(&body.wallet, &body.amount, "kamino_unstake.js").await
+    run_mock_unstake(&state.config.solana.rpc_url, &body.wallet, &body.amount, "kamino_unstake.js").await
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

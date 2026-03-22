@@ -69,11 +69,35 @@ impl ChainConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct SolanaConfig {
+    pub rpc_url:     String,   // SOLANA_RPC_URL
+    pub msol_mint:   String,   // MSOL_MINT
+    pub jito_mint:   String,   // JITO_MINT
+    pub jupsol_mint: String,   // JUPSOL_MINT
+    pub ksol_mint:   String,   // KSOL_MINT
+    pub usdc_mint:   String,   // USDC_MINT
+}
+
+impl SolanaConfig {
+    fn from_env() -> Result<Self> {
+        Ok(Self {
+            rpc_url:     require_env("SOLANA_RPC_URL")?,
+            msol_mint:   require_env("MSOL_MINT")?,
+            jito_mint:   require_env("JITO_MINT")?,
+            jupsol_mint: require_env("JUPSOL_MINT")?,
+            ksol_mint:   require_env("KSOL_MINT")?,
+            usdc_mint:   require_env("USDC_MINT")?,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     pub rust_env: String,
     pub is_production: bool,
     pub server: ServerConfig,
     pub chain: ChainConfig,
+    pub solana: SolanaConfig,
     pub database_url: String,
 }
 
@@ -89,6 +113,7 @@ impl Config {
             is_production,
             server: ServerConfig::from_env()?,
             chain: ChainConfig::from_env()?,
+            solana: SolanaConfig::from_env()?,
             database_url,
         })
     }

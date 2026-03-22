@@ -1,11 +1,11 @@
 [package]
-name = "intent-solver"
+name = "naisu-solver"
 version = "0.1.0"
 edition = "2024"
-default-run = "intent-solver"
+default-run = "naisu-solver"
 
 [[bin]]
-name = "intent-solver"
+name = "naisu-solver"
 path = "src/main.rs"
 
 

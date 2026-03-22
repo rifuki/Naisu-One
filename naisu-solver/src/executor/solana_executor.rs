@@ -818,21 +818,17 @@ async fn solve_and_prove_inner(
 // Marinade liquid staking — atomic single-transaction (deposit + prove)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const MARINADE_PROGRAM_B58: &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
-const MARINADE_STATE_B58:   &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
-const MSOL_MINT_B58:        &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
-
 // Byte offset of liq_pool.msol_leg (Pubkey, 32 bytes) within the Borsh-encoded MarinadeState.
 // Verified against devnet state account 8szGkuL... and stable across Marinade versions
 // as long as the state layout (anchor IDL) doesn't change.
-// mainnet: point MARINADE_STATE_B58 to mainnet state → same offset applies.
+// mainnet: point MARINADE_STATE_ID in config to mainnet state → same offset applies.
 const MARINADE_MSOL_LEG_OFFSET: usize = 420;
 
 /// Fetch liq_pool.msol_leg from the Marinade state account at runtime.
 /// This avoids hardcoding the address — works for both devnet and mainnet
-/// as long as MARINADE_STATE_B58 in config points to the correct network state.
-async fn fetch_marinade_msol_leg(rpc_url: &str) -> Result<[u8; 32]> {
-    let marinade_state = decode_b58(MARINADE_STATE_B58)?;
+/// as long as config.marinade_state_id points to the correct network state.
+async fn fetch_marinade_msol_leg(rpc_url: &str, marinade_state_id: &str) -> Result<[u8; 32]> {
+    let marinade_state = decode_b58(marinade_state_id)?;
     let data = fetch_account_data(rpc_url, &marinade_state).await?;
     if data.len() < MARINADE_MSOL_LEG_OFFSET + 32 {
         return Err(eyre::eyre!(
@@ -902,9 +898,9 @@ async fn solve_marinade_and_prove_inner(
     let wormhole_prog    = decode_b58(&config.solana_wormhole_program_id)?;
     let token_program    = decode_b58(TOKEN_PROGRAM_B58)?;
     let assoc_token_prog = decode_b58(ASSOC_TOKEN_PROGRAM_B58)?;
-    let marinade_program = decode_b58(MARINADE_PROGRAM_B58)?;
-    let marinade_state   = decode_b58(MARINADE_STATE_B58)?;
-    let msol_mint        = decode_b58(MSOL_MINT_B58)?;
+    let marinade_program = decode_b58(&config.marinade_program_id)?;
+    let marinade_state   = decode_b58(&config.marinade_state_id)?;
+    let msol_mint        = decode_b58(&config.msol_mint)?;
     let recipient        = decode_b58(recipient_b58)?;
 
     // ── Derive Marinade PDAs ─────────────────────────────────────────────────
@@ -915,7 +911,7 @@ async fn solve_marinade_and_prove_inner(
     let (msol_mint_authority, _)         = find_pda(&[&marinade_state, b"st_mint"],              &marinade_program);
     // liq_pool_msol_leg: stored in MarinadeState.liqPool.msolLeg — fetch at runtime
     // so this works for mainnet without code changes (just update MARINADE_STATE_B58)
-    let liq_pool_msol_leg = fetch_marinade_msol_leg(&config.solana_rpc_url).await?;
+    let liq_pool_msol_leg = fetch_marinade_msol_leg(&config.solana_rpc_url, &config.marinade_state_id).await?;
     // Recipient's mSOL ATA
     let (recipient_msol_ata, _) = find_pda(&[&recipient, &token_program, &msol_mint], &assoc_token_prog);
 
@@ -1053,14 +1049,15 @@ async fn solve_marinade_and_prove_inner(
 //   1. CPI to mock-staking vault (solver deposits SOL → recipient gets LST)
 //   2. Emits Wormhole VAA *after* staking — proof is correct + no self-transfer waste
 
-/// Known mint addresses for mock vault platforms (devnet).
-const JUPSOL_MINT_B58: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
-const KSOL_MINT_B58:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
-
 /// SPL token program.
 const TOKEN_PROGRAM_B58: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 /// Associated token program.
 const ASSOC_TOKEN_PROGRAM_B58: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
+/// Build a Solana explorer URL using the cluster from config.
+pub fn solana_explorer_url(config: &Config, sig: &str) -> String {
+    format!("https://explorer.solana.com/tx/{sig}?cluster={}", config.solana_cluster)
+}
 
 /// Decode a base58 program/address string to 32-byte array.
 fn decode_b58(s: &str) -> Result<[u8; 32]> {
@@ -1248,11 +1245,26 @@ async fn solve_stake_and_prove_inner(
 // Jito real devnet stake pool — atomic single-transaction (depositSol + prove)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const JITO_PROGRAM_B58:       &str = "DPoo15wWDqpPJJtS2MUZ49aRxqz5ZaaJCJP4z8bLuib";
-const JITO_STAKE_POOL_B58:    &str = "JitoY5pcAxWX6iyP2QdFwTznGb8A99PRCUCVVxB46WZ";
-const JITO_SOL_MINT_B58:      &str = "J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpLZU7pPGHxSYi";
-const JITO_RESERVE_B58:       &str = "Dsd1zgN4XtxC6239vNznTNb6akTLNQeSBKoJqYjNps5e";
-const JITO_WITHDRAW_AUTH_B58: &str = "8HPpFV5PFqGmDumjRTFw9BhsjrZYjJBDuHX2p6H5nBmd";
+/// Fetch reserve_stake from the Jito stake pool account at runtime (offset 130).
+///
+/// SPL stake pool layout (borsh, u8 account_type discriminator):
+///   [0]       account_type: u8
+///   [1..33]   manager: Pubkey
+///   [33..65]  staker: Pubkey
+///   [65..97]  stake_deposit_authority: Pubkey
+///   [97]      stake_withdraw_bump_seed: u8
+///   [98..130] validator_list: Pubkey
+///   [130..162] reserve_stake: Pubkey   ← what we need
+///   [162..194] pool_mint: Pubkey
+///   [194..226] manager_fee_account
+async fn fetch_jito_reserve_stake(rpc_url: &str, jito_stake_pool: &str) -> Result<[u8; 32]> {
+    let stake_pool_addr = decode_b58(jito_stake_pool)?;
+    let data = fetch_account_data(rpc_url, &stake_pool_addr).await?;
+    if data.len() < 162 {
+        return Err(eyre::eyre!("Jito stake pool account too short: {} bytes", data.len()));
+    }
+    Ok(data[130..162].try_into().unwrap())
+}
 
 /// Fetch manager_fee_account from the Jito stake pool account.
 ///
@@ -1264,20 +1276,20 @@ const JITO_WITHDRAW_AUTH_B58: &str = "8HPpFV5PFqGmDumjRTFw9BhsjrZYjJBDuHX2p6H5nB
 ///   [97]      stake_withdraw_bump_seed: u8
 ///   [98..130] validator_list: Pubkey
 ///   [130..162] reserve_stake: Pubkey
-///   [162..194] pool_mint: Pubkey       ← verified against JITO_SOL_MINT_B58
+///   [162..194] pool_mint: Pubkey       ← verified against jito_sol_mint
 ///   [194..226] manager_fee_account     ← what we need
-async fn fetch_jito_manager_fee_account(rpc_url: &str) -> Result<[u8; 32]> {
-    let stake_pool_addr = decode_b58(JITO_STAKE_POOL_B58)?;
+async fn fetch_jito_manager_fee_account(rpc_url: &str, jito_stake_pool: &str, jito_sol_mint: &str) -> Result<[u8; 32]> {
+    let stake_pool_addr = decode_b58(jito_stake_pool)?;
     let data = fetch_account_data(rpc_url, &stake_pool_addr).await?;
     if data.len() < 226 {
         return Err(eyre::eyre!("Jito stake pool account too short: {} bytes", data.len()));
     }
     let pool_mint_at_162: [u8; 32] = data[162..194].try_into().unwrap();
-    let expected_mint = decode_b58(JITO_SOL_MINT_B58)?;
+    let expected_mint = decode_b58(jito_sol_mint)?;
     if pool_mint_at_162 != expected_mint {
         return Err(eyre::eyre!(
             "Jito pool_mint mismatch at offset 162 — layout may have changed. \
-             Expected {JITO_SOL_MINT_B58}, got {}",
+             Expected {jito_sol_mint}, got {}",
             bs58::encode(pool_mint_at_162).into_string()
         ));
     }
@@ -1337,14 +1349,14 @@ async fn solve_jito_and_prove_inner(
     let wormhole_prog    = decode_b58(&config.solana_wormhole_program_id)?;
     let token_program    = decode_b58(TOKEN_PROGRAM_B58)?;
     let assoc_token_prog = decode_b58(ASSOC_TOKEN_PROGRAM_B58)?;
-    let jito_program     = decode_b58(JITO_PROGRAM_B58)?;
-    let stake_pool       = decode_b58(JITO_STAKE_POOL_B58)?;
-    let jitosol_mint     = decode_b58(JITO_SOL_MINT_B58)?;
-    let reserve_stake    = decode_b58(JITO_RESERVE_B58)?;
-    let withdraw_auth    = decode_b58(JITO_WITHDRAW_AUTH_B58)?;
+    let jito_program     = decode_b58(&config.jito_program_id)?;
+    let stake_pool       = decode_b58(&config.jito_stake_pool)?;
+    let jitosol_mint     = decode_b58(&config.jito_sol_mint)?;
+    let reserve_stake    = fetch_jito_reserve_stake(&config.solana_rpc_url, &config.jito_stake_pool).await?;
+    let (withdraw_auth, _) = find_pda(&[&stake_pool, b"withdraw"], &jito_program);
     let recipient        = decode_b58(recipient_b58)?;
 
-    let manager_fee_account = fetch_jito_manager_fee_account(&config.solana_rpc_url).await?;
+    let manager_fee_account = fetch_jito_manager_fee_account(&config.solana_rpc_url, &config.jito_stake_pool, &config.jito_sol_mint).await?;
     info!(manager_fee = %bs58::encode(manager_fee_account).into_string(), "Fetched Jito manager_fee_account");
 
     let (recipient_jitosol_ata, _) = find_pda(&[&recipient, &token_program, &jitosol_mint], &assoc_token_prog);
@@ -1504,7 +1516,7 @@ pub async fn solve_and_jupsol(
         actual_recipient = %recipient_b58,
         "Starting bridge+jupsol_stake (solve_stake_and_prove)"
     );
-    solve_stake_and_prove_inner(config, order_id, recipient_b58, JUPSOL_MINT_B58, amount_lamports).await
+    solve_stake_and_prove_inner(config, order_id, recipient_b58, &config.jupsol_mint, amount_lamports).await
 }
 
 /// solve_and_kamino: EVM→Solana bridge + kSOL vault staking (atomic proof).
@@ -1523,7 +1535,7 @@ pub async fn solve_and_kamino(
         actual_recipient = %recipient_b58,
         "Starting bridge+kamino_stake (solve_stake_and_prove)"
     );
-    solve_stake_and_prove_inner(config, order_id, recipient_b58, KSOL_MINT_B58, amount_lamports).await
+    solve_stake_and_prove_inner(config, order_id, recipient_b58, &config.ksol_mint, amount_lamports).await
 }
 
 /// Parse the Wormhole sequence number from confirmed transaction logs.

@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all("logs")?;
     let file_appender = tracing_appender::rolling::daily("logs", "solver.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    let file_filter = EnvFilter::new("intent_solver=info");
+    let file_filter = EnvFilter::new("naisu_solver=info");
 
     let (tui_tx, tui_rx) = tokio::sync::mpsc::channel::<AppEvent>(2048);
 
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         tracing_subscriber::registry()
             .with(
                 tui::TuiLayer { tx: tui_tx.clone() }
-                    .with_filter(EnvFilter::new("intent_solver=info")),
+                    .with_filter(EnvFilter::new("naisu_solver=info")),
             )
             .with(
                 fmt::layer()
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
             .with(
                 fmt::layer()
                     .with_target(false)
-                    .with_filter(EnvFilter::new("intent_solver=info")),
+                    .with_filter(EnvFilter::new("naisu_solver=info")),
             )
             .with(
                 fmt::layer()

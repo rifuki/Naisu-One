@@ -4155,39 +4155,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "intent-solver"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "bcs",
- "bs58 0.5.1",
- "chrono",
- "color-eyre",
- "crossterm",
- "dotenvy",
- "ed25519-dalek",
- "ethers",
- "eyre",
- "futures",
- "hex",
- "ratatui",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "shared-crypto",
- "sui-json",
- "sui-sdk",
- "sui-types",
- "tokio",
- "tokio-tungstenite 0.26.2",
- "tokio-util",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "inventory"
 version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5510,6 +5477,39 @@ dependencies = [
  "tower 0.5.3",
  "tower-http 0.5.2",
  "tracing",
+]
+
+[[package]]
+name = "naisu-solver"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bcs",
+ "bs58 0.5.1",
+ "chrono",
+ "color-eyre",
+ "crossterm",
+ "dotenvy",
+ "ed25519-dalek",
+ "ethers",
+ "eyre",
+ "futures",
+ "hex",
+ "ratatui",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "shared-crypto",
+ "sui-json",
+ "sui-sdk",
+ "sui-types",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "tokio-util",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]

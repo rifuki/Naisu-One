@@ -6,4 +6,4 @@ pub mod logging;
 pub mod server;
 pub mod web;
 
-pub use config::{ChainConfig, Config};
+pub use config::{ChainConfig, Config, SolanaConfig};

@@ -1,4 +1,5 @@
 use crate::{auction, config::Config, coordinator, executor, wormhole};
+use crate::executor::solana_executor::solana_explorer_url;
 use bs58;
 use ethers::{
     providers::{Http, Middleware, Provider, StreamExt, Ws},
@@ -126,7 +127,7 @@ async fn process_evm_order(
                         &config, order.order_id, &recipient_b58, price,
                     ).await {
                         Ok((sig, seq, msol_minted)) => {
-                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            let sol_url = solana_explorer_url(&config, &sig);
                             info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + Marinade staked");
                             info!(" [{short}]  mSOL minted : {msol_minted}");
                             info!(" [{short}]  seq : {seq}");
@@ -161,7 +162,7 @@ async fn process_evm_order(
                     };
                     match fn_call {
                         Ok((sig, seq, minted)) => {
-                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            let sol_url = solana_explorer_url(&config, &sig);
                             info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + {label} complete");
                             info!(" [{short}]  minted : {minted}");
                             info!(" [{short}]  seq    : {seq}");
@@ -192,7 +193,7 @@ async fn process_evm_order(
                         &config, order.order_id, &recipient_b58, price,
                     ).await {
                         Ok((sig, seq)) => {
-                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
+                            let sol_url = solana_explorer_url(&config, &sig);
                             info!(" [{short}] STEP 1/3 ✓  |  SOL sent");
                             info!(" [{short}]  seq : {seq}");
                             info!(" [{short}]  tx  : {sig}");
@@ -294,7 +295,7 @@ async fn process_evm_order(
             let evm_explorer = evm_explorer_tx(chain_id, &tx_hash);
             info!("{SEP}");
             if let (Some(sol_sig), Some(recipient)) = (&solana_payment_sig, &solana_recipient_b58_cap) {
-                let sol_explorer = format!("https://explorer.solana.com/tx/{sol_sig}?cluster=devnet");
+                let sol_explorer = solana_explorer_url(&config, sol_sig);
                 info!(" [{short}] ✓ ORDER FULFILLED  |  {chain_name} → Solana");
                 info!(" [{short}]  amount    : {payment_amount_lamports} lamports");
                 info!(" [{short}]  recipient : {recipient}");

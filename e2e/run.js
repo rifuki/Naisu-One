@@ -139,24 +139,25 @@ async function runScenario(scenarioKey, amountEth) {
     return { success: false, scenario: scenarioKey };
   }
 
-  const orderId = submitRes.body?.data?.orderId || submitRes.body?.orderId;
+  const intentId = submitRes.body?.data?.intentId || submitRes.body?.intentId;
   ok(`Intent submitted!`);
-  if (orderId) log(`         orderId = ${orderId}`);
+  if (intentId) log(`         intentId = ${intentId}`);
   log('');
 
   // ── Step 5: watch SSE ────────────────────────────────────────────────────────
-  if (!orderId) {
-    log('  ⚠  No orderId in response — skipping SSE watch');
+  if (!intentId) {
+    log('  ⚠  No intentId in response — skipping SSE watch');
     log(JSON.stringify(submitRes.body, null, 2));
     return { success: true, scenario: scenarioKey };
   }
 
   log(`  Watching SSE for progress (${DURATION}s timeout)...`);
+  log(`  (waiting for gasless_resolved, then solver events...)`);
   log(SEP);
   try {
-    const result = await watchOrder(BACKEND, orderId);
+    const result = await watchOrder(BACKEND, intentId, creator);
     log(SEP);
-    if (result.step === 'sol_confirmed' || result.step === 'sol_sent' || result.step === 'filled') {
+    if (['sol_sent', 'vaa_ready', 'settled', 'filled', 'sol_confirmed'].includes(result.step)) {
       ok(`Bridge complete! step=${result.step}`);
       if (result.sig) log(`  Solana tx : https://explorer.solana.com/tx/${result.sig}?cluster=devnet`);
     } else {
