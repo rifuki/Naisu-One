@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/query-keys'
 import { useQuery } from '@tanstack/react-query';
 import { API_URL } from '@/lib/env'
 
@@ -27,7 +28,7 @@ async function fetchUserNonce(address: string): Promise<number> {
  */
 export function useUserNonce(address: string | undefined) {
   return useQuery({
-    queryKey: ['intent', 'nonce', address],
+    queryKey: queryKeys.intent.nonce(address!),
     queryFn: () => fetchUserNonce(address!),
     enabled: !!address,
     staleTime: 5000, // Refetch every 5 seconds if stale

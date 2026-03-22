@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
 import { apiClient } from '@/lib/api-client';
 import { useYieldRates } from '../../hooks/use-yield-rates';
@@ -44,7 +45,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
 
   // ETH USD price
   const { data: priceData } = useQuery<{ fromUsd: number }>({
-    queryKey: ['eth-price'],
+    queryKey: queryKeys.prices.eth(),
     queryFn: async () => {
       const json = await apiClient.get<{ fromUsd: number }>('/intent/price', {
         fromChain: 'base_sepolia', toChain: 'solana',

@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/query-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createIntentOrder, type CreateIntentOrderParams, type CreateIntentOrderResponse } from '@/features/intent/api/create-intent-order';
 
@@ -21,7 +22,7 @@ export function useSwapOrder() {
         outputToken: params.outputToken,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['intent', 'orders'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.intent.orders() });
     },
   });
 }

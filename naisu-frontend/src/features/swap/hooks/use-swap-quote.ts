@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/query-keys'
 import { useQuery } from '@tanstack/react-query';
 import { getIntentQuote, type GetIntentQuoteParams, type IntentQuote } from '@/features/intent/api/get-intent-quote';
 
@@ -15,7 +16,7 @@ export function useSwapQuote(params: SwapQuoteParams) {
   const { amount, fromChain = 'evm-base', toChain = 'solana', token = 'native' } = params;
 
   return useQuery<IntentQuote, Error>({
-    queryKey: ['swap', 'quote', params],
+    queryKey: queryKeys.swap.quote(params),
     queryFn: () => getIntentQuote({ amount, fromChain, toChain, token }),
     enabled: !!amount && parseFloat(amount) > 0,
     staleTime: STALE_TIME,

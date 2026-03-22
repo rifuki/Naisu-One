@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/query-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
 import { parseEther, type Address, type Hex } from 'viem'
@@ -150,7 +151,7 @@ export function useSignIntent() {
     },
     onSuccess: () => {
       // Invalidate intent orders query
-      queryClient.invalidateQueries({ queryKey: ['intent', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.intent.orders() })
     },
   })
 }

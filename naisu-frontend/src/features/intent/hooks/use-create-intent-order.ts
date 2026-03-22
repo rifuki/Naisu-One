@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/query-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createIntentOrder, type CreateIntentOrderParams, type CreateIntentOrderResponse } from '../api/create-intent-order'
 
@@ -8,7 +9,7 @@ export function useCreateIntentOrder() {
     mutationFn: createIntentOrder,
     onSuccess: () => {
       // Invalidate intent orders query after creating new order
-      queryClient.invalidateQueries({ queryKey: ['intent', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.intent.orders() })
     },
   })
 }
