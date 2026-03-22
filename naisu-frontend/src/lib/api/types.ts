@@ -1,14 +1,11 @@
 /**
- * HTTP response envelope types — mirrors the Rust backend exactly.
+ * HTTP response envelope — mirrors the Rust backend exactly.
  *
- * Success (ApiSuccess<T>):
- *   { success: true, code, data: T | null, message, timestamp }
- *
- * Error (ApiError):
- *   { success: false, code, error_code, message, details, timestamp }
+ * Success  → { success: true,  code, data: T | null, message, timestamp }
+ * Error    → { success: false, code, error_code, message, details, timestamp }
  */
 
-export interface ApiSuccessEnvelope<T> {
+export interface ApiSuccess<T = unknown> {
   success: true;
   code: number;
   data: T | null;
@@ -16,7 +13,7 @@ export interface ApiSuccessEnvelope<T> {
   timestamp: number;
 }
 
-export interface ApiErrorEnvelope {
+export interface ApiError {
   success: false;
   code: number;
   error_code: string | null;
@@ -25,15 +22,16 @@ export interface ApiErrorEnvelope {
   timestamp: number;
 }
 
-export type ApiEnvelope<T> = ApiSuccessEnvelope<T> | ApiErrorEnvelope;
+export type ApiResponse<T = unknown> = ApiSuccess<T> | ApiError;
 
-export class ApiError extends Error {
+/** Thrown by apiClient when the server returns success=false or a network error. */
+export class HttpError extends Error {
   constructor(
     message: string,
     public status: number,
-    public envelope?: ApiErrorEnvelope,
+    public envelope?: ApiError,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = 'HttpError';
   }
 }
