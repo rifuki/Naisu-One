@@ -5,7 +5,7 @@ export interface CreateIntentOrderParams {
   recipientAddress: string
   destinationChain: string
   amount: string
-  outputToken: 'sol' | 'msol' | 'marginfi'
+  outputToken: 'sol' | 'msol' | 'jito' | 'jupsol' | 'kamino'
 }
 
 export interface BuiltTx {

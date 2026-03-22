@@ -660,7 +660,7 @@ pub struct BuildTxBody {
     pub recipient_address: String, // Solana base58 or EVM hex
     pub destination_chain: String, // "solana" | "sui"
     pub amount:            String,
-    pub output_token:      Option<String>, // "sol" | "msol" | "marginfi"
+    pub output_token:      Option<String>, // "sol" | "msol" | "jito" | "jupsol" | "kamino"
     pub start_price:       Option<String>,
     pub floor_price:       Option<String>,
     pub duration_seconds:  Option<u64>,
@@ -732,14 +732,13 @@ pub async fn build_tx(
             .with_message(&format!("unsupported destinationChain: {other}"))),
     };
 
-    // Intent type: 0=sol, 1=msol (Marinade), 3=marginfi, 4=jito, 5=jupsol, 6=kamino
+    // Intent type: 0=sol, 1=msol (Marinade), 4=jito, 5=jupsol, 6=kamino
     let intent_type: u8 = match body.output_token.as_deref().unwrap_or("sol") {
-        "msol"     => 1,
-        "marginfi" => 3,
-        "jito"     => 4,
-        "jupsol"   => 5,
-        "kamino"   => 6,
-        _          => 0,
+        "msol"   => 1,
+        "jito"   => 4,
+        "jupsol" => 5,
+        "kamino" => 6,
+        _        => 0,
     };
 
     let duration: U256 = U256::from(body.duration_seconds.unwrap_or(300));

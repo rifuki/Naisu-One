@@ -1,17 +1,17 @@
 #!/usr/bin/env ts-node
 "use strict";
 /**
- * jito_stake.ts — Deposit SOL into Jito real devnet stake pool, receive jitoSOL.
+ * jito_unstake.ts — Build an unsigned VersionedTransaction to withdraw jitoSOL → SOL.
  *
- * Uses @solana/spl-stake-pool to fetch pool data, then builds DepositSol instruction
- * manually using Jito's devnet program ID (library hardcodes mainnet SPoo1...).
- * Solver deposits SOL → gets jitoSOL in solver ATA → transfers jitoSOL to recipient.
+ * Builds WithdrawSol instruction manually using Jito's devnet program ID
+ * (library hardcodes mainnet SPoo1...).
+ * Burns user's jitoSOL, user receives SOL back. Only user needs to sign.
  *
  * Usage:
- *   node scripts/dist/jito_stake.js <recipient_b58> <amount_lamports> <rpc_url> <solver_private_key>
+ *   node scripts/dist/jito_unstake.js <wallet_pubkey> <amount_raw> <rpc_url> <solver_private_key>
  *
- * Outputs on stdout (for Rust caller to parse):
- *   TOKEN_MINTED:<amount_raw>
+ * Outputs on stdout: base64-encoded unsigned VersionedTransaction.
+ * The frontend wallet adapter provides the user's signature.
  *
  * All progress/errors go to stderr.
  */
@@ -28,12 +28,12 @@ const JITO_SOL_MINT = new web3_js_1.PublicKey('J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpL
 // ──────────────────────────────────────────────────────────────────────────────
 // Arguments
 // ──────────────────────────────────────────────────────────────────────────────
-const [, , recipientB58, amountLamportsStr, rpcUrl, privateKeyArg] = process.argv;
-if (!recipientB58 || !amountLamportsStr || !rpcUrl || !privateKeyArg) {
-    console.error('Usage: jito_stake.js <recipient_b58> <amount_lamports> <rpc_url> <solver_private_key>');
+const [, , walletB58, amountRawStr, rpcUrl, privateKeyArg] = process.argv;
+if (!walletB58 || !amountRawStr || !rpcUrl || !privateKeyArg) {
+    console.error('Usage: jito_unstake.js <wallet_pubkey> <amount_raw> <rpc_url> <solver_private_key>');
     process.exit(1);
 }
-const amountLamports = Number(amountLamportsStr);
+const amountRaw = Number(amountRawStr); // jitoSOL raw units (pool tokens)
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
@@ -55,26 +55,26 @@ function loadKeypair(key) {
         return web3_js_1.Keypair.fromSeed(bytes);
     throw new Error(`Invalid private key length: ${bytes.length} bytes`);
 }
-/** Build DepositSol instruction manually using the given programId. */
-function buildDepositSolIx(params) {
-    // DepositSol instruction data: discriminator=14 (u8) + lamports (ns64 LE) = 9 bytes
+/** Build WithdrawSol instruction manually using the given programId. */
+function buildWithdrawSolIx(params) {
+    // WithdrawSol instruction data: discriminator=16 (u8) + poolTokens (ns64 LE) = 9 bytes
     const data = Buffer.allocUnsafe(9);
-    data.writeUInt8(14, 0);
-    data.writeBigInt64LE(BigInt(params.lamports), 1);
+    data.writeUInt8(16, 0);
+    data.writeBigInt64LE(BigInt(params.poolTokens), 1);
     const keys = [
         { pubkey: params.stakePool, isSigner: false, isWritable: true },
         { pubkey: params.withdrawAuthority, isSigner: false, isWritable: false },
+        { pubkey: params.sourceTransferAuthority, isSigner: true, isWritable: false },
+        { pubkey: params.sourcePoolAccount, isSigner: false, isWritable: true },
         { pubkey: params.reserveStake, isSigner: false, isWritable: true },
-        { pubkey: params.fundingAccount, isSigner: true, isWritable: true },
-        { pubkey: params.destinationPoolAccount, isSigner: false, isWritable: true },
+        { pubkey: params.destinationSystemAccount, isSigner: false, isWritable: true },
         { pubkey: params.managerFeeAccount, isSigner: false, isWritable: true },
-        { pubkey: params.referralPoolAccount, isSigner: false, isWritable: true },
         { pubkey: params.poolMint, isSigner: false, isWritable: true },
         { pubkey: web3_js_1.SystemProgram.programId, isSigner: false, isWritable: false },
         { pubkey: spl_token_1.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ];
-    if (params.depositAuthority) {
-        keys.push({ pubkey: params.depositAuthority, isSigner: true, isWritable: false });
+    if (params.solWithdrawAuthority) {
+        keys.push({ pubkey: params.solWithdrawAuthority, isSigner: true, isWritable: false });
     }
     return new web3_js_1.TransactionInstruction({ programId: params.programId, keys, data });
 }
@@ -83,69 +83,56 @@ function buildDepositSolIx(params) {
 // ──────────────────────────────────────────────────────────────────────────────
 async function main() {
     const connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
-    const solver = loadKeypair(privateKeyArg);
-    const recipient = new web3_js_1.PublicKey(recipientB58);
-    console.error(`Solver:    ${solver.publicKey.toBase58()}`);
-    console.error(`Recipient: ${recipient.toBase58()}`);
-    console.error(`Amount:    ${amountLamports} lamports`);
-    console.error(`Pool:      ${JITO_STAKE_POOL.toBase58()}`);
-    // Fetch stake pool account data
+    loadKeypair(privateKeyArg); // validate only — solver doesn't sign unstake tx
+    const userWallet = new web3_js_1.PublicKey(walletB58);
+    console.error(`Wallet:     ${userWallet.toBase58()}`);
+    console.error(`Amount raw: ${amountRaw} jitoSOL pool tokens`);
+    console.error(`Pool:       ${JITO_STAKE_POOL.toBase58()}`);
+    // Fetch stake pool data
     const stakePoolAccount = await (0, spl_stake_pool_1.getStakePoolAccount)(connection, JITO_STAKE_POOL);
     const pool = stakePoolAccount.account.data;
-    console.error(`Pool mint: ${pool.poolMint.toBase58()}`);
     console.error(`Reserve:   ${pool.reserveStake.toBase58()}`);
     // Derive withdraw authority PDA using Jito's devnet program ID
     const [withdrawAuthority] = await web3_js_1.PublicKey.findProgramAddress([JITO_STAKE_POOL.toBuffer(), Buffer.from('withdraw')], JITO_PROGRAM_ID);
     console.error(`Withdraw auth: ${withdrawAuthority.toBase58()}`);
-    // Ensure solver has a jitoSOL ATA (destination for the deposit)
-    const solverAta = await (0, spl_token_1.getOrCreateAssociatedTokenAccount)(connection, solver, JITO_SOL_MINT, solver.publicKey);
-    console.error(`Solver jitoSOL ATA: ${solverAta.address.toBase58()}`);
-    const balanceBefore = BigInt(solverAta.amount.toString());
-    // Ephemeral keypair to fund the deposit (SPL stake pool pattern)
-    const ephemeral = web3_js_1.Keypair.generate();
+    // User's jitoSOL ATA
+    const userJitoSolAta = (0, spl_token_1.getAssociatedTokenAddressSync)(JITO_SOL_MINT, userWallet);
+    console.error(`User jitoSOL ATA: ${userJitoSolAta.toBase58()}`);
+    // Ephemeral transfer authority keypair (signs the Approve instruction)
+    const userTransferAuthority = web3_js_1.Keypair.generate();
     const instructions = [
-        // Transfer SOL from solver → ephemeral (funding account for DepositSol)
-        web3_js_1.SystemProgram.transfer({
-            fromPubkey: solver.publicKey,
-            toPubkey: ephemeral.publicKey,
-            lamports: amountLamports,
-        }),
-        // DepositSol: ephemeral → pool reserve, mint jitoSOL to solver ATA
-        buildDepositSolIx({
+        // Approve: delegate amountRaw jitoSOL tokens to ephemeral authority
+        (0, spl_token_1.createApproveInstruction)(userJitoSolAta, userTransferAuthority.publicKey, userWallet, amountRaw),
+        // WithdrawSol: burn poolTokens from sourcePoolAccount, send SOL to user
+        buildWithdrawSolIx({
             programId: JITO_PROGRAM_ID,
             stakePool: JITO_STAKE_POOL,
             withdrawAuthority,
+            sourceTransferAuthority: userTransferAuthority.publicKey,
+            sourcePoolAccount: userJitoSolAta,
             reserveStake: pool.reserveStake,
-            fundingAccount: ephemeral.publicKey,
-            destinationPoolAccount: solverAta.address,
+            destinationSystemAccount: userWallet,
             managerFeeAccount: pool.managerFeeAccount,
-            referralPoolAccount: solverAta.address, // self-referral
             poolMint: pool.poolMint,
-            lamports: amountLamports,
-            depositAuthority: pool.solDepositAuthority ?? undefined,
+            poolTokens: amountRaw,
+            solWithdrawAuthority: pool.solWithdrawAuthority ?? undefined,
         }),
     ];
-    const depositTx = new web3_js_1.Transaction().add(...instructions);
-    const depositSig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, depositTx, [solver, ephemeral], { commitment: 'confirmed' });
-    console.error(`Deposit confirmed: ${depositSig}`);
-    // How many jitoSOL were minted?
-    const newBalance = await connection.getTokenAccountBalance(solverAta.address, 'confirmed');
-    const balanceAfter = BigInt(newBalance.value.amount);
-    const jitoSolMinted = balanceAfter - balanceBefore;
-    console.error(`jitoSOL minted: ${jitoSolMinted}`);
-    // Ensure recipient has a jitoSOL ATA
-    const recipientAta = await (0, spl_token_1.getOrCreateAssociatedTokenAccount)(connection, solver, JITO_SOL_MINT, recipient);
-    console.error(`Recipient jitoSOL ATA: ${recipientAta.address.toBase58()}`);
-    // Transfer jitoSOL from solver → recipient
-    const transferTx = new web3_js_1.Transaction().add((0, spl_token_1.createTransferInstruction)(solverAta.address, recipientAta.address, solver.publicKey, jitoSolMinted, [], spl_token_1.TOKEN_PROGRAM_ID));
-    const transferSig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, transferTx, [solver], {
-        commitment: 'confirmed',
-    });
-    console.error(`Transfer confirmed: ${transferSig}`);
-    console.log(`TOKEN_MINTED:${jitoSolMinted}`);
+    const { blockhash } = await connection.getLatestBlockhash('confirmed');
+    const message = new web3_js_1.TransactionMessage({
+        payerKey: userWallet,
+        recentBlockhash: blockhash,
+        instructions,
+    }).compileToV0Message();
+    const tx = new web3_js_1.VersionedTransaction(message);
+    // Pre-sign with ephemeral transfer authority (not user — user signs in browser)
+    tx.sign([userTransferAuthority]);
+    const serialized = Buffer.from(tx.serialize());
+    console.error('jitoSOL WithdrawSol tx built. Awaiting user signature.');
+    console.log(serialized.toString('base64'));
 }
 main().catch((err) => {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`jito_stake.ts error: ${msg}`);
+    console.error(`jito_unstake.ts error: ${msg}`);
     process.exit(1);
 });

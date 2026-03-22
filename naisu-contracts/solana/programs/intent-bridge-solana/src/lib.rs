@@ -310,14 +310,17 @@ pub mod intent_bridge_solana {
         solver_address: [u8; 32],
         amount_lamports: u64,
     ) -> Result<()> {
-        // ── CPI: deposit SOL into mock-staking on behalf of recipient ─────────
-        // depositor = solver (pays SOL), staker = recipient (receives stake credit)
+        // ── CPI: deposit SOL into mock-staking vault on behalf of recipient ────
+        // depositor = solver (pays SOL), recipient gets staking tokens
         let cpi_program = ctx.accounts.staking_program.to_account_info();
         let cpi_accounts = mock_staking::cpi::accounts::Deposit {
             depositor: ctx.accounts.solver.to_account_info(),
-            staker: ctx.accounts.recipient.to_account_info(),
-            stake_pool: ctx.accounts.stake_pool.to_account_info(),
-            stake_account: ctx.accounts.stake_account.to_account_info(),
+            recipient: ctx.accounts.recipient.to_account_info(),
+            vault_state: ctx.accounts.vault_state.to_account_info(),
+            mint: ctx.accounts.mint.to_account_info(),
+            recipient_ata: ctx.accounts.recipient_ata.to_account_info(),
+            token_program: ctx.accounts.token_program.to_account_info(),
+            associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
         };
         mock_staking::cpi::deposit(CpiContext::new(cpi_program, cpi_accounts), amount_lamports)?;
@@ -520,17 +523,24 @@ pub struct SolveAndProve<'info> {
 pub struct SolveStakeAndProve<'info> {
     #[account(mut)]
     pub solver: Signer<'info>,
-    /// CHECK: staker beneficiary — validated by mock-staking via CPI (stake_account PDA seeds)
+    /// CHECK: recipient beneficiary — validated by mock-staking via CPI (ATA seeds)
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
     /// CHECK: mock-staking program — validated by CPI call
     pub staking_program: AccountInfo<'info>,
-    /// CHECK: StakePool PDA — validated by mock-staking during CPI
+    /// CHECK: VaultState PDA — validated by mock-staking during CPI
     #[account(mut)]
-    pub stake_pool: AccountInfo<'info>,
-    /// CHECK: StakeAccount PDA — validated by mock-staking during CPI (init_if_needed)
+    pub vault_state: AccountInfo<'info>,
+    /// CHECK: token mint — validated by mock-staking during CPI
     #[account(mut)]
-    pub stake_account: AccountInfo<'info>,
+    pub mint: AccountInfo<'info>,
+    /// CHECK: recipient ATA — created by mock-staking if needed
+    #[account(mut)]
+    pub recipient_ata: AccountInfo<'info>,
+    /// CHECK: SPL Token program
+    pub token_program: AccountInfo<'info>,
+    /// CHECK: Associated Token program
+    pub associated_token_program: AccountInfo<'info>,
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
     pub wormhole_program: Program<'info, Wormhole>,

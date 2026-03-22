@@ -1,31 +1,43 @@
 #!/usr/bin/env ts-node
 /**
- * jito_stake.ts — Mock Jito liquid staking: mint jitoSOL tokens to recipient.
+ * jito_stake.ts — Deposit SOL into Jito real devnet stake pool, receive jitoSOL.
  *
- * Called AFTER solve_and_prove has delivered SOL to the SOLVER.
- * Mints mock jitoSOL (1:1 with lamports) directly to recipient's ATA.
- * Solver is the mint authority.
+ * Uses @solana/spl-stake-pool to fetch pool data, then builds DepositSol instruction
+ * manually using Jito's devnet program ID (library hardcodes mainnet SPoo1...).
+ * Solver deposits SOL → gets jitoSOL in solver ATA → transfers jitoSOL to recipient.
  *
  * Usage:
  *   node scripts/dist/jito_stake.js <recipient_b58> <amount_lamports> <rpc_url> <solver_private_key>
  *
  * Outputs on stdout (for Rust caller to parse):
- *   TOKEN_MINTED:<amount>
+ *   TOKEN_MINTED:<amount_raw>
  *
- * Reads mint address from scripts/mock_tokens.json (created by create_mock_tokens.js).
+ * All progress/errors go to stderr.
  */
 
 import {
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+  sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import {
   getOrCreateAssociatedTokenAccount,
-  mintTo,
+  createTransferInstruction,
+  TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import * as fs from 'fs';
-import * as path from 'path';
+import { getStakePoolAccount } from '@solana/spl-stake-pool';
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Constants — Jito real devnet
+// ──────────────────────────────────────────────────────────────────────────────
+
+const JITO_PROGRAM_ID  = new PublicKey('DPoo15wWDqpPJJtS2MUZ49aRxqz5ZaaJCJP4z8bLuib');
+const JITO_STAKE_POOL  = new PublicKey('JitoY5pcAxWX6iyP2QdFwTznGb8A99PRCUCVVxB46WZ');
+const JITO_SOL_MINT    = new PublicKey('J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpLZU7pPGHxSYi');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Arguments
@@ -38,7 +50,7 @@ if (!recipientB58 || !amountLamportsStr || !rpcUrl || !privateKeyArg) {
   process.exit(1);
 }
 
-const amountLamports = BigInt(amountLamportsStr);
+const amountLamports = Number(amountLamportsStr);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -59,17 +71,42 @@ function loadKeypair(key: string): Keypair {
   throw new Error(`Invalid private key length: ${bytes.length} bytes`);
 }
 
-function loadMintAddress(): string {
-  // Try env override first
-  if (process.env.MOCK_JITO_MINT) return process.env.MOCK_JITO_MINT;
+/** Build DepositSol instruction manually using the given programId. */
+function buildDepositSolIx(params: {
+  programId: PublicKey;
+  stakePool: PublicKey;
+  withdrawAuthority: PublicKey;
+  reserveStake: PublicKey;
+  fundingAccount: PublicKey;
+  destinationPoolAccount: PublicKey;
+  managerFeeAccount: PublicKey;
+  referralPoolAccount: PublicKey;
+  poolMint: PublicKey;
+  lamports: number;
+  depositAuthority?: PublicKey;
+}): TransactionInstruction {
+  // DepositSol instruction data: discriminator=14 (u8) + lamports (ns64 LE) = 9 bytes
+  const data = Buffer.allocUnsafe(9);
+  data.writeUInt8(14, 0);
+  data.writeBigInt64LE(BigInt(params.lamports), 1);
 
-  const configFile = path.join(__dirname, 'mock_tokens.json');
-  if (!fs.existsSync(configFile)) {
-    throw new Error(`mock_tokens.json not found at ${configFile}. Run create_mock_tokens.js first.`);
+  const keys = [
+    { pubkey: params.stakePool,             isSigner: false, isWritable: true  },
+    { pubkey: params.withdrawAuthority,     isSigner: false, isWritable: false },
+    { pubkey: params.reserveStake,          isSigner: false, isWritable: true  },
+    { pubkey: params.fundingAccount,        isSigner: true,  isWritable: true  },
+    { pubkey: params.destinationPoolAccount,isSigner: false, isWritable: true  },
+    { pubkey: params.managerFeeAccount,     isSigner: false, isWritable: true  },
+    { pubkey: params.referralPoolAccount,   isSigner: false, isWritable: true  },
+    { pubkey: params.poolMint,              isSigner: false, isWritable: true  },
+    { pubkey: SystemProgram.programId,      isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false },
+  ];
+  if (params.depositAuthority) {
+    keys.push({ pubkey: params.depositAuthority, isSigner: true, isWritable: false });
   }
-  const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-  if (!config.jitoSOL) throw new Error('jitoSOL mint not found in mock_tokens.json');
-  return config.jitoSOL;
+
+  return new TransactionInstruction({ programId: params.programId, keys, data });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -78,41 +115,104 @@ function loadMintAddress(): string {
 
 async function main() {
   const connection = new Connection(rpcUrl, 'confirmed');
-  const solver = loadKeypair(privateKeyArg);
-  const recipient = new PublicKey(recipientB58);
-  const mintAddress = loadMintAddress();
-  const mint = new PublicKey(mintAddress);
+  const solver     = loadKeypair(privateKeyArg);
+  const recipient  = new PublicKey(recipientB58);
 
   console.error(`Solver:    ${solver.publicKey.toBase58()}`);
   console.error(`Recipient: ${recipient.toBase58()}`);
   console.error(`Amount:    ${amountLamports} lamports`);
-  console.error(`jitoSOL Mint: ${mintAddress}`);
+  console.error(`Pool:      ${JITO_STAKE_POOL.toBase58()}`);
 
-  // Get or create recipient's jitoSOL ATA
-  console.error('Getting/creating recipient jitoSOL ATA...');
+  // Fetch stake pool account data
+  const stakePoolAccount = await getStakePoolAccount(connection, JITO_STAKE_POOL);
+  const pool = stakePoolAccount.account.data;
+  console.error(`Pool mint: ${pool.poolMint.toBase58()}`);
+  console.error(`Reserve:   ${pool.reserveStake.toBase58()}`);
+
+  // Derive withdraw authority PDA using Jito's devnet program ID
+  const [withdrawAuthority] = await PublicKey.findProgramAddress(
+    [JITO_STAKE_POOL.toBuffer(), Buffer.from('withdraw')],
+    JITO_PROGRAM_ID,
+  );
+  console.error(`Withdraw auth: ${withdrawAuthority.toBase58()}`);
+
+  // Ensure solver has a jitoSOL ATA (destination for the deposit)
+  const solverAta = await getOrCreateAssociatedTokenAccount(
+    connection,
+    solver,
+    JITO_SOL_MINT,
+    solver.publicKey,
+  );
+  console.error(`Solver jitoSOL ATA: ${solverAta.address.toBase58()}`);
+  const balanceBefore = BigInt(solverAta.amount.toString());
+
+  // Ephemeral keypair to fund the deposit (SPL stake pool pattern)
+  const ephemeral = Keypair.generate();
+
+  const instructions = [
+    // Transfer SOL from solver → ephemeral (funding account for DepositSol)
+    SystemProgram.transfer({
+      fromPubkey: solver.publicKey,
+      toPubkey:   ephemeral.publicKey,
+      lamports:   amountLamports,
+    }),
+    // DepositSol: ephemeral → pool reserve, mint jitoSOL to solver ATA
+    buildDepositSolIx({
+      programId:              JITO_PROGRAM_ID,
+      stakePool:              JITO_STAKE_POOL,
+      withdrawAuthority,
+      reserveStake:           pool.reserveStake,
+      fundingAccount:         ephemeral.publicKey,
+      destinationPoolAccount: solverAta.address,
+      managerFeeAccount:      pool.managerFeeAccount,
+      referralPoolAccount:    solverAta.address, // self-referral
+      poolMint:               pool.poolMint,
+      lamports:               amountLamports,
+      depositAuthority:       pool.solDepositAuthority ?? undefined,
+    }),
+  ];
+
+  const depositTx = new Transaction().add(...instructions);
+  const depositSig = await sendAndConfirmTransaction(
+    connection,
+    depositTx,
+    [solver, ephemeral],
+    { commitment: 'confirmed' },
+  );
+  console.error(`Deposit confirmed: ${depositSig}`);
+
+  // How many jitoSOL were minted?
+  const newBalance = await connection.getTokenAccountBalance(solverAta.address, 'confirmed');
+  const balanceAfter = BigInt(newBalance.value.amount);
+  const jitoSolMinted = balanceAfter - balanceBefore;
+  console.error(`jitoSOL minted: ${jitoSolMinted}`);
+
+  // Ensure recipient has a jitoSOL ATA
   const recipientAta = await getOrCreateAssociatedTokenAccount(
     connection,
-    solver,    // payer (creates ATA if needed)
-    mint,
+    solver,
+    JITO_SOL_MINT,
     recipient,
   );
   console.error(`Recipient jitoSOL ATA: ${recipientAta.address.toBase58()}`);
 
-  // Mint jitoSOL 1:1 with lamports to recipient's ATA
-  // Solver is mint authority
-  console.error(`Minting ${amountLamports} jitoSOL to recipient...`);
-  const txSig = await mintTo(
-    connection,
-    solver,                    // payer
-    mint,                      // mint
-    recipientAta.address,      // destination ATA
-    solver,                    // mint authority
-    amountLamports,            // amount (same decimals as SOL = 9)
+  // Transfer jitoSOL from solver → recipient
+  const transferTx = new Transaction().add(
+    createTransferInstruction(
+      solverAta.address,
+      recipientAta.address,
+      solver.publicKey,
+      jitoSolMinted,
+      [],
+      TOKEN_PROGRAM_ID,
+    ),
   );
-  console.error(`jitoSOL mint confirmed: ${txSig}`);
+  const transferSig = await sendAndConfirmTransaction(connection, transferTx, [solver], {
+    commitment: 'confirmed',
+  });
+  console.error(`Transfer confirmed: ${transferSig}`);
 
-  // Output for Rust parser
-  console.log(`TOKEN_MINTED:${amountLamports}`);
+  console.log(`TOKEN_MINTED:${jitoSolMinted}`);
 }
 
 main().catch((err: unknown) => {

@@ -109,7 +109,6 @@ async fn process_evm_order(
             let recipient_b58 = bs58::encode(&order.recipient).into_string();
             let mode_label = match order.intent_type {
                 1 => "bridge+marinade_stake",
-                3 => "bridge+marginfi_lend",
                 4 => "bridge+jito_stake",
                 5 => "bridge+jupsol_stake",
                 6 => "bridge+kamino_stake",
@@ -149,36 +148,6 @@ async fn process_evm_order(
                             }
                             info!("{SEP}");
                             info!(" [{short}] ✗ ORDER ABORTED  |  Solana liquid stake step failed");
-                            info!("{SEP}");
-                            return;
-                        }
-                    }
-                }
-                3 => {
-                    match executor::solana_executor::solve_and_marginfi(
-                        &config, order.order_id, &recipient_b58, price,
-                    ).await {
-                        Ok((sig, seq)) => {
-                            let sol_url = format!("https://explorer.solana.com/tx/{sig}?cluster=devnet");
-                            info!(" [{short}] STEP 1/3 ✓  |  SOL bridged + deposited to marginfi");
-                            info!(" [{short}]  seq : {seq}");
-                            info!(" [{short}]  tx  : {sig}");
-                            info!(" [{short}]  url : {sol_url}");
-                            coordinator::report_step(&reporter, &order_id_hex, "sol_sent", Some(&sig)).await;
-                            solana_payment_sig = Some(sig);
-                            solana_recipient_b58_cap = Some(recipient_b58);
-                            payment_amount_lamports = price;
-                            (1u16, config.solana_emitter_address.clone(), seq)
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            error!(" [{short}] STEP 1/3 ✗  |  solve_and_marginfi failed: {e}");
-                            if !err_str.contains("SolanaTransactionFailed") {
-                                seen_orders.lock().await.remove(&order.order_id);
-                                warn!(" [{short}]  → removed from dedup, will retry");
-                            }
-                            info!("{SEP}");
-                            info!(" [{short}] ✗ ORDER ABORTED  |  marginfi deposit step failed");
                             info!("{SEP}");
                             return;
                         }

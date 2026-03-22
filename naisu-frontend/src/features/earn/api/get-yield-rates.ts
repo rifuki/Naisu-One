@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/api-client';
 
 export interface YieldRate {
-  id: 'marinade' | 'marginfi';
+  id: 'marinade' | 'jito' | 'jupsol' | 'kamino';
   name: string;
   apy: number;
   apyRaw: number;

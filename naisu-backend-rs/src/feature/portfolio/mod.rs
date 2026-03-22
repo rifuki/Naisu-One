@@ -14,8 +14,8 @@ use crate::{
 const SOLANA_RPC:  &str = "https://api.devnet.solana.com";
 const MSOL_MINT:   &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
 const USDC_MINT:   &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-// Mock yield platform tokens (devnet only, solver = mint authority)
-const JITO_MINT:   &str = "Grq5gr41xiZaf2Grk8YfCsHF2RCQmpHGcuK6H4w8VEts";
+// Yield platform tokens (devnet)
+const JITO_MINT:   &str = "J1tos8mqbhdGcF3pgj4PCKyVjzWSURcpLZU7pPGHxSYi"; // Jito real devnet jitoSOL
 const JUPSOL_MINT: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
 const KSOL_MINT:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
 
@@ -28,10 +28,9 @@ pub struct PortfolioBalances {
     sol:             String, // lamports raw (native SOL in wallet)
     msol:            String, // mSOL smallest unit raw
     usdc:            String, // USDC micro-units raw
-    marginfi_sol:    String, // SOL lamports lent in marginfi (solver account)
-    jito_sol:        String, // mock jitoSOL raw units
-    jup_sol:         String, // mock jupSOL raw units
-    ksol:            String, // mock kSOL raw units
+    jito_sol:        String, // jitoSOL raw units (real devnet)
+    jup_sol:         String, // jupSOL raw units (mock vault)
+    ksol:            String, // kSOL raw units (mock vault)
     msol_decimals:   u8,
     usdc_decimals:   u8,
 }
@@ -124,39 +123,6 @@ async fn get_token_balances(wallet: &str) -> eyre::Result<(String, String, Strin
     ))
 }
 
-async fn get_marginfi_sol() -> String {
-    use std::path::PathBuf;
-    use tokio::process::Command;
-
-    let solver_key = match std::env::var("SOLVER_SOLANA_PRIVATE_KEY") {
-        Ok(k) => k,
-        Err(_) => return "0".to_string(),
-    };
-
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(&PathBuf::from("/"))
-        .join("naisu-contracts/solana/scripts/dist/marginfi_balance.js");
-
-    let output = Command::new("node")
-        .arg(&script)
-        .arg(SOLANA_RPC)
-        .arg(&solver_key)
-        .output()
-        .await;
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            serde_json::from_str::<serde_json::Value>(&stdout)
-                .ok()
-                .and_then(|v| v["solLamports"].as_str().map(|s| s.to_string()))
-                .unwrap_or_else(|| "0".to_string())
-        }
-        Err(_) => "0".to_string(),
-    }
-}
-
 // ─── GET /balances ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -169,10 +135,9 @@ pub async fn get_balances(
 ) -> ApiResult<PortfolioBalances> {
     info!(wallet = %params.wallet, "Portfolio balances requested");
 
-    let (sol_result, token_result, marginfi_sol) = tokio::join!(
+    let (sol_result, token_result) = tokio::join!(
         get_sol_balance(&params.wallet),
         get_token_balances(&params.wallet),
-        get_marginfi_sol(),
     );
 
     let sol = match sol_result {
@@ -196,7 +161,6 @@ pub async fn get_balances(
         sol,
         msol,
         usdc,
-        marginfi_sol,
         jito_sol,
         jup_sol,
         ksol,
@@ -270,70 +234,22 @@ pub async fn unstake_msol(
     Ok(ApiSuccess::default().with_data(serde_json::json!({ "tx": tx_base64 })))
 }
 
-// ─── GET /marginfi-balance ────────────────────────────────────────────────────
-
-pub async fn get_marginfi_balance() -> ApiResult<serde_json::Value> {
-    use std::path::PathBuf;
-    use tokio::process::Command;
-
-    let solver_key = std::env::var("SOLVER_SOLANA_PRIVATE_KEY").map_err(|_| {
-        ApiError::default()
-            .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-            .with_message("SOLVER_SOLANA_PRIVATE_KEY not configured")
-    })?;
-
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(&PathBuf::from("/"))
-        .join("naisu-contracts/solana/scripts/dist/marginfi_balance.js");
-
-    let output = Command::new("node")
-        .arg(&script)
-        .arg(SOLANA_RPC)
-        .arg(&solver_key)
-        .output()
-        .await
-        .map_err(|e| {
-            ApiError::default()
-                .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                .with_message(&format!("Failed to run balance script: {e}"))
-        })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let result: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|_| {
-        serde_json::json!({ "solLamports": "0", "solAmount": "0.000000000" })
-    });
-
-    Ok(ApiSuccess::default().with_data(result))
-}
-
-// ─── POST /withdraw-marginfi ──────────────────────────────────────────────────
+// ─── POST /unstake-jito ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
-pub struct WithdrawMarginfiBody {
-    pub wallet: String,   // recipient Solana address (base58)
-    pub amount: String,   // SOL amount as decimal string e.g. "0.01"
+pub struct UnstakeTokenBody {
+    pub wallet: String,
+    pub amount: String, // raw token units integer string
 }
 
-pub async fn withdraw_marginfi(
-    Json(body): Json<WithdrawMarginfiBody>,
+async fn run_mock_unstake(
+    wallet: &str,
+    amount: &str,
+    script_name: &str,
 ) -> ApiResult<serde_json::Value> {
     use std::path::PathBuf;
     use tokio::process::Command;
 
-    info!(wallet = %body.wallet, amount = %body.amount, "marginfi withdraw requested");
-
-    let amount_sol: f64 = body.amount.parse().map_err(|_| {
-        ApiError::default()
-            .with_code(axum::http::StatusCode::BAD_REQUEST)
-            .with_message("amount must be a decimal SOL number")
-    })?;
-    if amount_sol <= 0.0 {
-        return Err(ApiError::default()
-            .with_code(axum::http::StatusCode::BAD_REQUEST)
-            .with_message("amount must be > 0"));
-    }
-
     let solver_key = std::env::var("SOLVER_SOLANA_PRIVATE_KEY").map_err(|_| {
         ApiError::default()
             .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
@@ -343,12 +259,12 @@ pub async fn withdraw_marginfi(
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or(&PathBuf::from("/"))
-        .join("naisu-contracts/solana/scripts/dist/marginfi_withdraw.js");
+        .join(format!("naisu-contracts/solana/scripts/dist/{script_name}"));
 
     let output = Command::new("node")
         .arg(&script)
-        .arg(&body.wallet)
-        .arg(&body.amount)
+        .arg(wallet)
+        .arg(amount)
         .arg(SOLANA_RPC)
         .arg(&solver_key)
         .output()
@@ -356,39 +272,85 @@ pub async fn withdraw_marginfi(
         .map_err(|e| {
             ApiError::default()
                 .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                .with_message(&format!("Failed to run withdraw script: {e}"))
+                .with_message(&format!("Failed to run unstake script: {e}"))
         })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        warn!(wallet = %body.wallet, stderr = %stderr, "marginfi_withdraw failed");
-        // Try to parse JSON error from stdout
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let msg = serde_json::from_str::<serde_json::Value>(&stdout)
-            .ok()
-            .and_then(|v| v["error"].as_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| "Withdraw failed".to_string());
+        warn!(wallet = %wallet, script = %script_name, stderr = %stderr, "mock unstake script failed");
         return Err(ApiError::default()
             .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-            .with_message(&msg));
+            .with_message("Unstake transaction build failed"));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let result: serde_json::Value = serde_json::from_str(&stdout).map_err(|_| {
-        ApiError::default()
+    let tx_base64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if tx_base64.is_empty() {
+        return Err(ApiError::default()
             .with_code(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-            .with_message("Invalid output from withdraw script")
-    })?;
+            .with_message("Unstake script produced no output"));
+    }
 
-    Ok(ApiSuccess::default().with_data(result))
+    Ok(ApiSuccess::default().with_data(serde_json::json!({ "tx": tx_base64 })))
+}
+
+pub async fn unstake_jito(
+    Json(body): Json<UnstakeTokenBody>,
+) -> ApiResult<serde_json::Value> {
+    info!(wallet = %body.wallet, amount = %body.amount, "jitoSOL unstake tx requested");
+    let raw: u64 = body.amount.parse().map_err(|_| {
+        ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be a raw positive integer string")
+    })?;
+    if raw == 0 {
+        return Err(ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be > 0"));
+    }
+    run_mock_unstake(&body.wallet, &body.amount, "jito_unstake.js").await
+}
+
+pub async fn unstake_jupsol(
+    Json(body): Json<UnstakeTokenBody>,
+) -> ApiResult<serde_json::Value> {
+    info!(wallet = %body.wallet, amount = %body.amount, "jupSOL unstake tx requested");
+    let raw: u64 = body.amount.parse().map_err(|_| {
+        ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be a raw positive integer string")
+    })?;
+    if raw == 0 {
+        return Err(ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be > 0"));
+    }
+    run_mock_unstake(&body.wallet, &body.amount, "jupsol_unstake.js").await
+}
+
+pub async fn unstake_kamino(
+    Json(body): Json<UnstakeTokenBody>,
+) -> ApiResult<serde_json::Value> {
+    info!(wallet = %body.wallet, amount = %body.amount, "kSOL unstake tx requested");
+    let raw: u64 = body.amount.parse().map_err(|_| {
+        ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be a raw positive integer string")
+    })?;
+    if raw == 0 {
+        return Err(ApiError::default()
+            .with_code(axum::http::StatusCode::BAD_REQUEST)
+            .with_message("amount must be > 0"));
+    }
+    run_mock_unstake(&body.wallet, &body.amount, "kamino_unstake.js").await
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 pub fn portfolio_routes() -> Router<AppState> {
     Router::new()
-        .route("/balances",          get(get_balances))
-        .route("/marginfi-balance",  get(get_marginfi_balance))
-        .route("/unstake-msol",      post(unstake_msol))
-        .route("/withdraw-marginfi", post(withdraw_marginfi))
+        .route("/balances",        get(get_balances))
+        .route("/unstake-msol",    post(unstake_msol))
+        .route("/unstake-jito",    post(unstake_jito))
+        .route("/unstake-jupsol",  post(unstake_jupsol))
+        .route("/unstake-kamino",  post(unstake_kamino))
 }

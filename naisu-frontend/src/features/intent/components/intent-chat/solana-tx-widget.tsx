@@ -9,11 +9,17 @@ interface SolanaTxWidgetProps {
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  unstake_msol: 'Sign & Unstake',
+  unstake_msol:    'Sign & Unstake',
+  unstake_jito:    'Sign & Unstake',
+  unstake_jupsol:  'Sign & Unstake',
+  unstake_kamino:  'Sign & Unstake',
 };
 
 const ACTION_SUBTITLES: Record<string, string> = {
-  unstake_msol: 'Solana devnet · Marinade liquid unstake',
+  unstake_msol:    'Solana devnet · Marinade liquid unstake',
+  unstake_jito:    'Solana devnet · Jito unstake',
+  unstake_jupsol:  'Solana devnet · Jupiter mock unstake',
+  unstake_kamino:  'Solana devnet · Kamino mock unstake',
 };
 
 export function SolanaTxWidget({ tx, action, description }: SolanaTxWidgetProps) {

@@ -55,7 +55,6 @@ struct DefiLlamaResponse {
 // ─── Fallbacks ────────────────────────────────────────────────────────────────
 
 const FALLBACK_MARINADE: f64 = 0.0706;
-const FALLBACK_MARGINFI: f64 = 0.078;
 const FALLBACK_JITO:     f64 = 0.059;
 const FALLBACK_JUPSOL:   f64 = 0.0624;
 const FALLBACK_KAMINO:   f64 = 0.038;
@@ -143,61 +142,6 @@ async fn fetch_defillama_apy(pool_id: &str, fallback: f64) -> (f64, Option<Strin
     }
 }
 
-async fn fetch_marginfi_apy() -> (f64, Option<String>) {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
-        .unwrap_or_default();
-
-    let res = match client
-        .get("https://marginfi-v2-ui-data.vercel.app/banks")
-        .send()
-        .await
-    {
-        Err(e) => return (FALLBACK_MARGINFI, Some(format!("marginfi API error: {e}"))),
-        Ok(r) if !r.status().is_success() => {
-            return (FALLBACK_MARGINFI, Some(format!("marginfi API error: HTTP {}", r.status())))
-        }
-        Ok(r) => r,
-    };
-
-    let raw: serde_json::Value = match res.json().await {
-        Ok(v) => v,
-        Err(e) => return (FALLBACK_MARGINFI, Some(format!("marginfi parse error: {e}"))),
-    };
-
-    let banks = if raw.is_array() {
-        raw.as_array().cloned().unwrap_or_default()
-    } else {
-        raw.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default()
-    };
-
-    const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
-    let sol_bank = banks.iter().find(|b| {
-        b.get("tokenSymbol").and_then(|v| v.as_str()) == Some("SOL")
-            || b.get("mint").and_then(|v| v.as_str()) == Some(SOL_MINT)
-    });
-
-    let Some(bank) = sol_bank else {
-        return (FALLBACK_MARGINFI, Some("SOL bank not found in marginfi response".into()));
-    };
-
-    let apy_raw = ["lendingRate", "depositRate", "supplyApy"]
-        .iter()
-        .find_map(|&key| bank.get(key)?.as_f64().filter(|&v| v > 0.0));
-
-    match apy_raw {
-        None => (FALLBACK_MARGINFI, Some("Could not find non-zero lending rate in marginfi SOL bank".into())),
-        Some(r) => {
-            let normalized = if r > 1.0 { r / 100.0 } else { r };
-            (normalized, None)
-        }
-    }
-}
-
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 fn to_percent(raw: f64) -> f64 {
@@ -215,9 +159,8 @@ pub async fn get_yield_rates() -> ApiSuccess<Vec<YieldRate>> {
     }
 
     // Fetch all in parallel — Marinade has its own API, rest from DeFiLlama
-    let (marinade, marginfi, jito, jupsol, kamino) = tokio::join!(
+    let (marinade, jito, jupsol, kamino) = tokio::join!(
         fetch_marinade_apy(),
-        fetch_marginfi_apy(),
         fetch_defillama_apy(POOL_JITO,   FALLBACK_JITO),
         fetch_defillama_apy(POOL_JUPSOL, FALLBACK_JUPSOL),
         fetch_defillama_apy(POOL_KAMINO, FALLBACK_KAMINO),
@@ -233,7 +176,6 @@ pub async fn get_yield_rates() -> ApiSuccess<Vec<YieldRate>> {
     };
 
     if let Some(ref e) = marinade.1  { warn!(error = %e, "Marinade APY fetch failed, using fallback"); }
-    if let Some(ref e) = marginfi.1  { warn!(error = %e, "marginfi APY fetch failed, using fallback"); }
     if let Some(ref e) = jito.1      { warn!(error = %e, "Jito APY fetch failed, using fallback"); }
     if let Some(ref e) = jupsol.1    { warn!(error = %e, "Jupiter APY fetch failed, using fallback"); }
     if let Some(ref e) = kamino.1    { warn!(error = %e, "Kamino APY fetch failed, using fallback"); }
@@ -299,20 +241,6 @@ pub async fn get_yield_rates() -> ApiSuccess<Vec<YieldRate>> {
             devnet_supported: true,
             last_updated:     now,
             error:            kamino.1,
-        },
-        YieldRate {
-            id:               "marginfi",
-            name:             "marginfi",
-            apy:              to_percent(marginfi.0),
-            apy_raw:          marginfi.0,
-            output_token:     "marginfi",
-            receive_label:    "SOL (marginfi)",
-            risk_level:       "medium",
-            risk_label:       "Variable lending",
-            description:      "Lend SOL on marginfi lending protocol and earn variable interest from borrowers.",
-            devnet_supported: false,
-            last_updated:     now,
-            error:            marginfi.1,
         },
     ];
 

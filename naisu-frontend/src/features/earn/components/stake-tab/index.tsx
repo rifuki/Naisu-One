@@ -7,9 +7,20 @@ import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 
+type Protocol = 'marinade' | 'jito' | 'jupsol' | 'kamino';
+
+type OutputToken = 'sol' | 'msol' | 'jito' | 'jupsol' | 'kamino';
+
+const PROTOCOL_OUTPUT_TOKEN: Record<Protocol, OutputToken> = {
+  marinade: 'msol',
+  jito:     'jito',
+  jupsol:   'jupsol',
+  kamino:   'kamino',
+};
+
 interface StakeTabProps {
-  selectedProtocol: 'marinade' | 'marginfi';
-  onProtocolChange: (protocol: 'marinade' | 'marginfi') => void;
+  selectedProtocol: Protocol;
+  onProtocolChange: (protocol: Protocol) => void;
 }
 
 export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) {
@@ -67,7 +78,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
         evmAddress,
         solanaAddress,
         amount,
-        outputToken: selectedProtocol === 'marinade' ? 'msol' : 'marginfi',
+        outputToken: PROTOCOL_OUTPUT_TOKEN[selectedProtocol],
       });
 
       const hash = await sendTransactionAsync({
@@ -162,7 +173,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
                 key={rate.id}
                 rate={rate}
                 selected={selectedProtocol === rate.id}
-                onSelect={() => onProtocolChange(rate.id)}
+                onSelect={() => onProtocolChange(rate.id as Protocol)}
               />
             ))
           )}

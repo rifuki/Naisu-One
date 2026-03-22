@@ -7,7 +7,7 @@ type Tab = 'stake' | 'positions';
 
 export default function EarnPage() {
   const [activeTab, setActiveTab] = useState<Tab>('stake');
-  const [selectedProtocol, setSelectedProtocol] = useState<'marinade' | 'marginfi'>('marinade');
+  const [selectedProtocol, setSelectedProtocol] = useState<'marinade' | 'jito' | 'jupsol' | 'kamino'>('marinade');
   
   const solanaAddress = useSolanaAddress();
 

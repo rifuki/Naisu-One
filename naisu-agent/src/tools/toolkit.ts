@@ -160,7 +160,7 @@ export function buildToolkit(params: {
       destinationChain: z.enum(["solana", "sui"]).describe("Destination chain"),
       amount: z.string().describe("Amount to bridge as human-readable string, e.g. '0.1'"),
       durationSeconds: z.number().int().positive().max(86400).default(300).describe("Auction duration in seconds (default 300 = 5 min)"),
-      outputToken: z.enum(["sol", "msol", "marginfi", "jito", "jupsol", "kamino"]).default("sol").describe("Output token: 'sol' (default), 'msol' (Marinade liquid staking), 'marginfi' (marginfi lending), 'jito' (Jito liquid staking), 'jupsol' (Jupiter liquid staking), 'kamino' (Kamino lending)"),
+      outputToken: z.enum(["sol", "msol", "jito", "jupsol", "kamino"]).default("sol").describe("Output token: 'sol' (default), 'msol' (Marinade liquid staking), 'jito' (Jito liquid staking), 'jupsol' (Jupiter liquid staking), 'kamino' (Kamino lending)"),
     }),
     func: async ({ senderAddress, recipientAddress, destinationChain, amount, durationSeconds, outputToken }) => {
       const url = `${INTENT_API}/build-gasless`;
@@ -335,18 +335,71 @@ export function buildToolkit(params: {
     },
   });
 
-  const earnWithdrawMarginfi = new DynamicStructuredTool({
-    name: "earn_withdraw_marginfi",
+  const earnUnstakeJito = new DynamicStructuredTool({
+    name: "earn_unstake_jito",
     description:
-      "Withdraw SOL from marginfi lending position. Server-executed — no user wallet signature required. " +
-      "Returns { signature: '...' } on success. " +
-      "Always check earn_portfolio_balances first. Amount is decimal SOL string e.g. '0.5'.",
+      "Build an unsigned Solana VersionedTransaction to unstake jitoSOL → SOL (mock Jito). " +
+      "Burns the user's jitoSOL and returns SOL 1:1 from the solver. " +
+      "Returns { tx: '<base64>' } for the user to sign with their Solana wallet. " +
+      "Always check earn_portfolio_balances first to confirm jitoSOL balance. " +
+      "Amount is raw jitoSOL units (9 decimals) — 1 jitoSOL = '1000000000'. " +
+      "After getting the tx, emit a solana_tx widget for the user to sign.",
     schema: z.object({
       wallet: z.string().min(32).max(44).describe("User's Solana wallet address (base58)"),
-      amount: z.string().describe("SOL amount to withdraw as decimal string e.g. '0.5'"),
+      amount: z.string().describe("Raw jitoSOL in smallest units. E.g. 1 jitoSOL = '1000000000'"),
     }),
     func: async ({ wallet, amount }) => {
-      const res = await fetch(`${PORTFOLIO_API}/withdraw-marginfi`, {
+      const res = await fetch(`${PORTFOLIO_API}/unstake-jito`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, amount }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) return JSON.stringify(json.data);
+      return JSON.stringify(json);
+    },
+  });
+
+  const earnUnstakeJupsol = new DynamicStructuredTool({
+    name: "earn_unstake_jupsol",
+    description:
+      "Build an unsigned Solana VersionedTransaction to unstake jupSOL → SOL (mock Jupiter). " +
+      "Burns the user's jupSOL and returns SOL 1:1 from the solver. " +
+      "Returns { tx: '<base64>' } for the user to sign with their Solana wallet. " +
+      "Always check earn_portfolio_balances first to confirm jupSOL balance. " +
+      "Amount is raw jupSOL units (9 decimals) — 1 jupSOL = '1000000000'. " +
+      "After getting the tx, emit a solana_tx widget for the user to sign.",
+    schema: z.object({
+      wallet: z.string().min(32).max(44).describe("User's Solana wallet address (base58)"),
+      amount: z.string().describe("Raw jupSOL in smallest units. E.g. 1 jupSOL = '1000000000'"),
+    }),
+    func: async ({ wallet, amount }) => {
+      const res = await fetch(`${PORTFOLIO_API}/unstake-jupsol`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, amount }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) return JSON.stringify(json.data);
+      return JSON.stringify(json);
+    },
+  });
+
+  const earnUnstakeKamino = new DynamicStructuredTool({
+    name: "earn_unstake_kamino",
+    description:
+      "Build an unsigned Solana VersionedTransaction to unstake kSOL → SOL (mock Kamino). " +
+      "Burns the user's kSOL and returns SOL 1:1 from the solver. " +
+      "Returns { tx: '<base64>' } for the user to sign with their Solana wallet. " +
+      "Always check earn_portfolio_balances first to confirm kSOL balance. " +
+      "Amount is raw kSOL units (9 decimals) — 1 kSOL = '1000000000'. " +
+      "After getting the tx, emit a solana_tx widget for the user to sign.",
+    schema: z.object({
+      wallet: z.string().min(32).max(44).describe("User's Solana wallet address (base58)"),
+      amount: z.string().describe("Raw kSOL in smallest units. E.g. 1 kSOL = '1000000000'"),
+    }),
+    func: async ({ wallet, amount }) => {
+      const res = await fetch(`${PORTFOLIO_API}/unstake-kamino`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet, amount }),
@@ -368,7 +421,9 @@ export function buildToolkit(params: {
     earnYieldRates,
     earnPortfolioBalances,
     earnUnstakeMsol,
-    earnWithdrawMarginfi,
+    earnUnstakeJito,
+    earnUnstakeJupsol,
+    earnUnstakeKamino,
   );
 
   // ── Custom tools from registry ─────────────────────────────────────────────

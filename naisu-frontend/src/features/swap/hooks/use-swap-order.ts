@@ -5,7 +5,7 @@ export interface SwapOrderParams {
   evmAddress: string;
   solanaAddress: string;
   amount: string;
-  outputToken: 'sol' | 'msol' | 'marginfi';
+  outputToken: 'sol' | 'msol' | 'jito' | 'jupsol' | 'kamino';
 }
 
 export function useSwapOrder() {

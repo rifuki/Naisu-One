@@ -8,7 +8,7 @@
  * Usage:
  *   node scripts/dist/marinade_liquid_unstake_tx.js <wallet_pubkey> <msol_amount_raw> <rpc_url>
  *
- * Outputs to stdout: base64-encoded serialized Transaction (unsigned).
+ * Outputs to stdout: base64-encoded unsigned VersionedTransaction (V0).
  * The caller (frontend / backend) must sign with the wallet keypair and send.
  *
  * All progress/errors go to stderr.
@@ -36,13 +36,15 @@ async function main() {
     console.error('Building liquid unstake transaction...');
     const { transaction } = await marinade.liquidUnstake(amount);
     const { blockhash } = await connection.getLatestBlockhash('confirmed');
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = wallet;
-    // Serialize WITHOUT signing — frontend will sign with wallet adapter
-    const serialized = transaction.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-    });
+    // Convert legacy Transaction to VersionedTransaction (V0) so the frontend widget
+    // can deserialize it with VersionedTransaction.deserialize().
+    const message = new web3_js_1.TransactionMessage({
+        payerKey: wallet,
+        recentBlockhash: blockhash,
+        instructions: transaction.instructions,
+    }).compileToV0Message();
+    const versionedTx = new web3_js_1.VersionedTransaction(message);
+    const serialized = Buffer.from(versionedTx.serialize());
     console.error('Transaction built successfully.');
     console.log(serialized.toString('base64'));
 }
