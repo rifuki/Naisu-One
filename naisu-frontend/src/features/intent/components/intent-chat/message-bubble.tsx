@@ -796,8 +796,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       </Button>
                     </div>
                   </div>
-                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
-                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
+                  <div className="bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5">
+                    <DynamicHash hash={intent.recipientAddress} className="font-mono text-[9px] text-slate-500" />
                   </div>
                 </div>
               </div>
@@ -996,8 +996,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       </Button>
                     </div>
                   </div>
-                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
-                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
+                  <div className="bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5">
+                    <DynamicHash hash={intent.recipientAddress} className="font-mono text-[9px] text-slate-500" />
                   </div>
                 </div>
               </div>
@@ -1301,10 +1301,9 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                   </div>
                 )}
 
-                {/* Complete: you received — compact */}
+                {/* Complete: you received */}
                 {isComplete && (
                   <div className="rounded-xl bg-green-500/8 border border-green-500/20 overflow-hidden">
-                    {/* Received amount row */}
                     <div className="px-3 py-2.5 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <ShieldCheck size={10} className="text-green-500 shrink-0" />
@@ -1316,38 +1315,41 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         {fillUsdVal && <span className="text-[10px] text-slate-500">≈${fillUsdVal}</span>}
                       </div>
                     </div>
-                    {/* Price info row */}
                     <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-600">Best offer</span>
-                      <span className="text-[10px] font-mono text-slate-400">{startSol} {tokenLabel}</span>
-                    </div>
-                    <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-600">Floor price</span>
-                      <span className="text-[10px] font-mono text-slate-400">{adjustedFloorSol} {tokenLabel}</span>
-                    </div>
-                    {/* Filled by / fill time / auction duration / fee row */}
-                    <div className="px-3 py-1.5 border-t border-green-500/10 flex items-center gap-3">
-                      {winnerSolver && (
-                        <>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-slate-600">By</span>
-                            <span className="text-[10px] font-semibold text-slate-300">{winnerSolver}</span>
-                          </div>
-                          <span className="text-slate-700">·</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-slate-600">Fill time</span>
-                            <span className="text-[10px] font-semibold text-slate-300">{fillTimeSec != null ? `~${fillTimeSec}s` : '—'}</span>
-                          </div>
-                          <span className="text-slate-700">·</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-slate-600">Auction</span>
-                            <span className="text-[10px] font-semibold text-slate-300">{Math.round(intent.durationSeconds / 60)} min</span>
-                          </div>
-                          <span className="text-slate-700">·</span>
-                        </>
-                      )}
+                      <span className="text-[10px] text-slate-600">Network fee</span>
                       <span className="text-[10px] font-semibold text-green-400">Free</span>
                     </div>
+                  </div>
+                )}
+
+                {/* Auction details — separate section */}
+                {isComplete && (
+                  <div className="rounded-xl overflow-hidden border border-white/[0.07] bg-white/[0.02]">
+                    <div className="px-3 py-1.5 border-b border-white/[0.06]">
+                      <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Auction Details</span>
+                    </div>
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                      <span className="text-[10px] text-slate-500">Solved by</span>
+                      <span className="text-[10px] font-semibold text-slate-200">{winnerSolver ?? '—'}</span>
+                    </div>
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                      <span className="text-[10px] text-slate-500">Start price</span>
+                      <span className="text-[10px] font-mono text-slate-300">{startSol} {tokenLabel}</span>
+                    </div>
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                      <span className="text-[10px] text-slate-500">Floor price</span>
+                      <span className="text-[10px] font-mono text-slate-300">{adjustedFloorSol} {tokenLabel}</span>
+                    </div>
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.04]">
+                      <span className="text-[10px] text-slate-500">Duration</span>
+                      <span className="text-[10px] font-semibold text-slate-300">{Math.round(intent.durationSeconds / 60)} min</span>
+                    </div>
+                    {fillTimeSec != null && (
+                      <div className="px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500">Completed in</span>
+                        <span className="text-[10px] font-semibold text-slate-300">~{fillTimeSec}s</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1369,8 +1371,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       </Button>
                     </div>
                   </div>
-                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
-                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
+                  <div className="bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5">
+                    <DynamicHash hash={intent.recipientAddress} className="font-mono text-[9px] text-slate-500" />
                   </div>
                 </div>
 
@@ -1447,11 +1449,19 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       const StepIcon = getStepIcon(step.key);
                       const chip = stepTxChip(step);
 
+                      // Subtitle: chip wins, else detail text for active/error/select done states
+                      const subtitleText = !chip
+                        ? step.error && step.detail ? step.detail
+                          : step.active && step.detail ? step.detail
+                          : step.done && step.detail && step.key !== 'signed' && step.key !== 'rfq' && step.key !== 'winner' ? step.detail
+                          : null
+                        : null;
+
                       return (
                         <div key={step.key} className="flex gap-2">
-                          {/* Icon + connector */}
+                          {/* Icon + connector — flex-1 fills row height automatically */}
                           <div className="flex flex-col items-center shrink-0 w-[18px]">
-                            <div className="shrink-0 z-10">
+                            <div className="shrink-0">
                               {step.error ? (
                                 <div className="size-[18px] rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
                                   <XCircle size={11} className="text-red-500" />
@@ -1471,24 +1481,18 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                               )}
                             </div>
                             {!isLast && (
-                              <div className={`w-px mt-0.5 ${step.done ? (isError ? 'bg-white/10' : 'bg-green-500/25') : 'bg-white/6'}`}
-                                style={{ minHeight: chip ? 28 : step.active && step.detail ? 26 : 16 }} />
+                              <div className={`w-px flex-1 mt-0.5 ${step.done ? (isError ? 'bg-white/10' : 'bg-green-500/25') : 'bg-white/6'}`} />
                             )}
                           </div>
 
-                          {/* Text content */}
-                          <div className={`flex flex-col flex-1 min-w-0`}
-                            style={{ marginBottom: isLast ? 0 : chip ? 6 : step.active && step.detail ? 5 : 4 }}>
-                            {/* Step label: white when done (clear), teal when active, dim when pending */}
+                          {/* Text: label + fixed-height subtitle slot (always present for uniform spacing) */}
+                          <div className={`flex flex-col flex-1 min-w-0 ${isLast ? 'pb-0' : 'pb-1.5'}`}>
+                            {/* Label */}
                             {step.key === 'winner' && step.label.includes(': ') ? (
                               <span className="flex items-center gap-1 leading-tight mt-[3px]">
-                                <span className={`text-[11px] font-medium ${
-                                  step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'
-                                }`}>Solver</span>
+                                <span className={`text-[11px] font-medium ${step.done ? 'text-slate-200' : step.active ? 'text-[#0df2df]' : 'text-slate-700'}`}>Solver</span>
                                 <span className="text-slate-600 text-[11px]">·</span>
-                                <span className={`text-[11px] font-semibold ${
-                                  step.done ? 'text-slate-300' : step.active ? 'text-[#0df2df]' : 'text-slate-600'
-                                }`}>{step.label.split(': ')[1]}</span>
+                                <span className={`text-[11px] font-semibold ${step.done ? 'text-slate-300' : step.active ? 'text-[#0df2df]' : 'text-slate-600'}`}>{step.label.split(': ')[1]}</span>
                               </span>
                             ) : (
                               <span className={`text-[11px] font-medium leading-tight mt-[3px] ${
@@ -1497,47 +1501,30 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                 {step.label}
                               </span>
                             )}
-                            
-                            {/* Error detail */}
-                            {step.error && step.detail && (
-                              <span className="text-[9.5px] text-red-400/80 mt-0.5 leading-snug">{step.detail}</span>
-                            )}
 
-                            {/* Active step detail */}
-                            {step.active && step.detail && (
-                              <span className="text-[9.5px] text-slate-500 mt-0.5 leading-snug">{step.detail}</span>
-                            )}
-
-                            {/* Inline tx hash — styled as detail line, not a card */}
-                            {chip && (
-                              <div className="flex items-center gap-1 mt-0.5 w-full min-w-0 group/chip">
-                                <Link2 size={9} strokeWidth={1.5} className="shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" />
-                                <a
-                                  href={chip.href}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  title={chip.label}
-                                  className="flex-1 min-w-0 block"
-                                >
-                                  <DynamicHash
-                                    hash={step.txHash!}
-                                    className="font-mono text-[9px] leading-snug overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
-                                  />
-                                </a>
-                                <Button
-                                  onClick={() => copyToClipboard(step.txHash!, step.key)}
-                                  variant="ghost" size="auto" className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
-                                  title={copiedKey === step.key ? 'Copied!' : 'Copy'}
-                                >
-                                  {copiedKey === step.key ? <Check className="size-[9px]" strokeWidth={1.5} /> : <Copy className="size-[9px]" strokeWidth={1.5} />}
-                                </Button>
-                              </div>
-                            )}
-
-                            {/* Done step detail — skip generic status steps (signed, rfq) */}
-                            {step.done && step.detail && !chip && step.key !== 'signed' && step.key !== 'rfq' && (
-                              <span className="text-[9.5px] text-slate-600 mt-0.5 leading-snug">{step.detail}</span>
-                            )}
+                            {/* Fixed-height subtitle slot — always rendered so all rows are equal height */}
+                            <div className="h-[14px] flex items-center min-w-0">
+                              {chip ? (
+                                <div className="flex items-center gap-1 w-full min-w-0 group/chip">
+                                  <Link2 size={9} strokeWidth={1.5} className="shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" />
+                                  <a href={chip.href} target="_blank" rel="noreferrer" title={chip.label} className="flex-1 min-w-0 block">
+                                    <DynamicHash
+                                      hash={step.txHash!}
+                                      className="font-mono text-[9px] leading-none overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
+                                    />
+                                  </a>
+                                  <Button
+                                    onClick={() => copyToClipboard(step.txHash!, step.key)}
+                                    variant="ghost" size="auto" className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
+                                    title={copiedKey === step.key ? 'Copied!' : 'Copy'}
+                                  >
+                                    {copiedKey === step.key ? <Check className="size-[9px]" strokeWidth={1.5} /> : <Copy className="size-[9px]" strokeWidth={1.5} />}
+                                  </Button>
+                                </div>
+                              ) : subtitleText ? (
+                                <span className={`text-[9.5px] leading-none ${step.error ? 'text-red-400/80' : step.active ? 'text-slate-500' : 'text-slate-600'}`}>{subtitleText}</span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       );

@@ -197,7 +197,7 @@ function IntentPage() {
   // SSE progress tracking for the active gasless intent
   useOrderWatch({
     user:    address,
-    enabled: !!address && intentProgress !== null,
+    enabled: !!address,
     onOrderFulfilled: useCallback((data: OrderFulfilledEvent) => {
       const currentId = trackedIntentIdRef.current;
       const previousId = previousIntentIdRef.current;
