@@ -173,6 +173,8 @@ export function SwapForm({
 
       {/* Swap button */}
       <Button
+        variant="ghost"
+        size="auto"
         onClick={!evmConnected ? onConnectEvm : onSubmit}
         disabled={(evmConnected && !canSubmit) || isSubmitting}
         className={`w-full mt-4 font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2

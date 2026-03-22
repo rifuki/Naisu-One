@@ -36,6 +36,8 @@ export function WalletStatus({
             <span>EVM wallet not connected</span>
           </div>
           <Button
+            variant="ghost"
+            size="auto"
             type="button"
             onClick={onConnectEvm}
             disabled={isConnectingEvm}

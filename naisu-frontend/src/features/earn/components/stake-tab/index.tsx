@@ -136,6 +136,8 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
             <span className="text-xs text-slate-500 flex items-center gap-1.5">
               Balance: {ethBalance}
               <Button
+                variant="ghost"
+                size="auto"
                 type="button"
                 onClick={() => setAmount(ethBalanceRaw)}
                 className="text-[10px] font-bold text-primary hover:text-primary/70 uppercase"
@@ -191,6 +193,8 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
           </div>
         )}
         <Button
+          variant="ghost"
+          size="auto"
           onClick={!evmConnected ? () => connect({ connector: connectors[0] }) : handleSubmit}
           disabled={evmConnected && (!canSubmit || isBusy)}
           className={`w-full font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2

@@ -123,6 +123,8 @@ function SwapPage() {
           <div className="flex items-center gap-2">
             {evmConnected && (
               <Button
+                variant="ghost"
+                size="auto"
                 type="button"
                 onClick={() => disconnect()}
                 className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
@@ -132,6 +134,8 @@ function SwapPage() {
             )}
             {quoteAge !== null && (
               <Button
+                variant="ghost"
+                size="auto"
                 onClick={() => refetch()}
                 title="Refresh quote"
                 className={`p-1.5 rounded-full transition-all ${
@@ -187,6 +191,8 @@ function SwapPage() {
                 View on BaseScan
               </a>
               <Button
+                variant="ghost"
+                size="auto"
                 onClick={handleReset}
                 className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
               >

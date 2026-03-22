@@ -80,6 +80,8 @@ export function ChatSidebar({
         }`}
       >
         <Button
+          variant="ghost"
+          size="auto"
           onClick={() => onSwitchSession(s.id)}
           disabled={disabled}
           title={`${s.title}${hasIntents ? ` • ${s.intentCount} intent${s.intentCount !== 1 ? 's' : ''}` : ''}`}
@@ -104,6 +106,8 @@ export function ChatSidebar({
         </Button>
         
         <Button
+          variant="ghost"
+          size="auto"
           onClick={(e) => {
             e.stopPropagation();
             onDeleteSession(s.id);
@@ -152,6 +156,8 @@ export function ChatSidebar({
         <div className="flex items-center gap-2">
           {/* Collapse Sidebar Button */}
           <Button
+            variant="ghost"
+            size="auto"
             onClick={onToggle}
             className="p-2.5 rounded-lg bg-transparent hover:bg-white/10 text-slate-400 hover:text-white transition-colors border border-transparent hover:border-white/5 shrink-0"
             title="Close sidebar"
@@ -161,6 +167,8 @@ export function ChatSidebar({
 
           {/* New Chat Button — Sleek & Minimalist */}
           <Button
+            variant="ghost"
+            size="auto"
             onClick={onNewChat}
             disabled={disabled}
             className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg transition-colors border border-transparent ${
@@ -195,6 +203,8 @@ export function ChatSidebar({
       {/* Footer */}
       <div className="p-3 border-t border-white/5 shrink-0 flex flex-col gap-2">
         <Button
+          variant="ghost"
+          size="auto"
           onClick={onOpenSettings}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
         >
@@ -208,6 +218,8 @@ export function ChatSidebar({
         <div className="flex items-center gap-2">
           {onExport && (
             <Button
+              variant="ghost"
+              size="auto"
               onClick={onExport}
               title="Export all chats"
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
@@ -219,6 +231,8 @@ export function ChatSidebar({
           {onImport && (
             <>
               <Button
+                variant="ghost"
+                size="auto"
                 onClick={() => fileInputRef.current?.click()}
                 title="Import chats"
                 className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
@@ -237,6 +251,8 @@ export function ChatSidebar({
           )}
           {onClearAll && visibleSessions.length > 0 && (
             <Button
+              variant="ghost"
+              size="auto"
               onClick={() => {
                 if (confirm('Clear ALL chat history? This cannot be undone.')) {
                   onClearAll();
