@@ -46,7 +46,7 @@ import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import { useIntentStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
-import { formatAbsoluteTime } from '@/lib/time-utils';
+import { formatAbsoluteTime } from '@/lib/utils';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 
 export interface ChatMessage {

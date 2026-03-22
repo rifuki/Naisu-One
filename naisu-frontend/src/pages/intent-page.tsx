@@ -3,7 +3,7 @@ import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
 import { useLocation, useNavigate, useSearch, useRouterState } from "@tanstack/react-router";
 import { Route } from "@/routes/intent";
-import { useGlobalAgent } from '@/components/providers/agent-provider';
+import { useGlobalAgent } from '@/providers/agent';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';

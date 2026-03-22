@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { formatRelativeTime } from '@/lib/time-utils';
+import { formatRelativeTime } from '@/lib/utils';
 
 /**
  * Hook to get auto-updating relative time

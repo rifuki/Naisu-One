@@ -7,7 +7,7 @@ import { useEthBalance } from '@/features/swap/hooks/use-eth-balance';
 import { useSolBalance } from '@/features/swap/hooks/use-sol-balance';
 import { SwapForm } from '@/features/swap/components/swap-form';
 import LiveProgressCard from '@/components/LiveProgressCard';
-import { secondsAgo } from '@/lib/utils/format';
+import { secondsAgo } from '@/lib/utils';
 
 export default function SwapPage() {
   const { address: evmAddress, isConnected: evmConnected } = useAccount();

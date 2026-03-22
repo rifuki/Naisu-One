@@ -1,4 +1,4 @@
-import { fmtRate, secondsAgo } from '@/lib/utils/format';
+import { fmtRate, secondsAgo } from '@/lib/utils';
 import type { IntentQuote } from '@/features/intent/api/get-intent-quote';
 
 interface QuoteInfoProps {

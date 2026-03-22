@@ -1,8 +1,10 @@
 import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
+import { EvmProvider } from "@/providers/wagmi";
+import { SolanaProvider } from "@/providers/solana";
+import { QueryProvider } from "@/providers/query";
+import { AgentProvider } from "@/providers/agent";
 import Navbar from "@/components/Navbar";
 import ActiveIntents from "@/components/ActiveIntents";
-import { QueryProvider } from "@/components/providers/query-provider";
-import { AgentProvider } from "@/components/providers/agent-provider";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -10,11 +12,15 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <QueryProvider>
-      <AgentProvider>
-        <RootContent />
-      </AgentProvider>
-    </QueryProvider>
+    <EvmProvider>
+      <QueryProvider>
+        <SolanaProvider>
+          <AgentProvider>
+            <RootContent />
+          </AgentProvider>
+        </SolanaProvider>
+      </QueryProvider>
+    </EvmProvider>
   );
 }
 

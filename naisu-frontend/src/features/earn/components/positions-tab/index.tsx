@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
-import { rawToUi } from '@/lib/utils/format';
+import { rawToUi } from '@/lib/utils';
 import { usePositions } from '../../hooks/use-positions';
 import { useUnstakeMsol } from '../../hooks/use-unstake-msol';
 

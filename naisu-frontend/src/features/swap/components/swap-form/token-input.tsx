@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { fmtUsd } from '@/lib/utils/format';
+import { fmtUsd } from '@/lib/utils';
 
 interface TokenInputProps {
   label: string;

@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { useTimeAgo } from '@/hooks/useTimeAgo';
-import { formatAbsoluteTime } from '@/lib/time-utils';
+import { formatAbsoluteTime } from '@/lib/utils';
 
 interface ReceiptMessageProps {
   children: ReactNode;
