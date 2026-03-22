@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { Button } from '@/components/ui/button';
 import { VersionedTransaction } from '@solana/web3.js';
 import { rawToUi } from '@/lib/utils';
 import { usePositions } from '../../hooks/use-positions';
@@ -51,13 +52,13 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-slate-500">{solAddress.slice(0, 8)}…{solAddress.slice(-6)}</span>
-        <button
+        <Button
           onClick={() => refetch()}
           className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
           disabled={isLoading}
         >
           <span className="material-symbols-outlined text-[18px]">{isLoading ? 'sync' : 'refresh'}</span>
-        </button>
+        </Button>
       </div>
 
       {/* Error */}
@@ -105,12 +106,12 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
               <p className="text-xs text-emerald-400">Earning 6.50% APY</p>
             </div>
           </div>
-          <button
+          <Button
             onClick={() => setShowUnstakeModal(true)}
             className="w-full mt-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
           >
             Unstake to SOL
-          </button>
+          </Button>
         </div>
       )}
 
@@ -136,16 +137,16 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
               className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white mb-4"
             />
             <div className="flex gap-3">
-              <button onClick={() => setShowUnstakeModal(false)} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10">
+              <Button onClick={() => setShowUnstakeModal(false)} className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10">
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleUnstake}
                 disabled={!unstakeAmount || unstakeMutation.isPending}
                 className="flex-1 py-2 rounded-xl bg-primary text-black font-semibold disabled:opacity-50"
               >
                 {unstakeMutation.isPending ? 'Processing...' : 'Unstake'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from 'react';
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { GROQ_API_KEY } from '@/lib/env';
+import { Button } from '@/components/ui/button';
 
 export const Route = createFileRoute("/")({
   component: LandingPage,
@@ -353,7 +354,7 @@ const LandingPage: React.FC = () => {
 
               {/* Mic */}
               {micSupported && (
-                <button
+                <Button
                   onClick={handleMic}
                   disabled={isTranscribing}
                   className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
@@ -376,11 +377,11 @@ const LandingPage: React.FC = () => {
                   >
                     {isTranscribing ? 'progress_activity' : 'mic'}
                   </span>
-                </button>
+                </Button>
               )}
 
               {/* Send */}
-              <button
+              <Button
                 onClick={handleSend}
                 disabled={!inputValue.trim()}
                 className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all active:scale-95"
@@ -397,7 +398,7 @@ const LandingPage: React.FC = () => {
                 <span className="material-symbols-outlined" style={{ fontSize: 20, fontVariationSettings: "'wght' 500" }}>
                   arrow_forward
                 </span>
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -408,7 +409,7 @@ const LandingPage: React.FC = () => {
           style={{ animationDelay: '320ms', animationFillMode: 'forwards' }}
         >
           {SUGGESTIONS.map((text) => (
-            <button
+            <Button
               key={text}
               onClick={() => handleChipClick(text)}
               className="px-4 py-2 rounded-full text-sm font-medium text-slate-500 transition-all"
@@ -432,7 +433,7 @@ const LandingPage: React.FC = () => {
               }}
             >
               {text}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

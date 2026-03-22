@@ -3,6 +3,7 @@ import { TokenSelector } from './token-selector';
 import { WalletStatus } from './wallet-status';
 import { QuoteInfo } from './quote-info';
 import type { IntentQuote } from '@/features/intent/api/get-intent-quote';
+import { Button } from '@/components/ui/button';
 
 interface SwapFormProps {
   // Input state
@@ -171,7 +172,7 @@ export function SwapForm({
       )}
 
       {/* Swap button */}
-      <button
+      <Button
         onClick={!evmConnected ? onConnectEvm : onSubmit}
         disabled={(evmConnected && !canSubmit) || isSubmitting}
         className={`w-full mt-4 font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2
@@ -187,7 +188,7 @@ export function SwapForm({
           <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
         )}
         {submitLabel}
-      </button>
+      </Button>
     </div>
   );
 }

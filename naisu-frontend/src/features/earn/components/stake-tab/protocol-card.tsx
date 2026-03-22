@@ -1,5 +1,6 @@
 import type { YieldRate } from '../../api/get-yield-rates';
 import { ProtocolIcon } from './protocol-icon';
+import { Button } from '@/components/ui/button';
 
 interface ProtocolCardProps {
   rate: YieldRate;
@@ -22,7 +23,7 @@ function riskBadgeClass(riskLevel: string): string {
 
 export function ProtocolCard({ rate, selected, onSelect }: ProtocolCardProps) {
   return (
-    <button
+    <Button
       type="button"
       onClick={onSelect}
       className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border transition-all
@@ -44,6 +45,6 @@ export function ProtocolCard({ rate, selected, onSelect }: ProtocolCardProps) {
         </div>
         <div className="text-[10px] text-slate-500 mt-0.5">APY</div>
       </div>
-    </button>
+    </Button>
   );
 }

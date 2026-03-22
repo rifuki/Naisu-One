@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
+import { Button } from '@/components/ui/button';
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -123,9 +124,9 @@ const DashboardPage: React.FC = () => {
             <div className="p-6 md:p-8">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-white">Bridge & Swap</h3>
-                <button className="text-slate-400 hover:text-white transition-colors">
+                <Button className="text-slate-400 hover:text-white transition-colors">
                   <span className="material-symbols-outlined">settings</span>
-                </button>
+                </Button>
               </div>
 
               {/* From Input */}
@@ -136,7 +137,7 @@ const DashboardPage: React.FC = () => {
                 </div>
                 <div className="flex gap-4 items-center">
                   <div className="relative">
-                      <button
+                      <Button
                         onClick={() => setShowNetworkSelector(showNetworkSelector === 'from' ? null : 'from')}
                         className="flex items-center gap-2 bg-white/5 hover:bg-white/10 transition-colors rounded-lg px-3 py-2 min-w-[140px] border border-white/5"
                       >
@@ -145,13 +146,13 @@ const DashboardPage: React.FC = () => {
                         </div>
                         <span className="text-sm font-bold text-white">{fromNetwork.name}</span>
                         <span className="material-symbols-outlined text-slate-400 text-sm ml-auto">expand_more</span>
-                      </button>
+                      </Button>
 
                       {/* Dropdown */}
                       {showNetworkSelector === 'from' && (
                           <div className="absolute top-full left-0 mt-2 w-48 bg-[#1a1f1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 animate-fade-in-up">
                               {NETWORKS.map(net => (
-                                  <button
+                                  <Button
                                     key={net.id}
                                     onClick={() => handleNetworkSelect(net)}
                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
@@ -160,7 +161,7 @@ const DashboardPage: React.FC = () => {
                                           <span className="material-symbols-outlined text-xs">{net.icon}</span>
                                       </div>
                                       <span className={`text-sm font-medium ${net.id === fromNetwork.id ? 'text-primary' : 'text-slate-300'}`}>{net.name}</span>
-                                  </button>
+                                  </Button>
                               ))}
                           </div>
                       )}
@@ -189,12 +190,12 @@ const DashboardPage: React.FC = () => {
 
               {/* Arrow Switch */}
               <div className="relative h-8 flex items-center justify-center my-[-12px] z-10">
-                <button
+                <Button
                     onClick={handleSwapNetworks}
                     className="bg-surface border border-white/10 rounded-lg p-2 hover:border-primary/50 hover:text-primary text-slate-400 transition-all shadow-lg hover:rotate-180 duration-300"
                 >
                   <span className="material-symbols-outlined text-lg">arrow_downward</span>
-                </button>
+                </Button>
               </div>
 
               {/* To Input */}
@@ -205,7 +206,7 @@ const DashboardPage: React.FC = () => {
                 </div>
                 <div className="flex gap-4 items-center">
                   <div className="relative">
-                      <button
+                      <Button
                          onClick={() => setShowNetworkSelector(showNetworkSelector === 'to' ? null : 'to')}
                         className="flex items-center gap-2 bg-white/5 hover:bg-white/10 transition-colors rounded-lg px-3 py-2 min-w-[140px] border border-white/5"
                       >
@@ -214,13 +215,13 @@ const DashboardPage: React.FC = () => {
                         </div>
                         <span className="text-sm font-bold text-white">{toNetwork.name}</span>
                         <span className="material-symbols-outlined text-slate-400 text-sm ml-auto">expand_more</span>
-                      </button>
+                      </Button>
 
                        {/* Dropdown */}
                        {showNetworkSelector === 'to' && (
                           <div className="absolute top-full left-0 mt-2 w-48 bg-[#1a1f1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 animate-fade-in-up">
                               {NETWORKS.map(net => (
-                                  <button
+                                  <Button
                                     key={net.id}
                                     onClick={() => handleNetworkSelect(net)}
                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
@@ -229,7 +230,7 @@ const DashboardPage: React.FC = () => {
                                           <span className="material-symbols-outlined text-xs">{net.icon}</span>
                                       </div>
                                       <span className={`text-sm font-medium ${net.id === toNetwork.id ? 'text-primary' : 'text-slate-300'}`}>{net.name}</span>
-                                  </button>
+                                  </Button>
                               ))}
                           </div>
                       )}
@@ -277,12 +278,12 @@ const DashboardPage: React.FC = () => {
                 </div>
               </div>
 
-              <button
+              <Button
                 onClick={handleReview}
                 className="w-full mt-6 bg-primary text-black font-bold text-lg py-4 rounded-xl hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(13,242,223,0.3)] hover:shadow-[0_0_30px_rgba(13,242,223,0.5)] transform active:scale-[0.99]"
               >
                 {amount ? 'Review Swap' : 'Enter Amount'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -385,9 +386,9 @@ const DashboardPage: React.FC = () => {
                         <>
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-lg font-bold text-white">Review Transaction</h3>
-                                <button onClick={() => setIsReviewOpen(false)} className="text-slate-400 hover:text-white">
+                                <Button onClick={() => setIsReviewOpen(false)} className="text-slate-400 hover:text-white">
                                     <span className="material-symbols-outlined">close</span>
-                                </button>
+                                </Button>
                             </div>
                             <div className="space-y-4 mb-6">
                                 <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
@@ -416,12 +417,12 @@ const DashboardPage: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            <button
+                            <Button
                                 onClick={handleConfirm}
                                 className="w-full bg-primary text-black font-bold text-lg py-3 rounded-xl hover:bg-primary/90 transition-all"
                             >
                                 Confirm Bridge
-                            </button>
+                            </Button>
                         </>
                     )}
 

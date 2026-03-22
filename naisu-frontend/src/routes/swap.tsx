@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
+import { Button } from '@/components/ui/button';
 import { useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { useSwapQuote } from '@/features/swap/hooks/use-swap-quote';
@@ -121,16 +122,16 @@ function SwapPage() {
           </div>
           <div className="flex items-center gap-2">
             {evmConnected && (
-              <button
+              <Button
                 type="button"
                 onClick={() => disconnect()}
                 className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
               >
                 {evmAddress?.slice(0, 6)}…{evmAddress?.slice(-4)}
-              </button>
+              </Button>
             )}
             {quoteAge !== null && (
-              <button
+              <Button
                 onClick={() => refetch()}
                 title="Refresh quote"
                 className={`p-1.5 rounded-full transition-all ${
@@ -140,7 +141,7 @@ function SwapPage() {
                 }`}
               >
                 <span className="material-symbols-outlined text-[18px]">refresh</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -185,12 +186,12 @@ function SwapPage() {
                 <span className="material-symbols-outlined text-[14px]">open_in_new</span>
                 View on BaseScan
               </a>
-              <button
+              <Button
                 onClick={handleReset}
                 className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
               >
                 New swap
-              </button>
+              </Button>
             </div>
           </div>
         )}

@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { fmtUsd } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 interface TokenInputProps {
   label: string;
@@ -103,13 +104,13 @@ export function TokenInput({
           <span className="text-xs text-slate-500 flex items-center gap-1.5">
             Balance: {balance}
             {onMaxClick && (
-              <button
+              <Button
                 type="button"
                 onClick={onMaxClick}
                 className="text-[10px] font-bold text-primary hover:text-primary/70 uppercase transition-colors"
               >
                 Max
-              </button>
+              </Button>
             )}
           </span>
         ) : (

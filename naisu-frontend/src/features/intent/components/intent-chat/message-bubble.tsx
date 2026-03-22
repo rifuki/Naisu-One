@@ -38,6 +38,7 @@ function usePythPrices(
   return { fromUsd, toUsd };
 }
 import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import LiveProgressCard from '@/components/live-progress-card';
 import { BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget } from '../widgets';
@@ -191,13 +192,13 @@ function MessageActions({ text, isUser = false }: { text: string; isUser?: boole
 
   return (
     <div className={`flex items-center gap-1 mt-1 ${isUser ? 'justify-end' : ''}`}>
-      <button
+      <Button
         onClick={handleCopy}
         className="p-1.5 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
         title="Copy"
       >
         <span className="material-symbols-outlined text-[16px]">content_copy</span>
-      </button>
+      </Button>
     </div>
   );
 }
@@ -500,12 +501,12 @@ function TxReceiptRow({
         <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
           <span className="material-symbols-outlined text-[11px]">open_in_new</span>
         </a>
-        <button onClick={onCopy} className="text-slate-700 hover:text-slate-400 transition-colors"
+        <Button onClick={onCopy} className="text-slate-700 hover:text-slate-400 transition-colors"
           title={copiedKey === copyKey ? 'Copied!' : 'Copy'}>
           <span className="material-symbols-outlined text-[11px]">
             {copiedKey === copyKey ? 'check' : 'content_copy'}
           </span>
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -779,11 +780,11 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
                       <span className="material-symbols-outlined text-[11px]">open_in_new</span>
                     </a>
-                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
                       className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                       title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
                       <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -803,7 +804,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     {DURATION_OPTIONS_BUBBLE.map((opt) => {
                       const isSelected = selectedDuration === opt.seconds;
                       return (
-                        <button
+                        <Button
                           key={opt.seconds}
                           onClick={() => setSelectedDuration(opt.seconds)}
                           className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 ${
@@ -813,7 +814,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                           }`}
                         >
                           {opt.label}
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>
@@ -832,7 +833,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     {SLIPPAGE_OPTIONS.map((opt) => {
                       const isSelected = slippagePct === opt.pct;
                       return (
-                        <button
+                        <Button
                           key={opt.pct}
                           onClick={() => setSlippagePct(opt.pct)}
                           className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
@@ -843,7 +844,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         >
                           <span>{opt.label}</span>
                           <span className={`text-[8px] ${isSelected ? 'text-black/50' : 'text-slate-600'}`}>{opt.hint}</span>
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>
@@ -854,7 +855,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 </div>
 
                 {/* CTA */}
-                <button
+                <Button
                   onClick={() => {
                     onDutchPlanConfirm?.({ ...intent, floorPrice: adjustedFloorPrice, durationSeconds: selectedDuration });
                     transitionTo('sign');
@@ -863,7 +864,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 >
                   Looks good
                   <ArrowRight size={13} className="stroke-[2.5]" />
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -967,11 +968,11 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
                       <span className="material-symbols-outlined text-[11px]">open_in_new</span>
                     </a>
-                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
                       className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                       title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
                       <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1004,7 +1005,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                 {/* Buttons */}
                 <div className="mt-auto flex flex-col gap-2 pt-2">
-                  <button
+                  <Button
                     onClick={() => {
                       setSignError(null);
                       setLocalSigning(true);
@@ -1025,14 +1026,14 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         <ArrowRight size={13} className="stroke-[2.5]" />
                       </>
                     )}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => { setSignError(null); transitionTo('plan'); }}
                     disabled={localSigning}
                     className="w-full py-2 rounded-[10px] bg-white/3 hover:bg-white/8 border border-white/5 text-slate-400 hover:text-white disabled:opacity-30 text-[11px] font-medium transition-colors"
                   >
                     ← Back
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1330,11 +1331,11 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
                       <span className="material-symbols-outlined text-[10px]">open_in_new</span>
                     </a>
-                    <button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
                       className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                       title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
                       <span className="material-symbols-outlined text-[10px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -1488,7 +1489,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                     className="font-mono text-[9px] leading-snug overflow-hidden whitespace-nowrap relative text-slate-500 group-hover/chip:text-slate-300 transition-colors"
                                   />
                                 </a>
-                                <button
+                                <Button
                                   onClick={() => copyToClipboard(step.txHash!, step.key)}
                                   className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                                   title={copiedKey === step.key ? 'Copied!' : 'Copy'}
@@ -1496,7 +1497,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                   <span className="material-symbols-outlined text-[9px]">
                                     {copiedKey === step.key ? 'check' : 'content_copy'}
                                   </span>
-                                </button>
+                                </Button>
                               </div>
                             )}
 
@@ -1519,7 +1520,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       <div className="flex-1 min-w-0">
                         <DynamicHash hash={displayIntentId} className="font-mono text-[9px] text-slate-600 leading-snug overflow-hidden whitespace-nowrap relative" />
                       </div>
-                      <button
+                      <Button
                         onClick={() => copyToClipboard(displayIntentId, 'intentId')}
                         className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors"
                         title={copiedKey === 'intentId' ? 'Copied!' : 'Copy Intent ID'}
@@ -1527,7 +1528,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                         <span className="material-symbols-outlined text-[10px]">
                           {copiedKey === 'intentId' ? 'check' : 'content_copy'}
                         </span>
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}

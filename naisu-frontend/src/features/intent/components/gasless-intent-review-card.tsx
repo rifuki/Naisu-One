@@ -1,4 +1,5 @@
 import type { SignIntentParams } from '../hooks/use-sign-intent';
+import { Button } from '@/components/ui/button';
 
 interface ProgressStep {
   key: string
@@ -186,13 +187,13 @@ export function GaslessIntentReviewCard({
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[12px] font-mono text-slate-200">{recipientShort}</span>
-                    <button
+                    <Button
                       onClick={() => navigator.clipboard.writeText(intent.recipientAddress)}
                       className="text-slate-600 hover:text-primary transition-colors"
                       title={intent.recipientAddress}
                     >
                       <span className="material-symbols-outlined text-[12px]">content_copy</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -363,20 +364,20 @@ export function GaslessIntentReviewCard({
                     </div>
                   ) : (
                     <>
-                      <button
+                      <Button
                         onClick={onConfirm}
                         className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
                       >
                         <span className="material-symbols-outlined text-[14px]">signature</span>
                         Sign (Free)
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={onDismiss}
                         className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
                       >
                         <span className="material-symbols-outlined text-[13px]">close</span>
                         Dismiss
-                      </button>
+                      </Button>
                     </>
                   )}
                 </div>

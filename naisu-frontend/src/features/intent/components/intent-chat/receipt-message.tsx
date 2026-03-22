@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { useTimeAgo } from '@/hooks/use-time-ago';
+import { Button } from '@/components/ui/button';
 import { formatAbsoluteTime } from '@/lib/utils';
 
 interface ReceiptMessageProps {
@@ -13,13 +14,13 @@ function CopyButton({ text }: { text: string }) {
   };
 
   return (
-    <button
+    <Button
       onClick={handleCopy}
       className="text-slate-500 hover:text-primary transition-colors"
       title="Copy"
     >
       <span className="material-symbols-outlined text-[14px]">content_copy</span>
-    </button>
+    </Button>
   );
 }
 

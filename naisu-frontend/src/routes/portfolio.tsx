@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
+import { Button } from '@/components/ui/button';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { fmtUsd, rawToUi } from '@/lib/utils';
@@ -40,13 +41,13 @@ function PositionCard({ icon, title, subtitle, amount, decimals, actionLabel, on
           {isLoading ? '...' : `${rawToUi(amount, decimals)} ${title}`}
         </p>
         {actionLabel && onAction && (
-          <button
+          <Button
             onClick={onAction}
             disabled={isLoading || parseFloat(amount) === 0}
             className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 disabled:opacity-50"
           >
             {actionLabel}
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -106,13 +107,13 @@ function PortfolioPage() {
           <h1 className="text-2xl font-bold text-white">Portfolio</h1>
           <p className="text-sm text-slate-500">Your Solana positions</p>
         </div>
-        <button
+        <Button
           onClick={() => refetch()}
           className="p-2 text-slate-500 hover:text-slate-300"
           disabled={isLoading}
         >
           <span className="material-symbols-outlined">{isLoading ? 'sync' : 'refresh'}</span>
-        </button>
+        </Button>
       </div>
 
       {/* Error */}
@@ -184,19 +185,19 @@ function PortfolioPage() {
               className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white mb-4"
             />
             <div className="flex gap-3">
-              <button
+              <Button
                 onClick={() => setShowUnstakeModal(false)}
                 className="flex-1 py-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleUnstake}
                 disabled={!unstakeAmount || unstakeMutation.isPending}
                 className="flex-1 py-2 rounded-xl bg-primary text-black font-semibold disabled:opacity-50"
               >
                 {unstakeMutation.isPending ? 'Processing...' : 'Unstake'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

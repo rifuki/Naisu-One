@@ -1,5 +1,6 @@
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { Button } from '@/components/ui/button';
 
 interface WalletStatusProps {
   evmAddress?: string | null;
@@ -34,14 +35,14 @@ export function WalletStatus({
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
             <span>EVM wallet not connected</span>
           </div>
-          <button
+          <Button
             type="button"
             onClick={onConnectEvm}
             disabled={isConnectingEvm}
             className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
           >
             {isConnectingEvm ? 'Connecting...' : 'Connect'}
-          </button>
+          </Button>
         </div>
       )}
 

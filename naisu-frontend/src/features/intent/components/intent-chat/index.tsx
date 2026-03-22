@@ -1,5 +1,6 @@
 import { type ReactNode, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Button } from '@/components/ui/button';
 import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
 import { MessageInput } from './message-input';
@@ -146,14 +147,14 @@ export function IntentChat({
           {isEmpty && !inputValue.trim() && (
             <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
               {SUGGESTIONS.map((text, i) => (
-                <button
+                <Button
                   key={text}
                   onClick={() => handleSuggestionClick(text)}
                   className="px-3.5 py-1.5 rounded-full bg-[#0A0A0A]/80 border border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-300 hover:text-white text-[13px] font-medium shadow-md opacity-0 animate-fade-in-up hover:scale-105 active:scale-95 transition-all duration-200"
                   style={{ animationDelay: `${(i + 1) * 100}ms`, animationFillMode: 'forwards' }}
                 >
                   {text}
-                </button>
+                </Button>
               ))}
             </div>
           )}

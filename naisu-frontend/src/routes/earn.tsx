@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { StakeTab } from '@/features/earn/components/stake-tab';
 import { PositionsTab } from '@/features/earn/components/positions-tab';
@@ -26,7 +27,7 @@ function EarnPage() {
 
         <div className="flex gap-2 p-1 bg-white/5 rounded-xl">
           {(['stake', 'positions'] as Tab[]).map((tab) => (
-            <button
+            <Button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -34,7 +35,7 @@ function EarnPage() {
               }`}
             >
               {tab === 'stake' ? 'Stake' : 'Positions'}
-            </button>
+            </Button>
           ))}
         </div>
 

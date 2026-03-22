@@ -8,6 +8,7 @@
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
+import { Button } from '@/components/ui/button';
 import { encodeFunctionData } from 'viem';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { INTENT_BRIDGE_ABI } from '@/lib/abi/intent-bridge';
@@ -134,9 +135,9 @@ function IntentDetailDialog({
             <span className="text-base font-semibold text-white">Intent Details</span>
             <StatusBadge status={intent.status} expired={expired} />
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+          <Button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
             <span className="material-symbols-outlined">close</span>
-          </button>
+          </Button>
         </div>
 
         <div className="p-5 space-y-3">
@@ -426,7 +427,7 @@ function OrderCard({
         {/* Actions */}
         <div className="flex gap-2">
           {isOpen && intent.chain === 'evm' && (
-            <button
+            <Button
               onClick={() => onCancel(intent)}
               disabled={cancelling}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all
@@ -440,16 +441,16 @@ function OrderCard({
                 : <span className="material-symbols-outlined text-sm">{expired ? 'savings' : 'cancel'}</span>
               }
               {expired ? 'Refund' : 'Cancel'}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => onDetail(intent)}
             className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold
               bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-all"
           >
             <span className="material-symbols-outlined text-sm">info</span>
             Details
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -589,7 +590,7 @@ export default function ActiveIntents() {
       />
 
       {/* Floating trigger button */}
-      <button
+      <Button
         onClick={() => setOpen(v => !v)}
         className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl
           bg-[#0f1117] border border-white/10 shadow-2xl hover:border-primary/40 
@@ -609,7 +610,7 @@ export default function ActiveIntents() {
             {displayCount}
           </span>
         )}
-      </button>
+      </Button>
 
       {/* Side panel */}
       {open && (
@@ -634,7 +635,7 @@ export default function ActiveIntents() {
                   <span className="text-emerald-400">{stats.fulfilled} filled</span>
                   {stats.expired > 0 && <span className="text-orange-400">{stats.expired} expired</span>}
                 </div>
-                <button
+                <Button
                   onClick={refresh}
                   disabled={isLoading}
                   className="text-slate-500 hover:text-white transition-colors disabled:opacity-40"
@@ -642,17 +643,17 @@ export default function ActiveIntents() {
                 >
                   {/* Spin hanya saat background refresh (sudah ada data), bukan saat first-load */}
                   <span className={`material-symbols-outlined text-base ${isLoading && allOrders.length > 0 ? 'animate-spin' : ''}`}>refresh</span>
-                </button>
-                <button onClick={() => setOpen(false)} className="text-slate-500 hover:text-white transition-colors">
+                </Button>
+                <Button onClick={() => setOpen(false)} className="text-slate-500 hover:text-white transition-colors">
                   <span className="material-symbols-outlined text-base">close</span>
-                </button>
+                </Button>
               </div>
             </div>
 
             {/* Chain tabs */}
             <div className="flex border-b border-white/5 flex-shrink-0">
               {(['evm', 'solana'] as ChainType[]).map(tab => (
-                <button
+                <Button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 py-2 text-xs font-semibold transition-all
@@ -661,7 +662,7 @@ export default function ActiveIntents() {
                       : 'text-slate-500 hover:text-white'}`}
                 >
                   {tab === 'evm' ? `EVM (${evmOrders.length})` : `Solana (${solanaOrders.length})`}
-                </button>
+                </Button>
               ))}
             </div>
 

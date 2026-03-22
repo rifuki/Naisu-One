@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
+import { Button } from '@/components/ui/button';
 
 interface SolanaTxWidgetProps {
   tx: string;           // base64-encoded VersionedTransaction
@@ -81,7 +82,7 @@ export function SolanaTxWidget({ tx, action, description }: SolanaTxWidgetProps)
         </p>
       )}
 
-      <button
+      <Button
         onClick={handleSign}
         disabled={isBusy || !wallet.signTransaction}
         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-teal-400 to-cyan-400 text-black font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity"
@@ -92,7 +93,7 @@ export function SolanaTxWidget({ tx, action, description }: SolanaTxWidgetProps)
         {status === 'signing' ? 'Waiting for wallet…'
           : status === 'sending' ? 'Sending…'
           : btnLabel}
-      </button>
+      </Button>
 
       <p className="text-[10px] text-slate-600 text-center">{subtitle}</p>
     </div>

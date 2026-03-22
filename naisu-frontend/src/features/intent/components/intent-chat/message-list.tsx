@@ -1,5 +1,6 @@
 import { ReactNode, useRef, useEffect } from 'react';
 import { Bot } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ChatMessage, MessageBubble } from './message-bubble';
 import { SignIntentMessage } from './sign-intent-message';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
@@ -177,12 +178,12 @@ export function MessageList({
                 <p className="font-medium mb-1">Failed to process intent</p>
                 <p className="text-red-400/80 text-xs">{error}</p>
                 {onRetry && (
-                  <button
+                  <Button
                     onClick={onRetry}
                     className="mt-3 px-4 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-300 text-xs font-medium transition-colors"
                   >
                     Retry
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>

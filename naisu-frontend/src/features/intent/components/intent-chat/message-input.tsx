@@ -1,5 +1,6 @@
 import { forwardRef, KeyboardEvent } from 'react';
 import { ArrowUp, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface MessageInputProps {
   value: string;
@@ -39,7 +40,7 @@ export const MessageInput = forwardRef<HTMLInputElement, MessageInputProps>(func
           onKeyDown={handleKeyDown}
           disabled={isLoading}
         />
-        <button
+        <Button
           className="p-2.5 mx-1 flex-shrink-0 bg-white border border-white/5 hover:bg-slate-200 text-black rounded-full shadow-md disabled:bg-white/10 disabled:text-white/40 disabled:shadow-none disabled:cursor-not-allowed transition-all active:scale-95 flex items-center justify-center cursor-pointer"
           onClick={onSubmit}
           disabled={!value.trim() || isLoading}
@@ -49,7 +50,7 @@ export const MessageInput = forwardRef<HTMLInputElement, MessageInputProps>(func
           ) : (
             <ArrowUp className="w-5 h-5 stroke-[2.5px]" />
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

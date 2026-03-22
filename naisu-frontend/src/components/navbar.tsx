@@ -5,6 +5,7 @@ import { injected } from 'wagmi/connectors';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useSolanaAddress, setSkipSolanaAutoConnect } from '@/hooks/use-solana-address';
+import { Button } from '@/components/ui/button';
 
 // ── SVGs ─────────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ function WalletDropdown({
       className="absolute top-full mt-2 right-0 z-[100] min-w-[160px] bg-[#0c1211] border border-white/10 rounded-xl shadow-2xl py-1 overflow-hidden"
     >
       {items.map((item) => (
-        <button
+        <Button
           key={item.label}
           onClick={() => { item.onClick(); onClose(); }}
           className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors
@@ -74,7 +75,7 @@ function WalletDropdown({
         >
           <span className="material-symbols-outlined text-sm">{item.icon}</span>
           {item.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -149,7 +150,7 @@ function MultiWalletDropdown({
 
   return (
     <div className="relative" ref={ref}>
-      <button
+      <Button
         onClick={() => setShowDropdown((v) => !v)}
         className={`flex items-center gap-2 rounded-xl px-4 py-2 h-9 border text-xs font-semibold transition-all hover:scale-105 active:scale-95 ${
           connectedCount > 0
@@ -158,7 +159,7 @@ function MultiWalletDropdown({
         }`}
       >
         {buttonContent}
-      </button>
+      </Button>
 
       {showDropdown && (
         <div className="absolute top-full mt-2 right-0 z-[100] w-72 bg-[#070a09]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-2 overflow-hidden animate-fade-in-up origin-top-right">
@@ -174,7 +175,7 @@ function MultiWalletDropdown({
                     <EthLogo className="mt-0.5 shrink-0" />
                     <span>{fullEvmAddress}</span>
                   </div>
-                  <button
+                  <Button
                     onClick={() => {
                       navigator.clipboard.writeText(fullEvmAddress);
                     }}
@@ -182,10 +183,10 @@ function MultiWalletDropdown({
                     className="text-primary hover:text-white transition-colors shrink-0 p-1"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     onClick={() => {
                       window.open(`https://sepolia.basescan.org/address/${fullEvmAddress}`, '_blank');
                       setShowDropdown(false);
@@ -193,8 +194,8 @@ function MultiWalletDropdown({
                     className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[11px] text-slate-300 font-medium transition-colors"
                   >
                     Explorer
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => {
                       onDisconnectEvm();
                       setShowDropdown(false);
@@ -202,11 +203,11 @@ function MultiWalletDropdown({
                     className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[11px] font-medium transition-colors"
                   >
                     Disconnect
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 onClick={() => {
                   onConnectEvm();
                   setShowDropdown(false);
@@ -217,7 +218,7 @@ function MultiWalletDropdown({
                   <EthLogo /> Connect EVM
                 </div>
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-              </button>
+              </Button>
             )}
           </div>
 
@@ -235,7 +236,7 @@ function MultiWalletDropdown({
                     <SolanaLogo />
                     <span className="mt-[1px]">{fullSolAddress}</span>
                   </div>
-                  <button
+                  <Button
                     onClick={() => {
                       navigator.clipboard.writeText(fullSolAddress);
                     }}
@@ -243,10 +244,10 @@ function MultiWalletDropdown({
                     className="text-purple-400 hover:text-white transition-colors shrink-0 p-1"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     onClick={() => {
                       window.open(`https://solscan.io/account/${fullSolAddress}?cluster=devnet`, '_blank');
                       setShowDropdown(false);
@@ -254,8 +255,8 @@ function MultiWalletDropdown({
                     className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[11px] text-slate-300 font-medium transition-colors"
                   >
                     Explorer
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => {
                       onDisconnectSol();
                       setShowDropdown(false);
@@ -263,11 +264,11 @@ function MultiWalletDropdown({
                     className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[11px] font-medium transition-colors"
                   >
                     Disconnect
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 onClick={() => {
                   onConnectSol();
                   setShowDropdown(false);
@@ -278,7 +279,7 @@ function MultiWalletDropdown({
                   <SolanaLogo /> Connect Solana
                 </div>
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -391,12 +392,12 @@ const Navbar: React.FC = () => {
             />
 
             {/* Mobile Menu toggle */}
-            <button
+            <Button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="md:hidden size-9 flex items-center justify-center rounded-full bg-surface border border-white/10 text-slate-400 hover:text-white hover:border-primary/30 transition-colors ml-1"
             >
               <span className="material-symbols-outlined text-lg">{isMobileMenuOpen ? 'close' : 'menu'}</span>
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -420,22 +421,22 @@ const Navbar: React.FC = () => {
             </nav>
             <div className="mt-2 pt-2 border-t border-white/5 grid grid-cols-2 gap-2">
               {shortSol ? (
-                <button onClick={handleSolanaDisconnect} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-bold">
+                <Button onClick={handleSolanaDisconnect} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-bold">
                   <SolanaLogo /> Disconnect
-                </button>
+                </Button>
               ) : (
-                <button onClick={() => setVisible(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface border border-white/5 text-slate-400 text-xs font-medium">
+                <Button onClick={() => setVisible(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-surface border border-white/5 text-slate-400 text-xs font-medium">
                   <SolanaLogo /> Connect SOL
-                </button>
+                </Button>
               )}
               {isConnected ? (
-                <button onClick={() => disconnect()} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold">
+                <Button onClick={() => disconnect()} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold">
                   <EthLogo /> Disconnect
-                </button>
+                </Button>
               ) : (
-                <button onClick={() => connect({ connector: injected() })} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-primary text-black text-xs font-bold">
+                <Button onClick={() => connect({ connector: injected() })} className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 bg-primary text-black text-xs font-bold">
                   <EthLogo className="text-black" /> Connect EVM
-                </button>
+                </Button>
               )}
             </div>
           </div>

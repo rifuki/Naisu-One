@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+
 interface TokenSelectorProps {
   value: 'sol' | 'msol';
   onChange: (value: 'sol' | 'msol') => void;
@@ -8,7 +10,7 @@ export function TokenSelector({ value, onChange }: TokenSelectorProps) {
     <div className="mt-3 px-1">
       <p className="text-xs text-slate-500 mb-2">Receive as</p>
       <div className="flex gap-2">
-        <button
+        <Button
           type="button"
           onClick={() => onChange('sol')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-semibold transition-all
@@ -26,7 +28,7 @@ export function TokenSelector({ value, onChange }: TokenSelectorProps) {
             ◎
           </span>
           SOL
-        </button>
+        </Button>
       </div>
     </div>
   );

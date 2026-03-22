@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -12,9 +14,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <div className="relative bg-[#1a1f1e] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-fade-in-up">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold text-white">Intent Parameters</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <Button onClick={onClose} className="text-slate-400 hover:text-white">
             <span className="material-symbols-outlined">close</span>
-          </button>
+          </Button>
         </div>
 
         <div className="space-y-6">
@@ -23,13 +25,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               Slippage Tolerance
             </label>
             <div className="flex gap-2">
-              <button className="flex-1 py-2 rounded-lg bg-primary text-black text-sm font-bold">Auto</button>
-              <button className="flex-1 py-2 rounded-lg bg-white/5 border border-white/5 text-slate-300 text-sm font-medium hover:bg-white/10">
+              <Button className="flex-1 py-2 rounded-lg bg-primary text-black text-sm font-bold">Auto</Button>
+              <Button className="flex-1 py-2 rounded-lg bg-white/5 border border-white/5 text-slate-300 text-sm font-medium hover:bg-white/10">
                 0.5%
-              </button>
-              <button className="flex-1 py-2 rounded-lg bg-white/5 border border-white/5 text-slate-300 text-sm font-medium hover:bg-white/10">
+              </Button>
+              <Button className="flex-1 py-2 rounded-lg bg-white/5 border border-white/5 text-slate-300 text-sm font-medium hover:bg-white/10">
                 1.0%
-              </button>
+              </Button>
             </div>
           </div>
 

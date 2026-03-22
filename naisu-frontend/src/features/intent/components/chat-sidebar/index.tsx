@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus, MessageSquarePlus, PanelLeftClose } from 'lucide-react';
 import type { ChatSession } from '@/hooks/use-chat-sessions';
+import { Button } from '@/components/ui/button';
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -78,7 +79,7 @@ export function ChatSidebar({
             : `text-slate-400 ${disabled ? '' : 'hover:bg-white/5 hover:text-slate-200'} ${disabled ? 'opacity-50' : ''}`
         }`}
       >
-        <button
+        <Button
           onClick={() => onSwitchSession(s.id)}
           disabled={disabled}
           title={`${s.title}${hasIntents ? ` • ${s.intentCount} intent${s.intentCount !== 1 ? 's' : ''}` : ''}`}
@@ -100,9 +101,9 @@ export function ChatSidebar({
               {s.intentCount}
             </span>
           )}
-        </button>
+        </Button>
         
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onDeleteSession(s.id);
@@ -116,7 +117,7 @@ export function ChatSidebar({
           }`}
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>
-        </button>
+        </Button>
       </div>
     );
   };
@@ -150,16 +151,16 @@ export function ChatSidebar({
       <div className="p-3 flex flex-col gap-3 flex-1 min-h-0 min-w-[240px]">
         <div className="flex items-center gap-2">
           {/* Collapse Sidebar Button */}
-          <button
+          <Button
             onClick={onToggle}
             className="p-2.5 rounded-lg bg-transparent hover:bg-white/10 text-slate-400 hover:text-white transition-colors border border-transparent hover:border-white/5 shrink-0"
             title="Close sidebar"
           >
             <PanelLeftClose strokeWidth={2} className="w-[18px] h-[18px]" />
-          </button>
+          </Button>
 
           {/* New Chat Button — Sleek & Minimalist */}
-          <button
+          <Button
             onClick={onNewChat}
             disabled={disabled}
             className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg transition-colors border border-transparent ${
@@ -174,7 +175,7 @@ export function ChatSidebar({
               <Plus className="w-4 h-4" strokeWidth={2} />
               <span className="text-[13px] font-medium tracking-wide">New Chat</span>
             </div>
-          </button>
+          </Button>
         </div>
 
         {/* Session List — only shows sessions with at least one message */}
@@ -193,7 +194,7 @@ export function ChatSidebar({
 
       {/* Footer */}
       <div className="p-3 border-t border-white/5 shrink-0 flex flex-col gap-2">
-        <button
+        <Button
           onClick={onOpenSettings}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
         >
@@ -201,30 +202,30 @@ export function ChatSidebar({
             <span className="material-symbols-outlined text-sm">tune</span>
           </div>
           <span className="text-sm font-medium">Agent Settings</span>
-        </button>
+        </Button>
         
         {/* Export/Import buttons */}
         <div className="flex items-center gap-2">
           {onExport && (
-            <button
+            <Button
               onClick={onExport}
               title="Export all chats"
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
             >
               <span className="material-symbols-outlined text-[14px]">download</span>
               Export
-            </button>
+            </Button>
           )}
           {onImport && (
             <>
-              <button
+              <Button
                 onClick={() => fileInputRef.current?.click()}
                 title="Import chats"
                 className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">upload</span>
                 Import
-              </button>
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -235,7 +236,7 @@ export function ChatSidebar({
             </>
           )}
           {onClearAll && visibleSessions.length > 0 && (
-            <button
+            <Button
               onClick={() => {
                 if (confirm('Clear ALL chat history? This cannot be undone.')) {
                   onClearAll();
@@ -245,7 +246,7 @@ export function ChatSidebar({
               className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-500 hover:text-red-400 text-xs transition-colors"
             >
               <span className="material-symbols-outlined text-[14px]">delete_sweep</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>

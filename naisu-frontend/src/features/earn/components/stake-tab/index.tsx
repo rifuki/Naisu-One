@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
@@ -134,13 +135,13 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
           {ethBalance !== null ? (
             <span className="text-xs text-slate-500 flex items-center gap-1.5">
               Balance: {ethBalance}
-              <button
+              <Button
                 type="button"
                 onClick={() => setAmount(ethBalanceRaw)}
                 className="text-[10px] font-bold text-primary hover:text-primary/70 uppercase"
               >
                 Max
-              </button>
+              </Button>
             </span>
           ) : (
             <span className="text-xs text-slate-600">Balance: —</span>
@@ -189,7 +190,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
             <span>{buildError.message}</span>
           </div>
         )}
-        <button
+        <Button
           onClick={!evmConnected ? () => connect({ connector: connectors[0] }) : handleSubmit}
           disabled={evmConnected && (!canSubmit || isBusy)}
           className={`w-full font-extrabold text-base py-4 rounded-xl transition-all flex items-center justify-center gap-2
@@ -207,7 +208,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
               : Number(amount) <= 0 
                 ? 'Enter Amount' 
                 : 'Deposit & Earn →'}
-        </button>
+        </Button>
       </div>
     </div>
   );

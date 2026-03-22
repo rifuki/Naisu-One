@@ -9,6 +9,7 @@ import { TransactionReviewCard, type PendingTx } from '@/features/intent/compone
 import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
 import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { PanelLeftOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
 import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/use-order-watch';
 import { useIntentStore, useChatStore, type ProgressStep } from '@/store';
@@ -697,13 +698,13 @@ function IntentPage() {
 
       <div className="flex-1 flex flex-col relative overflow-hidden">
         {!isSidebarOpen && (
-          <button
+          <Button
             onClick={() => setIsSidebarOpen(true)}
             className="absolute top-4 left-4 z-40 p-2.5 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-slate-300 hover:text-white transition-all shadow-xl backdrop-blur-xl group"
             title="Open Sidebar"
           >
             <PanelLeftOpen strokeWidth={2} className="w-[18px] h-[18px] group-hover:scale-105 transition-transform" />
-          </button>
+          </Button>
         )}
         <IntentChat
           messages={messages}
