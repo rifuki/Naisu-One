@@ -24,6 +24,8 @@ function riskBadgeClass(riskLevel: string): string {
 export function ProtocolCard({ rate, selected, onSelect }: ProtocolCardProps) {
   return (
     <Button
+      variant="ghost"
+      size="auto"
       type="button"
       onClick={onSelect}
       className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border transition-all
