@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAccount, useSendTransaction, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
-import { useLocation, useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
+import { useLocation, useNavigate, useSearch, useRouterState } from "@tanstack/react-router";
+import { Route } from "@/routes/intent";
 import { useGlobalAgent } from '@/components/providers/agent-provider';
 import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
@@ -33,10 +34,10 @@ export default function IntentPage() {
   const [inputValue, setInputValue] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
-  const navType = useNavigationType();
-  const initialIntentRef = useRef(location.state?.initialIntent as string | undefined);
+  const navType = useRouterState({ select: (s) => s.historyAction });
+  const initialIntentRef = useRef((location.state as { initialIntent?: string })?.initialIntent);
   const initialSentRef = useRef(false);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParams = useSearch({ from: Route.fullPath });
   const isNavigatingRef = useRef(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -134,17 +135,17 @@ export default function IntentPage() {
     
     // Immediately sync the router synchronously to prevent race conditions in useEffect
     if (id) {
-      setSearchParams({ chat: id }, { replace: true });
+      navigate({ to: "/intent", search: { chat: id }, replace: true });
     } else {
-      setSearchParams({}, { replace: true });
+      navigate({ to: "/intent", search: {}, replace: true });
     }
-  }, [clearActiveIntent, switchSession, setSearchParams]);
+  }, [clearActiveIntent, switchSession, navigate]);
 
   const prevActiveSessionIdRef = useRef(activeSessionId);
 
   // Sync activeSessionId with URL search params
   useEffect(() => {
-    const chatParam = searchParams.get('chat');
+    const chatParam = searchParams.chat;
     
     // If they match, clear the programmatic navigation lock
     if (chatParam === activeSessionId) {
@@ -168,7 +169,7 @@ export default function IntentPage() {
         if (prevActiveSessionIdRef.current === null) {
           // We just implicitly created a session from a Virtual New Chat (null -> s_abc). Sync to URL!
           isNavigatingRef.current = true;
-          setSearchParams({ chat: activeSessionId }, { replace: true });
+          navigate({ to: "/intent", search: { chat: activeSessionId! }, replace: true });
         } else {
           // The URL param vanished, but state hasn't changed.
           if (navType === 'POP') {
@@ -177,13 +178,13 @@ export default function IntentPage() {
           } else {
             // User clicked NavLink (PUSH/REPLACE) from somewhere else, let's resume their active session!
             isNavigatingRef.current = true;
-            setSearchParams({ chat: activeSessionId }, { replace: true });
+            navigate({ to: "/intent", search: { chat: activeSessionId! }, replace: true });
           }
         }
       }
     }
     prevActiveSessionIdRef.current = activeSessionId;
-  }, [activeSessionId, searchParams, sessions, handleSwitchSession, setSearchParams, navType]);
+  }, [activeSessionId, searchParams, sessions, handleSwitchSession, navigate, navType]);
 
   const currentMsgIdxRef = useRef(0);
 

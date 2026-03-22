@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -290,7 +290,7 @@ function MultiWalletDropdown({
 // ── Navbar ────────────────────────────────────────────────────────────────────
 
 const Navbar: React.FC = () => {
-  const location = useLocation();
+  const pathname = useRouterState({ select: (s) => s.pathname });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // EVM
@@ -331,7 +331,7 @@ const Navbar: React.FC = () => {
   }, [solDisconnect, solAdapterConnected]);
 
   const isActive = (path: string) =>
-    location.pathname === path
+    pathname === path
       ? 'text-black bg-primary font-bold shadow-[0_0_15px_-3px_rgba(13,242,223,0.6)]'
       : 'text-slate-400 hover:text-white hover:bg-white/5';
 
@@ -410,11 +410,11 @@ const Navbar: React.FC = () => {
                   to={link.path}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={`text-sm font-medium px-4 py-3 rounded-xl transition-colors flex items-center justify-between group ${
-                    location.pathname === link.path ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                    pathname === link.path ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-white/5 hover:text-white'
                   }`}
                 >
                   {link.name}
-                  {location.pathname === link.path && <span className="material-symbols-outlined text-sm">check</span>}
+                  {pathname === link.path && <span className="material-symbols-outlined text-sm">check</span>}
                 </Link>
               ))}
             </nav>

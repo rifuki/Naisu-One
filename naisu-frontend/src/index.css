@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0df2df;
+  --color-primary-dim: rgba(13, 242, 223, 0.1);
+  --color-background: #050505;
+  --color-surface: #0a0f0e;
+  --color-surface-light: #131616;
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+
+  --font-sans: "Manrope", sans-serif;
+  --font-display: "Manrope", sans-serif;
+
+  --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-scroll: scroll 40s linear infinite;
+  --animate-fade-in-up: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-flow-right: flow-right 2.5s linear infinite;
+  --animate-magic-lamp: magic-lamp 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+  --animate-shake: shake 0.4s ease-in-out;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(20px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes flow-right {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes magic-lamp {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; filter: blur(0px); }
+  40% { transform: translate(10vw, 20vh) scaleX(0.4) scaleY(1.4) skewX(5deg); opacity: 0.9; filter: blur(1px); }
+  100% { transform: translate(35vw, 35vh) scaleX(0) scaleY(0.1); opacity: 0; filter: blur(4px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+body {
+  background-color: #050505;
+  color: white;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.glass-panel {
+  background: rgba(16, 26, 25, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mesh-gradient {
+  background-color: hsla(180, 0%, 2%, 1);
+  background-image:
+    radial-gradient(at 12% 87%, hsla(172, 92%, 50%, 0.05) 0px, transparent 50%),
+    radial-gradient(at 92% 14%, hsla(243, 65%, 46%, 0.05) 0px, transparent 50%),
+    radial-gradient(at 51% 54%, hsla(175, 85%, 45%, 0.03) 0px, transparent 50%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

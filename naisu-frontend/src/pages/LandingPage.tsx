@@ -1,5 +1,5 @@
 import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from "@tanstack/react-router";
 import { GROQ_API_KEY } from '@/lib/env'
 
 const SUGGESTIONS = [
@@ -55,7 +55,7 @@ const LandingPage: React.FC = () => {
 
   const handleSend = useCallback(() => {
     if (!inputValue.trim()) return;
-    navigate('/intent', { state: { initialIntent: inputValue } });
+    navigate({ to: "/intent", state: { initialIntent: inputValue } });
   }, [inputValue, navigate]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -66,7 +66,7 @@ const LandingPage: React.FC = () => {
   };
 
   const handleChipClick = (text: string) => {
-    navigate('/intent', { state: { initialIntent: text } });
+    navigate({ to: "/intent", state: { initialIntent: text } });
   };
 
   const transcribeWithGroq = useCallback(async (audioBlob: Blob) => {
