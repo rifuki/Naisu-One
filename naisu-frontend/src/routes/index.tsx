@@ -1,8 +1,8 @@
 import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from 'react';
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { GROQ_API_KEY } from '@/lib/env';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Loader2, ArrowRight } from 'lucide-react';
+import { Sparkles, Loader2, ArrowRight, Mic } from 'lucide-react';
+import { useMic } from '@/hooks/use-mic';
 
 export const Route = createFileRoute("/")({
   component: LandingPage,
@@ -10,53 +10,24 @@ export const Route = createFileRoute("/")({
 
 const SUGGESTIONS = [
   'Bridge 0.001 ETH from Base Sepolia to Solana',
-  'How much SUI will I get for 0.05 ETH?',
+  'How much SOL will I get for 0.1 ETH?',
   'Check my SOL and ETH balances',
 ];
-
-const WHISPER_PROMPT =
-  'Ethereum ETH Solana SOL Sui SUI Base Sepolia mSOL USDC USDT Bridge swap stake gasless EIP-712 Wormhole VAA intent solver RFQ Marinade';
-
-// Web Speech API types
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-interface SpeechRecognitionInstance extends EventTarget {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((e: SpeechRecognitionEvent) => void) | null;
-  onerror: ((e: Event) => void) | null;
-  onend: (() => void) | null;
-}
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
-  }
-}
 
 const LandingPage: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [focused, setFocused] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const navigate = useNavigate();
+
+  const { isListening, isTranscribing, handleMic, micSupported } = useMic((text) => {
+    setInputValue(text);
+    inputRef.current?.focus();
+  });
 
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 600);
-    return () => {
-      clearTimeout(t);
-      recognitionRef.current?.stop();
-      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
-    };
+    return () => clearTimeout(t);
   }, []);
 
   const handleSend = useCallback(() => {
@@ -75,133 +46,10 @@ const LandingPage: React.FC = () => {
     navigate({ to: "/intent", state: { initialIntent: text } });
   };
 
-  const transcribeWithGroq = useCallback(async (audioBlob: Blob) => {
-    if (!GROQ_API_KEY) return;
-    setIsTranscribing(true);
-    try {
-      const file = new File([audioBlob], 'audio.webm', { type: audioBlob.type });
-      const form = new FormData();
-      form.append('file', file);
-      form.append('model', 'whisper-large-v3-turbo');
-      form.append('prompt', WHISPER_PROMPT);
-      form.append('response_format', 'text');
-      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
-        body: form,
-      });
-      if (res.ok) {
-        const text = (await res.text()).trim();
-        if (text) setInputValue(text);
-      }
-    } finally {
-      setIsTranscribing(false);
-      inputRef.current?.focus();
-    }
-  }, []);
-
-  const stopMic = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
-    setIsListening(false);
-  }, []);
-
-  const handleMic = useCallback(async () => {
-    if (!GROQ_API_KEY) return;
-    if (isListening) { stopMic(); return; }
-
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // ── MediaRecorder: full audio for Groq ──
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      recorder.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
-        transcribeWithGroq(new Blob(chunksRef.current, { type: recorder.mimeType }));
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-
-      // ── Accumulated final transcript across SR restarts ──
-      let finalText = '';
-
-      // ── Web Audio VAD: stop after 2.5s of real silence ──
-      const audioCtx = new AudioContext();
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      audioCtx.createMediaStreamSource(stream).connect(analyser);
-      const vadData = new Uint8Array(analyser.frequencyBinCount);
-      let silenceStart = 0;
-      const SILENCE_MS = 2500;
-      const MIN_MS = 800;
-      const startedAt = Date.now();
-      let vadStopped = false;
-
-      const vadLoop = () => {
-        if (vadStopped) return;
-        analyser.getByteTimeDomainData(vadData);
-        const rms = Math.sqrt(vadData.reduce((s, v) => s + (v - 128) ** 2, 0) / vadData.length);
-        const now = Date.now();
-        if (rms < 8) {
-          if (!silenceStart) silenceStart = now;
-          if (now - silenceStart > SILENCE_MS && now - startedAt > MIN_MS) {
-            vadStopped = true;
-            audioCtx.close();
-            stopMic();
-            return;
-          }
-        } else {
-          silenceStart = 0;
-        }
-        requestAnimationFrame(vadLoop);
-      };
-      requestAnimationFrame(vadLoop);
-
-      // ── Web Speech API: real-time interim words ──
-      const startRecognition = () => {
-        if (vadStopped) return;
-        const SR2 = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR2) return;
-        const r = new SR2();
-        r.lang = navigator.language || 'en-US';
-        r.continuous = false;
-        r.interimResults = true;
-
-        r.onresult = (e: SpeechRecognitionEvent) => {
-          let interim = '';
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
-            else interim = e.results[i][0].transcript;
-          }
-          setInputValue((finalText + interim).trim());
-        };
-
-        // Chrome stops SR after ~2s silence — restart immediately if still listening
-        r.onend = () => { if (!vadStopped) startRecognition(); };
-        r.onerror = (e: Event) => {
-          const err = (e as ErrorEvent).message || '';
-          // 'no-speech' is normal — just restart
-          if (!vadStopped && err !== 'aborted') startRecognition();
-        };
-
-        recognitionRef.current = r;
-        r.start();
-      };
-
-      startRecognition();
-      setIsListening(true);
-    } catch {
-      // permission denied
-    }
-  }, [isListening, stopMic, transcribeWithGroq]);
+  const handleLucky = useCallback(() => {
+    const pick = SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)];
+    navigate({ to: "/intent", state: { initialIntent: pick } });
+  }, [navigate]);
 
   // Keyboard shortcut: Ctrl+Space → toggle mic
   useEffect(() => {
@@ -214,10 +62,6 @@ const LandingPage: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleMic]);
-
-  const micSupported = !!GROQ_API_KEY
-    && !!navigator.mediaDevices
-    && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-[calc(100dvh-64px)] px-4 overflow-hidden">
@@ -280,7 +124,7 @@ const LandingPage: React.FC = () => {
             maxWidth: 480,
           }}
         >
-          Bridge, swap, and stake across Base, Solana, and Sui — with one natural language intent. Gasless. Solver-executed. No complexity.
+          Bridge ETH to Solana with one natural language intent. Gasless. Solver-executed. No complexity.
         </p>
 
         {/* Input */}
@@ -323,13 +167,17 @@ const LandingPage: React.FC = () => {
                 gap: 10,
               }}
             >
-              {/* Sparkle */}
-              <Sparkles
-                size={22}
-                strokeWidth={1.5}
-                className="animate-pulse-slow flex-shrink-0"
-                style={{ color: '#0df2df' }}
-              />
+              {/* I'm feeling lucky */}
+              <Button
+                onClick={handleLucky}
+                title="I'm feeling lucky — try a random intent"
+                className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
+                style={{ width: 38, height: 38, background: 'transparent', color: '#0df2df', cursor: 'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,242,223,0.08)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <Sparkles size={20} strokeWidth={1.5} className="animate-pulse-slow" />
+              </Button>
 
               {/* Input field */}
               <input
@@ -370,7 +218,7 @@ const LandingPage: React.FC = () => {
                 >
                   {isTranscribing
                     ? <Loader2 size={20} strokeWidth={1.5} className="animate-spin" />
-                    : <span className={isListening ? 'animate-pulse' : ''} style={{ fontSize: 20, fontFamily: 'Material Symbols Outlined' }}>mic</span>
+                    : <Mic size={20} strokeWidth={1.5} className={isListening ? 'animate-pulse' : ''} />
                   }
                 </Button>
               )}
