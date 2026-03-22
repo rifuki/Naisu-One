@@ -11,7 +11,7 @@ import { useAccount, useSendTransaction } from 'wagmi';
 import { encodeFunctionData } from 'viem';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { INTENT_BRIDGE_ABI } from '@/lib/abi/intent-bridge';
-import { useIntentOrders, type IntentRow } from '@/hooks/useIntentOrders';
+import { useIntentOrders, type IntentOrder as IntentRow } from '@/features/intent/hooks/use-intent-orders';
 import {
   BASE_SEPOLIA_CONTRACT,
   BASE_SEPOLIA_CHAIN_ID,
