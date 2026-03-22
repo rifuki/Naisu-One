@@ -38,14 +38,14 @@ function usePythPrices(
   return { fromUsd, toUsd };
 }
 import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles, XCircle } from 'lucide-react';
-import LiveProgressCard from '@/components/LiveProgressCard';
+import LiveProgressCard from '@/components/live-progress-card';
 import { BalanceDisplayWidget } from '../widgets';
 import type { AnyWidget } from '../widgets';
 import { SolanaTxWidget } from './solana-tx-widget';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import { useIntentStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
-import { useTimeAgo } from '@/hooks/useTimeAgo';
+import { useTimeAgo } from '@/hooks/use-time-ago';
 import { formatAbsoluteTime } from '@/lib/utils';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 

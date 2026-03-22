@@ -10,7 +10,7 @@ import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-in
 import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { PanelLeftOpen } from 'lucide-react';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
-import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/useOrderWatch';
+import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/use-order-watch';
 import { useIntentStore, useChatStore, type ProgressStep } from '@/store';
 import { BACKEND_URL } from '@/lib/env';
 

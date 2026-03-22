@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { fmtUsd, rawToUi } from '@/lib/utils';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { usePositions } from "@/features/earn/hooks/use-positions";
 import { useUnstakeMsol } from '@/features/earn/hooks/use-unstake-msol';
 

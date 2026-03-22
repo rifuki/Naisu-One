@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { useTimeAgo } from '@/hooks/useTimeAgo';
+import { useTimeAgo } from '@/hooks/use-time-ago';
 import { formatAbsoluteTime } from '@/lib/utils';
 
 interface ReceiptMessageProps {

@@ -1,8 +1,8 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useAccount } from "wagmi";
-import { useSolanaAddress } from "@/hooks/useSolanaAddress";
-import { useChatSessions, type ChatSession, type ExportedData } from "@/hooks/useChatSessions";
-import { useAgent, type AgentMessage, type TxData, type GaslessIntentData } from "@/hooks/useAgent";
+import { useSolanaAddress } from "@/hooks/use-solana-address";
+import { useChatSessions, type ChatSession, type ExportedData } from "@/hooks/use-chat-sessions";
+import { useAgent, type AgentMessage, type TxData, type GaslessIntentData } from "@/hooks/use-agent";
 
 interface AgentContextValue {
   sessions: ChatSession[];

@@ -3,8 +3,8 @@ import { EvmProvider } from "@/providers/wagmi";
 import { SolanaProvider } from "@/providers/solana";
 import { QueryProvider } from "@/providers/query";
 import { AgentProvider } from "@/providers/agent";
-import Navbar from "@/components/Navbar";
-import ActiveIntents from "@/components/ActiveIntents";
+import Navbar from "@/components/navbar";
+import ActiveIntents from "@/components/active-intents";
 
 export const Route = createRootRoute({
   component: RootLayout,

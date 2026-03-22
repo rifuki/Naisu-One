@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from 'react';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { StakeTab } from '@/features/earn/components/stake-tab';
 import { PositionsTab } from '@/features/earn/components/positions-tab';
 

@@ -12,9 +12,9 @@ import { useAccount } from 'wagmi'
 import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { getIntentOrders, type IntentOrder } from '../api/get-intent-orders'
 import { fetchEvmFromRpc, fetchSolanaFromRpc } from '../api/get-intent-orders-rpc'
-import { useSolanaAddress } from '@/hooks/useSolanaAddress'
-import { useOrderWatch } from '@/hooks/useOrderWatch'
-import type { IntentProgressEvent } from '@/hooks/useOrderWatch'
+import { useSolanaAddress } from '@/hooks/use-solana-address'
+import { useOrderWatch } from '@/hooks/use-order-watch'
+import type { IntentProgressEvent } from '@/hooks/use-order-watch'
 
 export type { IntentOrder, IntentProgressEvent }
 

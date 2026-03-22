@@ -1,6 +1,6 @@
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
 import { GaslessIntentReviewCard } from '../gasless-intent-review-card';
-import { useTimeAgo } from '@/hooks/useTimeAgo';
+import { useTimeAgo } from '@/hooks/use-time-ago';
 import { formatAbsoluteTime } from '@/lib/utils';
 
 interface SignIntentMessageProps {

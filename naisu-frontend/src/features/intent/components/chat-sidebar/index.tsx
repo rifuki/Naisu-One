@@ -1,6 +1,6 @@
 import React from 'react';
 import { Plus, MessageSquarePlus, PanelLeftClose } from 'lucide-react';
-import type { ChatSession } from '@/hooks/useChatSessions';
+import type { ChatSession } from '@/hooks/use-chat-sessions';
 
 interface ChatSidebarProps {
   sessions: ChatSession[];

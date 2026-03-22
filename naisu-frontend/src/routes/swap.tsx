@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
 import { useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { useSwapQuote } from '@/features/swap/hooks/use-swap-quote';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
 import { useEthBalance } from '@/features/swap/hooks/use-eth-balance';
 import { useSolBalance } from '@/features/swap/hooks/use-sol-balance';
 import { SwapForm } from '@/features/swap/components/swap-form';
-import LiveProgressCard from '@/components/LiveProgressCard';
+import LiveProgressCard from '@/components/live-progress-card';
 import { secondsAgo } from '@/lib/utils';
 
 export const Route = createFileRoute("/swap")({

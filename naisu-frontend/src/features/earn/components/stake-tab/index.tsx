@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
-import { useSolanaAddress } from '@/hooks/useSolanaAddress';
+import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { apiClient } from '@/lib/api/client';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
