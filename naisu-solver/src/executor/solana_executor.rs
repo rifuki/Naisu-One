@@ -818,9 +818,12 @@ async fn solve_and_prove_inner(
 // Marinade liquid staking — atomic single-transaction (deposit + prove)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const MARINADE_PROGRAM_B58: &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
-const MARINADE_STATE_B58:   &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
-const MSOL_MINT_B58:        &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+const MARINADE_PROGRAM_B58:   &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
+const MARINADE_STATE_B58:     &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
+const MSOL_MINT_B58:          &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+// liq_pool_msol_leg is a token account stored in Marinade state — NOT an ATA derivation
+// Fetched from devnet state account (8szGkuL...): state.liqPool.msolLeg
+const MARINADE_MSOL_LEG_B58:  &str = "7GgPYjS5Dza89wV6FpZ23kUJRG5vbQ1GM25ezspYFSoE";
 
 /// Solve (Marinade: deposit SOL → mSOL directly to recipient ATA) and prove via Wormhole.
 ///
@@ -890,8 +893,8 @@ async fn solve_marinade_and_prove_inner(
     let (liq_pool_msol_leg_authority, _) = find_pda(&[&marinade_state, b"liq_st_sol_authority"],  &marinade_program);
     let (reserve_pda, _)                 = find_pda(&[&marinade_state, b"reserve"],               &marinade_program);
     let (msol_mint_authority, _)         = find_pda(&[&marinade_state, b"st_mint"],               &marinade_program);
-    // liq_pool_msol_leg = ATA owned by liq_pool_msol_leg_authority for mSOL mint
-    let (liq_pool_msol_leg, _)  = find_pda(&[&liq_pool_msol_leg_authority, &token_program, &msol_mint], &assoc_token_prog);
+    // liq_pool_msol_leg = stored in Marinade state, NOT an ATA derivation
+    let liq_pool_msol_leg = decode_b58(MARINADE_MSOL_LEG_B58)?;
     // Recipient's mSOL ATA
     let (recipient_msol_ata, _) = find_pda(&[&recipient, &token_program, &msol_mint], &assoc_token_prog);
 
@@ -1036,7 +1039,7 @@ const KSOL_MINT_B58:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
 /// SPL token program.
 const TOKEN_PROGRAM_B58: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 /// Associated token program.
-const ASSOC_TOKEN_PROGRAM_B58: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bVimi";
+const ASSOC_TOKEN_PROGRAM_B58: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
 /// Decode a base58 program/address string to 32-byte array.
 fn decode_b58(s: &str) -> Result<[u8; 32]> {
