@@ -818,12 +818,32 @@ async fn solve_and_prove_inner(
 // Marinade liquid staking — atomic single-transaction (deposit + prove)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const MARINADE_PROGRAM_B58:   &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
-const MARINADE_STATE_B58:     &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
-const MSOL_MINT_B58:          &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
-// liq_pool_msol_leg is a token account stored in Marinade state — NOT an ATA derivation
-// Fetched from devnet state account (8szGkuL...): state.liqPool.msolLeg
-const MARINADE_MSOL_LEG_B58:  &str = "7GgPYjS5Dza89wV6FpZ23kUJRG5vbQ1GM25ezspYFSoE";
+const MARINADE_PROGRAM_B58: &str = "MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD";
+const MARINADE_STATE_B58:   &str = "8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC";
+const MSOL_MINT_B58:        &str = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+
+// Byte offset of liq_pool.msol_leg (Pubkey, 32 bytes) within the Borsh-encoded MarinadeState.
+// Verified against devnet state account 8szGkuL... and stable across Marinade versions
+// as long as the state layout (anchor IDL) doesn't change.
+// mainnet: point MARINADE_STATE_B58 to mainnet state → same offset applies.
+const MARINADE_MSOL_LEG_OFFSET: usize = 420;
+
+/// Fetch liq_pool.msol_leg from the Marinade state account at runtime.
+/// This avoids hardcoding the address — works for both devnet and mainnet
+/// as long as MARINADE_STATE_B58 in config points to the correct network state.
+async fn fetch_marinade_msol_leg(rpc_url: &str) -> Result<[u8; 32]> {
+    let marinade_state = decode_b58(MARINADE_STATE_B58)?;
+    let data = fetch_account_data(rpc_url, &marinade_state).await?;
+    if data.len() < MARINADE_MSOL_LEG_OFFSET + 32 {
+        return Err(eyre::eyre!(
+            "Marinade state account too short ({} bytes), expected >= {}",
+            data.len(), MARINADE_MSOL_LEG_OFFSET + 32
+        ));
+    }
+    let mut pubkey = [0u8; 32];
+    pubkey.copy_from_slice(&data[MARINADE_MSOL_LEG_OFFSET..MARINADE_MSOL_LEG_OFFSET + 32]);
+    Ok(pubkey)
+}
 
 /// Solve (Marinade: deposit SOL → mSOL directly to recipient ATA) and prove via Wormhole.
 ///
@@ -887,14 +907,15 @@ async fn solve_marinade_and_prove_inner(
     let msol_mint        = decode_b58(MSOL_MINT_B58)?;
     let recipient        = decode_b58(recipient_b58)?;
 
-    // ── Derive all Marinade PDAs (no on-chain fetch needed) ──────────────────
+    // ── Derive Marinade PDAs ─────────────────────────────────────────────────
     // Seeds: [state_key, "<seed_str>"] @ marinade_program
-    let (liq_pool_sol_leg_pda, _)        = find_pda(&[&marinade_state, b"liq_sol"],                &marinade_program);
-    let (liq_pool_msol_leg_authority, _) = find_pda(&[&marinade_state, b"liq_st_sol_authority"],  &marinade_program);
-    let (reserve_pda, _)                 = find_pda(&[&marinade_state, b"reserve"],               &marinade_program);
-    let (msol_mint_authority, _)         = find_pda(&[&marinade_state, b"st_mint"],               &marinade_program);
-    // liq_pool_msol_leg = stored in Marinade state, NOT an ATA derivation
-    let liq_pool_msol_leg = decode_b58(MARINADE_MSOL_LEG_B58)?;
+    let (liq_pool_sol_leg_pda, _)        = find_pda(&[&marinade_state, b"liq_sol"],               &marinade_program);
+    let (liq_pool_msol_leg_authority, _) = find_pda(&[&marinade_state, b"liq_st_sol_authority"], &marinade_program);
+    let (reserve_pda, _)                 = find_pda(&[&marinade_state, b"reserve"],              &marinade_program);
+    let (msol_mint_authority, _)         = find_pda(&[&marinade_state, b"st_mint"],              &marinade_program);
+    // liq_pool_msol_leg: stored in MarinadeState.liqPool.msolLeg — fetch at runtime
+    // so this works for mainnet without code changes (just update MARINADE_STATE_B58)
+    let liq_pool_msol_leg = fetch_marinade_msol_leg(&config.solana_rpc_url).await?;
     // Recipient's mSOL ATA
     let (recipient_msol_ata, _) = find_pda(&[&recipient, &token_program, &msol_mint], &assoc_token_prog);
 
