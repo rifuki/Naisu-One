@@ -853,12 +853,211 @@ pub async fn solve_and_liquid_stake(
 // ──────────────────────────────────────────────────────────────────────────────
 // Mock yield platform executors (Jito, Jupiter, Kamino)
 // ──────────────────────────────────────────────────────────────────────────────
+// Mock vault platforms: jupSOL + kSOL (solve_stake_and_prove)
+// ──────────────────────────────────────────────────────────────────────────────
 //
-// All three follow the same pattern as solve_and_liquid_stake:
-//   1. solve_and_prove with SOLVER as recipient → solver gets SOL, VAA emitted
-//   2. Run the corresponding mock stake script → mint tokens to actual recipient
+// These use the `solve_stake_and_prove` Solana program instruction which atomically:
+//   1. CPI to mock-staking vault (solver deposits SOL → recipient gets LST)
+//   2. Emits Wormhole VAA *after* staking — proof is correct + no self-transfer waste
 //
-// The mint scripts read mock_tokens.json from their own dist/ directory.
+// Jito uses the old `solve_and_prove + JS script` pattern because the real Jito
+// devnet program cannot be CPI'd from our intent-bridge program without redeploying.
+
+/// Known mint addresses for mock vault platforms (devnet).
+const JUPSOL_MINT_B58: &str = "HD7nTaUNpoNgCZV1wNcNnoksaZYNnQcfUWkypmv5v6sP";
+const KSOL_MINT_B58:   &str = "GmPH41w5zofFsdP3LKqCnByFTxNV8r6ajQnivLdTmtpF";
+
+/// SPL token program.
+const TOKEN_PROGRAM_B58: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+/// Associated token program.
+const ASSOC_TOKEN_PROGRAM_B58: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bVimi";
+
+/// Decode a base58 program/address string to 32-byte array.
+fn decode_b58(s: &str) -> Result<[u8; 32]> {
+    bs58::decode(s)
+        .into_vec()?
+        .try_into()
+        .map_err(|_| eyre::eyre!("Invalid b58 address length: {s}"))
+}
+
+/// Atomically stake SOL into mock vault and emit Wormhole proof.
+///
+/// Calls the Solana program's `solve_stake_and_prove` instruction which:
+///   1. CPI: solver deposits `amount_lamports` SOL into the vault → recipient gets LST
+///   2. Emits Wormhole VAA with action=AUTO_STAKE flag
+///
+/// Returns (tx_signature, wormhole_sequence, minted_tokens).
+/// minted_tokens = amount_lamports (mock vault uses 1:1 rate by default).
+async fn solve_stake_and_prove_inner(
+    config: &Config,
+    order_id: [u8; 32],
+    recipient_b58: &str,
+    mint_b58: &str,
+    amount_lamports: u64,
+) -> Result<(String, u64, u64)> {
+    // ── Load keypair ──────────────────────────────────────────────────────────
+    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
+    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
+
+    // ── Decode addresses ──────────────────────────────────────────────────────
+    let program_id        = decode_b58(&config.solana_program_id)?;
+    let wormhole_prog     = decode_b58(&config.solana_wormhole_program_id)?;
+    let staking_program   = decode_b58(&config.liquid_staking_program_id)?;
+    let token_program     = decode_b58(TOKEN_PROGRAM_B58)?;
+    let assoc_token_prog  = decode_b58(ASSOC_TOKEN_PROGRAM_B58)?;
+    let mint              = decode_b58(mint_b58)?;
+    let recipient         = decode_b58(recipient_b58)?;
+
+    // ── Derive PDAs ───────────────────────────────────────────────────────────
+    let (config_pda, _)               = find_pda(&[b"config"], &program_id);
+    let (wh_bridge_pda, _)            = find_pda(&[b"Bridge"], &wormhole_prog);
+    let (wh_emitter_pda, _)           = find_pda(&[b"emitter"], &program_id);
+    let (wh_sequence_pda, _)          = find_pda(&[b"Sequence", &wh_emitter_pda], &wormhole_prog);
+    let (wh_fee_collector_pda, _)     = find_pda(&[b"fee_collector"], &wormhole_prog);
+    // Vault PDA: seeds = ["vault", mint] @ staking_program
+    let (vault_state_pda, _)          = find_pda(&[b"vault", &mint], &staking_program);
+    // Recipient ATA: seeds = [recipient, token_program, mint] @ assoc_token_prog
+    let (recipient_ata, _)            = find_pda(&[&recipient, &token_program, &mint], &assoc_token_prog);
+
+    // ── Fresh wormhole_message keypair ────────────────────────────────────────
+    let msg_secret = {
+        use sha2::Digest;
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let mut h = sha2::Sha256::new();
+        h.update(order_id);
+        h.update(solver_pubkey);
+        h.update(amount_lamports.to_le_bytes());
+        h.update(b"solve_stake_and_prove");
+        h.update(now_ns.to_le_bytes());
+        let r: [u8; 32] = h.finalize().into();
+        r
+    };
+    let wh_message_key = ed25519_dalek::SigningKey::from_bytes(&msg_secret);
+    let wh_message_pubkey: [u8; 32] = wh_message_key.verifying_key().to_bytes();
+
+    // ── Solver EVM address (for VAA payload) ──────────────────────────────────
+    let solver_evm: ethers::signers::LocalWallet = config
+        .evm_private_key
+        .parse()
+        .map_err(|e| eyre::eyre!("Invalid evm_private_key: {e}"))?;
+    let mut solver_evm_addr = [0u8; 32];
+    solver_evm_addr[12..].copy_from_slice(solver_evm.address().as_bytes());
+
+    // ── Sysvars ───────────────────────────────────────────────────────────────
+    let clock_sysvar = decode_b58("SysvarC1ock11111111111111111111111111111111")?;
+    let rent_sysvar  = decode_b58("SysvarRent111111111111111111111111111111111")?;
+
+    // ── Instruction data ──────────────────────────────────────────────────────
+    // solve_stake_and_prove(order_id: [u8;32], solver_address: [u8;32], amount_lamports: u64)
+    // = disc(8) + [u8;32](32) + [u8;32](32) + u64(8) = 80 bytes
+    let discriminator = instruction_discriminator("solve_stake_and_prove");
+    let mut ix_data = discriminator.to_vec();
+    ix_data.extend_from_slice(&order_id);
+    ix_data.extend_from_slice(&solver_evm_addr);
+    ix_data.extend_from_slice(&amount_lamports.to_le_bytes());
+
+    // ── Account list (Anchor struct order) ────────────────────────────────────
+    // SolveStakeAndProve:
+    //  0 solver           mut signer
+    //  1 recipient        mut
+    //  2 staking_program  readonly
+    //  3 vault_state      mut
+    //  4 mint             mut
+    //  5 recipient_ata    mut
+    //  6 token_program    readonly
+    //  7 assoc_token_prog readonly
+    //  8 config           readonly (PDA)
+    //  9 wormhole_program readonly
+    // 10 wormhole_bridge  mut
+    // 11 wormhole_message mut signer
+    // 12 wormhole_emitter readonly (PDA)
+    // 13 wormhole_sequence mut
+    // 14 wh_fee_collector mut
+    // 15 clock            readonly
+    // 16 rent             readonly
+    // 17 system_program   readonly
+    // 18 program_id       (program being called — not in accounts list, separate field)
+    let accounts = vec![
+        AccountRef { pubkey: solver_pubkey,         is_signer: true,  is_writable: true  }, // 0
+        AccountRef { pubkey: recipient,             is_signer: false, is_writable: true  }, // 1
+        AccountRef { pubkey: staking_program,       is_signer: false, is_writable: false }, // 2
+        AccountRef { pubkey: vault_state_pda,       is_signer: false, is_writable: true  }, // 3
+        AccountRef { pubkey: mint,                  is_signer: false, is_writable: true  }, // 4
+        AccountRef { pubkey: recipient_ata,         is_signer: false, is_writable: true  }, // 5
+        AccountRef { pubkey: token_program,         is_signer: false, is_writable: false }, // 6
+        AccountRef { pubkey: assoc_token_prog,      is_signer: false, is_writable: false }, // 7
+        AccountRef { pubkey: config_pda,            is_signer: false, is_writable: false }, // 8
+        AccountRef { pubkey: wormhole_prog,         is_signer: false, is_writable: false }, // 9
+        AccountRef { pubkey: wh_bridge_pda,         is_signer: false, is_writable: true  }, // 10
+        AccountRef { pubkey: wh_message_pubkey,     is_signer: true,  is_writable: true  }, // 11
+        AccountRef { pubkey: wh_emitter_pda,        is_signer: false, is_writable: false }, // 12
+        AccountRef { pubkey: wh_sequence_pda,       is_signer: false, is_writable: true  }, // 13
+        AccountRef { pubkey: wh_fee_collector_pda,  is_signer: false, is_writable: true  }, // 14
+        AccountRef { pubkey: clock_sysvar,          is_signer: false, is_writable: false }, // 15
+        AccountRef { pubkey: rent_sysvar,           is_signer: false, is_writable: false }, // 16
+        AccountRef { pubkey: SYSTEM_PROGRAM,        is_signer: false, is_writable: false }, // 17
+        AccountRef { pubkey: program_id,            is_signer: false, is_writable: false }, // 18 (program)
+    ];
+    // ix_accounts: indices into `accounts` in Anchor struct field order (0..17)
+    let ix_accounts: Vec<u8> = (0u8..18).collect();
+    let program_id_index: u8 = 18;
+
+    // ── Build + submit ────────────────────────────────────────────────────────
+    let blockhash = get_latest_blockhash(&config.solana_rpc_url).await?;
+    let tx_bytes = build_and_sign_transaction(
+        &accounts,
+        &ix_data,
+        &ix_accounts,
+        program_id_index,
+        blockhash,
+        &signing_key,
+        &[&wh_message_key],
+    );
+    let tx_b64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
+
+    info!(
+        order_id = %hex::encode(order_id),
+        amount_lamports,
+        recipient = %recipient_b58,
+        mint = %mint_b58,
+        "Submitting solve_stake_and_prove transaction..."
+    );
+
+    let sig = send_and_confirm_transaction(&config.solana_rpc_url, &tx_b64).await?;
+
+    // Parse wormhole sequence from logs
+    let tx_logs = fetch_transaction_logs(&config.solana_rpc_url, &sig).await;
+    let wormhole_sequence = match parse_sequence_from_logs(&tx_logs) {
+        Some(seq) => seq,
+        None => {
+            warn!(signature = %sig, "Could not parse Wormhole sequence from logs — falling back to account read");
+            get_account_sequence(&config.solana_rpc_url, &wh_sequence_pda)
+                .await
+                .unwrap_or(0)
+                .saturating_sub(1)
+        }
+    };
+
+    info!(
+        order_id = %hex::encode(order_id),
+        signature = %sig,
+        wormhole_sequence,
+        minted = amount_lamports,
+        "solve_stake_and_prove confirmed — LST minted to recipient."
+    );
+
+    // minted = amount_lamports (mock vault default 1:1 exchange rate)
+    Ok((sig, wormhole_sequence, amount_lamports))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Old pattern: solve_and_prove + JS script (kept for Jito real devnet,
+// which cannot be CPI'd from the intent-bridge program without redeploying)
+// ──────────────────────────────────────────────────────────────────────────────
 
 /// Helper: run a mock stake script and parse TOKEN_MINTED:<amount> from stdout.
 async fn run_mock_stake_script(
@@ -952,76 +1151,42 @@ pub async fn solve_and_jito(
     Ok((sig, wh_seq, minted))
 }
 
-/// solve_and_jupsol: EVM→Solana bridge + mock Jupiter liquid staking (jupSOL).
+/// solve_and_jupsol: EVM→Solana bridge + jupSOL vault staking (atomic proof).
+///
+/// Uses `solve_stake_and_prove` — solver deposits SOL into mock vault,
+/// recipient receives jupSOL, Wormhole VAA emitted atomically in same tx.
 pub async fn solve_and_jupsol(
     config: &Config,
     order_id: [u8; 32],
     recipient_b58: &str,
     amount_lamports: u64,
 ) -> Result<(String, u64, u64)> {
-    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
-    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
-
     info!(
         order_id = %hex::encode(order_id),
         amount_lamports,
         actual_recipient = %recipient_b58,
-        "Starting bridge+jupsol_stake flow"
+        "Starting bridge+jupsol_stake (solve_stake_and_prove)"
     );
-
-    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
-
-    let minted = run_mock_stake_script(
-        config, order_id, "jupsol_stake.js", "jupsol", recipient_b58, amount_lamports,
-    ).await?;
-
-    info!(
-        order_id = %hex::encode(order_id),
-        signature = %sig,
-        wormhole_sequence = wh_seq,
-        jupsol_minted = minted,
-        "Bridge+jupsol complete."
-    );
-
-    Ok((sig, wh_seq, minted))
+    solve_stake_and_prove_inner(config, order_id, recipient_b58, JUPSOL_MINT_B58, amount_lamports).await
 }
 
-/// solve_and_kamino: EVM→Solana bridge + mock Kamino lending (kSOL).
+/// solve_and_kamino: EVM→Solana bridge + kSOL vault staking (atomic proof).
+///
+/// Uses `solve_stake_and_prove` — solver deposits SOL into mock vault,
+/// recipient receives kSOL, Wormhole VAA emitted atomically in same tx.
 pub async fn solve_and_kamino(
     config: &Config,
     order_id: [u8; 32],
     recipient_b58: &str,
     amount_lamports: u64,
 ) -> Result<(String, u64, u64)> {
-    let secret_bytes = parse_solana_private_key(&config.solana_private_key)?;
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_bytes);
-    let solver_pubkey: [u8; 32] = signing_key.verifying_key().to_bytes();
-    let solver_b58 = bs58::encode(&solver_pubkey).into_string();
-
     info!(
         order_id = %hex::encode(order_id),
         amount_lamports,
         actual_recipient = %recipient_b58,
-        "Starting bridge+kamino_stake flow"
+        "Starting bridge+kamino_stake (solve_stake_and_prove)"
     );
-
-    let (sig, wh_seq) = solve_and_prove(config, order_id, &solver_b58, amount_lamports).await?;
-
-    let minted = run_mock_stake_script(
-        config, order_id, "kamino_stake.js", "kamino", recipient_b58, amount_lamports,
-    ).await?;
-
-    info!(
-        order_id = %hex::encode(order_id),
-        signature = %sig,
-        wormhole_sequence = wh_seq,
-        ksol_minted = minted,
-        "Bridge+kamino complete."
-    );
-
-    Ok((sig, wh_seq, minted))
+    solve_stake_and_prove_inner(config, order_id, recipient_b58, KSOL_MINT_B58, amount_lamports).await
 }
 
 /// Parse the Wormhole sequence number from confirmed transaction logs.

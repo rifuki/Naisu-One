@@ -34,6 +34,7 @@ pub struct Config {
     pub solana_ws_url: Option<String>, // SOLANA_WS_URL — optional, defaults to derived from RPC URL
     pub solana_private_key: String,
     pub solana_program_id: String,
+    pub liquid_staking_program_id: String, // mock-staking program for jupSOL/kSOL vaults
 
     // Solana Wormhole
     pub solana_wormhole_program_id: String,
@@ -88,6 +89,8 @@ impl Config {
             solana_ws_url: env::var("SOLANA_WS_URL").ok(),
             solana_private_key: require_env("SOLANA_PRIVATE_KEY")?,
             solana_program_id: require_env("SOLANA_PROGRAM_ID")?,
+            liquid_staking_program_id: env::var("LIQUID_STAKING_PROGRAM_ID")
+                .unwrap_or_else(|_| "9W1HN3QiTTUjBgr6ACPQT6jR6SQwgBdi2mFbb44aiWvJ".to_string()),
 
             solana_wormhole_program_id: require_env("SOLANA_WORMHOLE_PROGRAM_ID")?,
             solana_emitter_address: require_env("SOLANA_EMITTER_ADDRESS")?,
