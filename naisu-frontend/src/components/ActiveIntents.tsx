@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { encodeFunctionData } from 'viem';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi';
+import { INTENT_BRIDGE_ABI } from '@/lib/abi/intent-bridge';
 import { useIntentOrders, type IntentRow } from '@/hooks/useIntentOrders';
 import {
   BASE_SEPOLIA_CONTRACT,

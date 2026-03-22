@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { decodeFunctionData, formatEther } from 'viem';
-import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi';
+import { INTENT_BRIDGE_ABI } from '@/lib/abi/intent-bridge';
 
 import { AGENT_URL, AGENT_PROJECT_ID as PROJECT_ID } from '@/lib/env'
 

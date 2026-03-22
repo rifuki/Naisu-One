@@ -19,7 +19,7 @@ import {
   SOLANA_PROGRAM_ID,
   WORMHOLE_CHAIN_SOLANA,
 } from '@/lib/constants'
-import { INTENT_BRIDGE_ABI } from '@/lib/abi/abi'
+import { INTENT_BRIDGE_ABI } from '@/lib/abi/intent-bridge'
 import { BorshAccountsCoder } from '@coral-xyz/anchor'
 import IntentBridgeIDL from '@/lib/idl/intent_bridge_solana.json'
 import { BACKEND_URL } from '@/lib/env'
