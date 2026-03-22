@@ -202,9 +202,7 @@ function SwapPage() {
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-600 pb-2">
-          Intent Bridge · Dutch auction · Wormhole · Base Sepolia ↔ Solana Devnet
-        </p>
+
       </div>
 
       {/* WalletMultiButton style override */}
