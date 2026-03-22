@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { VersionedTransaction } from '@solana/web3.js';
 import { rawToUi } from '@/lib/utils';
@@ -59,7 +60,7 @@ export function PositionsTab({ solAddress }: PositionsTabProps) {
           className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors"
           disabled={isLoading}
         >
-          <span className="material-symbols-outlined text-[18px]">{isLoading ? 'sync' : 'refresh'}</span>
+          <RefreshCw size={18} strokeWidth={1.5} className={isLoading ? 'animate-spin' : ''} />
         </Button>
       </div>
 

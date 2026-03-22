@@ -7,6 +7,7 @@
  *             dipakai otomatis kalau backend tidak respond dalam 5 detik.
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ExternalLink, X, LockOpen, Clock, AlertTriangle, Loader2, Inbox, RefreshCw, Receipt, Info, Lock, Users, CheckCircle2 } from 'lucide-react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { encodeFunctionData } from 'viem';
@@ -83,7 +84,7 @@ function TxLink({ label, hash, href }: { label: string; hash: string; href: stri
         className="flex items-center gap-1 text-xs font-mono text-primary hover:underline break-all"
       >
         {shortHash(hash)}
-        <span className="material-symbols-outlined text-xs">open_in_new</span>
+        <ExternalLink size={12} strokeWidth={1.5} />
       </a>
     </div>
   );
@@ -136,7 +137,7 @@ function IntentDetailDialog({
             <StatusBadge status={intent.status} expired={expired} />
           </div>
           <Button variant="ghost" size="auto" onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
-            <span className="material-symbols-outlined">close</span>
+            <X size={16} strokeWidth={1.5} />
           </Button>
         </div>
 
@@ -192,7 +193,7 @@ function IntentDetailDialog({
                   className="flex items-center gap-1 text-xs font-mono text-emerald-400 hover:underline break-all"
                 >
                   {intent.recipient}
-                  <span className="material-symbols-outlined text-xs">open_in_new</span>
+                  <ExternalLink size={12} strokeWidth={1.5} />
                 </a>
               ) : (
                 <p className="text-xs font-mono break-all text-slate-300">{intent.recipient}</p>
@@ -262,7 +263,7 @@ function IntentDetailDialog({
                   <a href={`${evmExp}/address/${intent.solverAddress}`} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-1 text-xs font-mono text-purple-400 hover:underline break-all">
                     {intent.solverAddress}
-                    <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    <ExternalLink size={12} strokeWidth={1.5} />
                   </a>
                 </div>
               )}
@@ -328,11 +329,11 @@ function OrderCard({
                 className="text-[10px] font-mono text-slate-500 hover:text-primary transition-colors flex items-center gap-0.5"
               >
                 {shortHash(intent.txDigest, 6, 4)}
-                <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                <ExternalLink size={10} strokeWidth={1.5} />
               </a>
             ) : (
               <span className="text-[10px] font-mono text-slate-600 flex items-center gap-0.5">
-                <span className="material-symbols-outlined text-[10px]">lock_open</span>
+                <LockOpen size={10} strokeWidth={1.5} />
                 Gasless
               </span>
             )}
@@ -380,7 +381,7 @@ function OrderCard({
             <div className="flex items-center justify-between text-[10px]">
               <span className="text-slate-600">Floor: {(intent.floorPrice / 1e9).toFixed(6)} {dstCurrency}</span>
               <span className={timeLeft < 60000 ? 'text-red-400 font-semibold' : 'text-slate-500'}>
-                <span className="material-symbols-outlined text-[10px] align-middle mr-0.5">timer</span>
+                <Clock size={10} strokeWidth={1.5} className="inline align-middle mr-0.5" />
                 {formatTimeRemaining(timeLeft)}
               </span>
             </div>
@@ -397,7 +398,7 @@ function OrderCard({
                   target="_blank" rel="noopener noreferrer"
                   className="font-mono text-emerald-400 hover:underline">
                   {intent.recipient.slice(0, 6)}...{intent.recipient.slice(-4)}
-                  <span className="material-symbols-outlined text-[10px] align-middle ml-0.5">open_in_new</span>
+                  <ExternalLink size={10} strokeWidth={1.5} className="inline align-middle ml-0.5" />
                 </a>
               </div>
             )}
@@ -439,8 +440,8 @@ function OrderCard({
                 } disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {cancelling
-                ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                : <span className="material-symbols-outlined text-sm">{expired ? 'savings' : 'cancel'}</span>
+                ? <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
+                : expired ? <RefreshCw size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />
               }
               {expired ? 'Refund' : 'Cancel'}
             </Button>
@@ -452,7 +453,7 @@ function OrderCard({
             className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold
               bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 transition-all"
           >
-            <span className="material-symbols-outlined text-sm">info</span>
+            <Info size={14} strokeWidth={1.5} />
             Details
           </Button>
         </div>
@@ -604,9 +605,7 @@ export default function ActiveIntents() {
           ${displayCount > 0 ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-[#0c1211] shadow-[0_0_20px_rgba(13,242,223,0.4)] animate-pulse' : ''}
         `}
       >
-        <span className={`material-symbols-outlined text-xl text-primary transition-transform ${displayCount > 0 ? 'group-hover:-translate-y-1' : ''}`}>
-          receipt_long
-        </span>
+        <Receipt size={20} strokeWidth={1.5} className={`text-primary transition-transform ${displayCount > 0 ? 'group-hover:-translate-y-1' : ''}`} />
         <span className="text-sm font-semibold text-white hidden sm:block">Intents</span>
         {displayCount > 0 && (
           <span className={`flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold transition-all
@@ -628,7 +627,7 @@ export default function ActiveIntents() {
             {/* Panel header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 flex-shrink-0">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-base text-primary">receipt_long</span>
+                <Receipt size={16} strokeWidth={1.5} className="text-primary" />
                 <span className="text-sm font-semibold text-white">Active Intents</span>
                 {!backendUp && (
                   <span className="text-[9px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded-full">RPC fallback</span>
@@ -650,10 +649,10 @@ export default function ActiveIntents() {
                   title="Refresh"
                 >
                   {/* Spin hanya saat background refresh (sudah ada data), bukan saat first-load */}
-                  <span className={`material-symbols-outlined text-base ${isLoading && allOrders.length > 0 ? 'animate-spin' : ''}`}>refresh</span>
+                  <RefreshCw size={16} strokeWidth={1.5} className={isLoading && allOrders.length > 0 ? 'animate-spin' : ''} />
                 </Button>
                 <Button variant="ghost" size="auto" onClick={() => setOpen(false)} className="text-slate-500 hover:text-white transition-colors">
-                  <span className="material-symbols-outlined text-base">close</span>
+                  <X size={16} strokeWidth={1.5} />
                 </Button>
               </div>
             </div>
@@ -680,7 +679,7 @@ export default function ActiveIntents() {
             {stats.expired > 0 && (
               <div className="px-4 py-2 bg-orange-500/5 border-b border-orange-500/10 flex-shrink-0">
                 <p className="text-[10px] text-orange-400">
-                  <span className="material-symbols-outlined text-xs align-middle mr-0.5">warning</span>
+                  <AlertTriangle size={12} strokeWidth={1.5} className="inline align-middle mr-0.5" />
                   {stats.expired} order{stats.expired > 1 ? 's' : ''} expired — click Refund to recover ETH
                 </p>
               </div>
@@ -691,12 +690,12 @@ export default function ActiveIntents() {
               {/* First-load spinner: hanya saat belum pernah fetch */}
               {((activeTab === 'evm' && !evmFetched) || (activeTab === 'solana' && !solanaFetched)) ? (
                 <div className="flex items-center justify-center py-12 text-slate-500 text-sm">
-                  <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+                  <Loader2 size={16} strokeWidth={1.5} className="animate-spin mr-2" />
                   Scanning chain...
                 </div>
               ) : filteredOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <span className="material-symbols-outlined text-4xl text-slate-700 mb-2">inbox</span>
+                  <Inbox size={40} strokeWidth={1.5} className="text-slate-700 mb-2" />
                   <p className="text-slate-500 text-sm">No intents found</p>
                   {activeTab === 'evm' && !evmAddress && (
                     <p className="text-slate-700 text-xs mt-1">Connect EVM wallet to see orders</p>

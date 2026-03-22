@@ -1,5 +1,5 @@
 import { ReactNode, useRef, useEffect } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatMessage, MessageBubble } from './message-bubble';
 import { SignIntentMessage } from './sign-intent-message';
@@ -170,7 +170,7 @@ export function MessageList({
           >
             <div className="flex-shrink-0 mt-2 hidden sm:block">
               <div className="size-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                <span className="material-symbols-outlined text-red-400 text-xl">error</span>
+                <XCircle size={20} strokeWidth={1.5} className="text-red-400" />
               </div>
             </div>
             <div className="flex-1 max-w-2xl">

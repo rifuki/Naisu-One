@@ -1,5 +1,6 @@
 import { type ReactNode, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { ChatMessage } from './message-bubble';
 import { MessageList } from './message-list';
@@ -35,7 +36,6 @@ interface IntentChatProps {
   onSend: (overrideText?: string) => void;
   onRetry: () => void;
   onNewChat: () => void;
-  onOpenSettings: () => void;
   onDutchPlanConfirm?: (intent: GaslessIntentData) => void;
   // Sign intent card props (rendered inline in chat instead of floating)
   pendingSignIntent?: SignIntentParams | null;
@@ -87,7 +87,7 @@ function renderMarkdown(content: string) {
       [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-white [&_h2]:mb-2
       [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-white [&_h3]:mb-1"
     >
-      <ReactMarkdown>{sanitizedContent}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{sanitizedContent}</ReactMarkdown>
     </div>
   );
 }
@@ -103,7 +103,6 @@ export function IntentChat({
   onSend,
   onRetry,
   onNewChat,
-  onOpenSettings,
   onDutchPlanConfirm,
   pendingSignIntent,
   signIntentStatus,

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
+import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
@@ -144,7 +145,7 @@ function SwapPage() {
                     : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">refresh</span>
+                <RefreshCw size={18} strokeWidth={1.5} />
               </Button>
             )}
           </div>
@@ -187,7 +188,7 @@ function SwapPage() {
                 rel="noopener noreferrer"
                 className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                <ExternalLink size={14} strokeWidth={1.5} />
                 View on BaseScan
               </a>
               <Button

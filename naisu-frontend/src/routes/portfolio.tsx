@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
@@ -112,7 +113,7 @@ function PortfolioPage() {
           className="p-2 text-slate-500 hover:text-slate-300"
           disabled={isLoading}
         >
-          <span className="material-symbols-outlined">{isLoading ? 'sync' : 'refresh'}</span>
+          <RefreshCw size={16} strokeWidth={1.5} className={isLoading ? 'animate-spin' : ''} />
         </Button>
       </div>
 

@@ -2,6 +2,7 @@ import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from '
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { GROQ_API_KEY } from '@/lib/env';
 import { Button } from '@/components/ui/button';
+import { Sparkles, Loader2, ArrowRight } from 'lucide-react';
 
 export const Route = createFileRoute("/")({
   component: LandingPage,
@@ -323,16 +324,12 @@ const LandingPage: React.FC = () => {
               }}
             >
               {/* Sparkle */}
-              <span
-                className="material-symbols-outlined animate-pulse-slow flex-shrink-0"
-                style={{
-                  fontSize: 22,
-                  color: '#0df2df',
-                  fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24",
-                }}
-              >
-                auto_awesome
-              </span>
+              <Sparkles
+                size={22}
+                strokeWidth={1.5}
+                className="animate-pulse-slow flex-shrink-0"
+                style={{ color: '#0df2df' }}
+              />
 
               {/* Input field */}
               <input
@@ -371,12 +368,10 @@ const LandingPage: React.FC = () => {
                   onMouseEnter={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#3a4a47'; }}
                 >
-                  <span
-                    className={isListening ? 'animate-pulse' : isTranscribing ? 'animate-spin' : ''}
-                    style={{ fontSize: 20, fontFamily: 'Material Symbols Outlined' }}
-                  >
-                    {isTranscribing ? 'progress_activity' : 'mic'}
-                  </span>
+                  {isTranscribing
+                    ? <Loader2 size={20} strokeWidth={1.5} className="animate-spin" />
+                    : <span className={isListening ? 'animate-pulse' : ''} style={{ fontSize: 20, fontFamily: 'Material Symbols Outlined' }}>mic</span>
+                  }
                 </Button>
               )}
 
@@ -395,9 +390,7 @@ const LandingPage: React.FC = () => {
                   transition: 'all 0.2s ease',
                 }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: 20, fontVariationSettings: "'wght' 500" }}>
-                  arrow_forward
-                </span>
+                <ArrowRight size={20} strokeWidth={1.5} />
               </Button>
             </div>
           </div>

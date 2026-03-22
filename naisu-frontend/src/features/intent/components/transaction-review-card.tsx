@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { Receipt, ArrowRight, Wallet, Copy, XCircle, X } from 'lucide-react';
 
 interface DecodedTx {
   amountEth: string;
@@ -46,9 +47,7 @@ export function TransactionReviewCard({
             {/* Header */}
             <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-white/5">
               <div className="size-6 rounded-lg bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-primary" style={{ fontSize: '14px' }}>
-                  receipt_long
-                </span>
+                <Receipt size={14} strokeWidth={1.5} className="text-primary" />
               </div>
               <span className="text-[11px] font-bold text-primary uppercase tracking-[0.12em]">
                 Review Transaction
@@ -67,7 +66,7 @@ export function TransactionReviewCard({
                     <div className="flex items-baseline gap-2 mb-1">
                       <span className="text-[22px] font-bold text-white tabular-nums">{d.amountEth}</span>
                       <span className="text-[13px] text-slate-400 font-medium">ETH</span>
-                      <span className="material-symbols-outlined text-slate-600 text-[16px]">arrow_forward</span>
+                      <ArrowRight size={16} strokeWidth={1.5} className="text-slate-600" />
                       <span className="text-[13px] font-semibold text-primary">~SOL</span>
                       <span className="text-[11px] text-slate-500">on {d.destinationLabel}</span>
                     </div>
@@ -75,9 +74,7 @@ export function TransactionReviewCard({
                     {/* Recipient */}
                     <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/3 border border-white/6">
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-slate-500 text-[14px]">
-                          account_balance_wallet
-                        </span>
+                        <Wallet size={14} strokeWidth={1.5} className="text-slate-500" />
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider">Recipient</span>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -87,7 +84,7 @@ export function TransactionReviewCard({
                           className="text-slate-600 hover:text-primary transition-colors"
                           title={d.recipient}
                         >
-                          <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                          <Copy size={12} strokeWidth={1.5} />
                         </Button>
                       </div>
                     </div>
@@ -149,7 +146,7 @@ export function TransactionReviewCard({
                 {txStatus ? (
                   <div className="flex flex-col items-center gap-2 py-2">
                     {!isFailed && <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />}
-                    {isFailed && <span className="material-symbols-outlined text-red-500 text-lg">error</span>}
+                    {isFailed && <XCircle size={18} strokeWidth={1.5} className="text-red-500" />}
                     <span className={`text-[11px] text-center leading-tight ${isFailed ? 'text-red-400 font-medium' : 'text-primary/80'}`}>{txStatus}</span>
                   </div>
                 ) : (
@@ -158,14 +155,14 @@ export function TransactionReviewCard({
                       onClick={onConfirm}
                       className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
                     >
-                      <span className="material-symbols-outlined text-[14px]">account_balance_wallet</span>
+                      <Wallet size={14} strokeWidth={1.5} />
                       Sign & Send
                     </Button>
                     <Button
                       onClick={onDismiss}
                       className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
                     >
-                      <span className="material-symbols-outlined text-[13px]">close</span>
+                      <X size={13} strokeWidth={1.5} />
                       Dismiss
                     </Button>
                   </>

@@ -1,5 +1,6 @@
 import type { SignIntentParams } from '../hooks/use-sign-intent';
 import { Button } from '@/components/ui/button';
+import { ShieldCheck, ArrowRight, Wallet, Copy, Fuel, CheckCircle2, XCircle, Check, PenLine, X } from 'lucide-react';
 
 interface ProgressStep {
   key: string
@@ -115,7 +116,7 @@ export function GaslessIntentReviewCard({
             {/* Fulfilled receipt banner */}
             {fulfilled && (
               <div className="px-5 py-2 flex items-center gap-2 bg-green-500/10 border-b border-green-500/20">
-                <span className="material-symbols-outlined text-green-400 text-[16px]">verified</span>
+                <ShieldCheck size={16} strokeWidth={1.5} className="text-green-400" />
                 <span className="text-[11px] font-bold text-green-400 uppercase tracking-[0.1em]">Fulfilled — Receipt</span>
                 <span className="ml-auto text-[10px] text-green-500/60">Permanent record</span>
               </div>
@@ -123,12 +124,10 @@ export function GaslessIntentReviewCard({
             {/* Header with FREE badge */}
             <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-white/5">
               <div className={`size-6 rounded-lg flex items-center justify-center shrink-0 ${fulfilled ? 'bg-green-500/15 border border-green-500/20' : 'bg-primary/15 border border-primary/20'}`}>
-                <span
-                  className={`material-symbols-outlined text-[14px] ${fulfilled ? 'text-green-400' : 'text-primary'}`}
-                  style={{ fontSize: '14px' }}
-                >
-                  {fulfilled ? 'check_circle' : 'signature'}
-                </span>
+                {fulfilled
+                  ? <CheckCircle2 size={14} strokeWidth={1.5} className="text-green-400" />
+                  : <PenLine size={14} strokeWidth={1.5} className="text-primary" />
+                }
               </div>
               <span className={`text-[11px] font-bold uppercase tracking-[0.12em] ${fulfilled ? 'text-green-400' : 'text-primary'}`}>
                 {fulfilled ? 'Intent Fulfilled' : 'Sign Intent'}
@@ -151,9 +150,7 @@ export function GaslessIntentReviewCard({
                     {intent.amount}
                   </span>
                   <span className="text-[13px] text-slate-400 font-medium">ETH</span>
-                  <span className="material-symbols-outlined text-slate-600 text-[16px]">
-                    arrow_forward
-                  </span>
+                  <ArrowRight size={16} strokeWidth={1.5} className="text-slate-600" />
                   {fulfilled && fillPrice ? (
                     <>
                       <span className="text-[22px] font-bold text-green-400 tabular-nums">
@@ -178,9 +175,7 @@ export function GaslessIntentReviewCard({
                 {/* Recipient */}
                 <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/3 border border-white/6">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-slate-500 text-[14px]">
-                      account_balance_wallet
-                    </span>
+                    <Wallet size={14} strokeWidth={1.5} className="text-slate-500" />
                     <span className="text-[10px] text-slate-500 uppercase tracking-wider">
                       Recipient
                     </span>
@@ -192,7 +187,7 @@ export function GaslessIntentReviewCard({
                       className="text-slate-600 hover:text-primary transition-colors"
                       title={intent.recipientAddress}
                     >
-                      <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                      <Copy size={12} strokeWidth={1.5} />
                     </Button>
                   </div>
                 </div>
@@ -239,7 +234,7 @@ export function GaslessIntentReviewCard({
                     </div>
                     <div className="flex flex-col px-2.5 py-2 rounded-lg bg-green-500/5 border border-green-500/20">
                       <div className="flex items-center gap-1 mb-0.5">
-                        <span className="material-symbols-outlined text-green-500 text-[10px]">verified_user</span>
+                        <ShieldCheck size={10} strokeWidth={1.5} className="text-green-500" />
                         <span className="text-[9px] text-green-600 uppercase tracking-wider">Min. receive</span>
                       </div>
                       <span className="text-[11px] font-mono text-green-400 font-semibold">
@@ -260,9 +255,7 @@ export function GaslessIntentReviewCard({
                 {/* Gas cost display */}
                 <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-green-500/5 border border-green-500/20">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-green-400 text-[14px]">
-                      local_gas_station
-                    </span>
+                    <Fuel size={14} strokeWidth={1.5} className="text-green-400" />
                     <span className="text-[10px] text-green-400 uppercase tracking-wider font-medium">
                       Network Fee
                     </span>
@@ -294,7 +287,7 @@ export function GaslessIntentReviewCard({
                             <div className="relative z-10">
                               {step.done ? (
                                 <div className="size-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                                  <span className="material-symbols-outlined text-green-400 text-[14px]">check</span>
+                                  <Check size={14} strokeWidth={1.5} className="text-green-400" />
                                 </div>
                               ) : step.active ? (
                                 <div className="size-6 rounded-full bg-primary/20 border border-primary/50 flex items-center justify-center">
@@ -343,12 +336,10 @@ export function GaslessIntentReviewCard({
                         <div className="size-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       )}
                       {isFailed && (
-                        <span className="material-symbols-outlined text-red-500 text-lg">error</span>
+                        <XCircle size={18} strokeWidth={1.5} className="text-red-500" />
                       )}
                       {isSuccess && (
-                        <span className="material-symbols-outlined text-green-500 text-lg">
-                          check_circle
-                        </span>
+                        <CheckCircle2 size={18} strokeWidth={1.5} className="text-green-500" />
                       )}
                       <span
                         className={`text-[11px] text-center leading-tight ${
@@ -368,14 +359,14 @@ export function GaslessIntentReviewCard({
                         onClick={onConfirm}
                         className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-primary text-black text-[12px] font-bold hover:bg-primary/90 active:scale-95 transition-all shadow-[0_0_20px_-4px_rgba(13,242,223,0.6)]"
                       >
-                        <span className="material-symbols-outlined text-[14px]">signature</span>
+                        <PenLine size={14} strokeWidth={1.5} />
                         Sign (Free)
                       </Button>
                       <Button
                         onClick={onDismiss}
                         className="w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-white/4 border border-white/8 text-slate-500 text-[11px] hover:bg-white/8 hover:text-slate-300 transition-all"
                       >
-                        <span className="material-symbols-outlined text-[13px]">close</span>
+                        <X size={13} strokeWidth={1.5} />
                         Dismiss
                       </Button>
                     </>

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { X, Clock } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,7 +16,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold text-white">Intent Parameters</h3>
           <Button onClick={onClose} className="text-slate-400 hover:text-white">
-            <span className="material-symbols-outlined">close</span>
+            <X size={16} strokeWidth={1.5} />
           </Button>
         </div>
 
@@ -40,7 +41,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               Execution Deadline
             </label>
             <div className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-lg px-4 py-3">
-              <span className="material-symbols-outlined text-slate-400">timer</span>
+              <Clock size={16} strokeWidth={1.5} className="text-slate-400" />
               <span className="text-sm text-white font-medium">5 minutes</span>
               <span className="text-xs text-slate-500 ml-auto">Default</span>
             </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { Button } from '@/components/ui/button';
+import { CheckCircle2, XCircle, ArrowLeftRight } from 'lucide-react';
 
 interface SolanaTxWidgetProps {
   tx: string;           // base64-encoded VersionedTransaction
@@ -58,7 +59,7 @@ export function SolanaTxWidget({ tx, action, description }: SolanaTxWidgetProps)
     return (
       <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 space-y-1">
         <div className="flex items-center gap-2 text-emerald-400">
-          <span className="material-symbols-outlined text-[18px]">check_circle</span>
+          <CheckCircle2 size={18} strokeWidth={1.5} />
           <span className="font-semibold text-sm">Transaction confirmed!</span>
         </div>
         <p className="text-slate-400 text-xs font-mono pl-6">
@@ -71,13 +72,13 @@ export function SolanaTxWidget({ tx, action, description }: SolanaTxWidgetProps)
   return (
     <div className="rounded-xl bg-[#0d1614] border border-white/8 p-4 space-y-3">
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary text-[18px]">currency_exchange</span>
+        <ArrowLeftRight size={18} strokeWidth={1.5} className="text-primary" />
         <span className="text-white font-semibold text-sm">{description}</span>
       </div>
 
       {error && (
         <p className="text-xs text-red-400 flex items-start gap-1.5">
-          <span className="material-symbols-outlined text-[14px] shrink-0 mt-0.5">error</span>
+          <XCircle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
           {error}
         </p>
       )}

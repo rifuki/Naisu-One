@@ -37,7 +37,7 @@ function usePythPrices(
 
   return { fromUsd, toUsd };
 }
-import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link, Send, Shield, Sparkles, XCircle } from 'lucide-react';
+import { Zap, ShieldCheck, ArrowRight, Clock, SlidersHorizontal, CheckCircle2, Radio, Bot, Link2, Send, Shield, Sparkles, XCircle, Copy, ExternalLink, History, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LiveProgressCard from '@/components/live-progress-card';
 import { BalanceDisplayWidget } from '../widgets';
@@ -46,6 +46,7 @@ import { SolanaTxWidget } from './solana-tx-widget';
 import { IntentReceiptCard, extractReceiptData } from './intent-receipt-card';
 import { useIntentStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useTimeAgo } from '@/hooks/use-time-ago';
 import { formatAbsoluteTime } from '@/lib/utils';
 import type { SignIntentParams } from '../../hooks/use-sign-intent';
@@ -119,15 +120,21 @@ function extractWidgetBlock(content: string): ParsedWidget | null {
   // Try fenced code block first: ```json { ... } ```
   const fenced = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
 
-  // Fallback: raw JSON object at start of message (model forgot fences).
-  // Use bracket-counting to find the complete JSON object reliably.
+  // Fallback: find a JSON object anywhere in the content using bracket-counting.
   let rawJsonStr: string | null = null;
-  if (!fenced && content.trimStart().startsWith('{')) {
-    const start = content.indexOf('{');
-    let depth = 0, i = start;
-    for (; i < content.length; i++) {
-      if (content[i] === '{') depth++;
-      else if (content[i] === '}') { depth--; if (depth === 0) { rawJsonStr = content.slice(start, i + 1); break; } }
+  if (!fenced) {
+    // Find the first '{' that looks like a widget JSON (has "type" key)
+    let searchFrom = 0;
+    while (searchFrom < content.length) {
+      const start = content.indexOf('{"type"', searchFrom);
+      if (start === -1) break;
+      let depth = 0, i = start;
+      for (; i < content.length; i++) {
+        if (content[i] === '{') depth++;
+        else if (content[i] === '}') { depth--; if (depth === 0) { rawJsonStr = content.slice(start, i + 1); break; } }
+      }
+      if (rawJsonStr) break;
+      searchFrom = start + 1;
     }
   }
 
@@ -193,11 +200,13 @@ function MessageActions({ text, isUser = false }: { text: string; isUser?: boole
   return (
     <div className={`flex items-center gap-1 mt-1 ${isUser ? 'justify-end' : ''}`}>
       <Button
+        variant="ghost"
+        size="auto"
         onClick={handleCopy}
         className="p-1.5 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
         title="Copy"
       >
-        <span className="material-symbols-outlined text-[16px]">content_copy</span>
+        <Copy size={16} strokeWidth={1.5} />
       </Button>
     </div>
   );
@@ -246,7 +255,7 @@ export function MessageBubble({
           style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}
         >
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/8 border border-indigo-500/15 text-xs font-mono text-slate-400">
-            <span className="material-symbols-outlined text-indigo-400 text-[14px]">send</span>
+            <Send size={14} strokeWidth={1.5} className="text-indigo-400" />
             <span>
               Tx submitted · {txInfo.hash.slice(0, 10)}…{txInfo.hash.slice(-6)}
             </span>
@@ -256,7 +265,7 @@ export function MessageBubble({
               rel="noreferrer"
               className="text-slate-600 hover:text-primary transition-colors"
             >
-              <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+              <ExternalLink size={12} strokeWidth={1.5} />
             </a>
           </div>
         </div>
@@ -307,7 +316,7 @@ export function MessageBubble({
       >
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <Bot size={16} strokeWidth={1.5} className="text-white" />
           </div>
         </div>
         <div className="flex-1 min-w-0">
@@ -325,13 +334,13 @@ export function MessageBubble({
       <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-[#0a100f] border border-white/5 flex items-center justify-center grayscale opacity-50">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <Bot size={16} strokeWidth={1.5} className="text-white" />
           </div>
         </div>
         <div className="flex-1 min-w-0">
           <MessageHeader name="Nesu" timestamp={message.timestamp} />
           <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0a100f] border border-white/5 text-slate-500 text-xs font-mono shadow-sm">
-            <span className="material-symbols-outlined text-[14px]">history</span>
+            <History size={14} strokeWidth={1.5} />
             <span>Quote expired</span>
           </div>
         </div>
@@ -363,7 +372,7 @@ export function MessageBubble({
       >
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <Bot size={16} strokeWidth={1.5} className="text-white" />
           </div>
         </div>
         <div className="flex-1 min-w-0 max-w-md">
@@ -387,7 +396,7 @@ export function MessageBubble({
     >
       <div className="flex-shrink-0 mt-1 hidden sm:block">
         <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-          <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          <Bot size={16} strokeWidth={1.5} className="text-white" />
         </div>
       </div>
       <div className="flex-1 max-w-2xl">
@@ -419,7 +428,7 @@ export function MessageBubble({
                   rel="noopener noreferrer"
                   className="text-[10px] text-slate-500 hover:text-primary flex items-center gap-1 transition-colors"
                 >
-                  <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                  <ExternalLink size={12} strokeWidth={1.5} />
                   View on BaseScan
                 </a>
               </div>
@@ -499,13 +508,11 @@ function TxReceiptRow({
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <a href={href} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-[#0df2df] transition-colors">
-          <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+          <ExternalLink size={11} strokeWidth={1.5} />
         </a>
-        <Button onClick={onCopy} className="text-slate-700 hover:text-slate-400 transition-colors"
+        <Button variant="ghost" size="auto" onClick={onCopy} className="text-slate-700 hover:text-slate-400 transition-colors"
           title={copiedKey === copyKey ? 'Copied!' : 'Copy'}>
-          <span className="material-symbols-outlined text-[11px]">
-            {copiedKey === copyKey ? 'check' : 'content_copy'}
-          </span>
+          {copiedKey === copyKey ? <Check className="size-[10px]" strokeWidth={1.5} /> : <Copy className="size-[10px]" strokeWidth={1.5} />}
         </Button>
       </div>
     </div>
@@ -575,13 +582,13 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
         <div className="flex-shrink-0 mt-1 hidden sm:block">
            <div className="size-8 rounded-full bg-[#0a100f] border border-white/5 flex items-center justify-center grayscale opacity-50">
-             <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+             <Bot size={16} strokeWidth={1.5} className="text-white" />
            </div>
         </div>
         <div className="flex-1 min-w-0">
           <MessageHeader name="Nesu" timestamp={undefined} />
           <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0a100f] border border-white/5 text-slate-500 text-xs font-mono shadow-sm">
-            <span className="material-symbols-outlined text-[14px]">history</span>
+            <History size={14} strokeWidth={1.5} />
             <span>Quote expired • {intent.amount} ETH → {intent.destinationChain === 'solana' ? 'Solana' : 'Sui'}</span>
           </div>
         </div>
@@ -772,19 +779,25 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 </div>
 
                 {/* Separator + Recipient */}
-                <div className="border-t border-white/5 pt-3 space-y-1.5">
-                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 flex items-center gap-1.5">
-                    <span className="truncate flex-1">{intent.recipientAddress}</span>
-                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
-                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
-                      <span className="material-symbols-outlined text-[11px]">open_in_new</span>
-                    </a>
-                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
-                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
-                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
-                      <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </Button>
+                <div className="border-t border-white/5 pt-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                    <div className="flex items-center gap-1">
+                      <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-[#0df2df] hover:bg-white/5 transition-colors"
+                        title="View on Solscan">
+                        <ExternalLink size={12} strokeWidth={1.5} />
+                      </a>
+                      <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                        variant="ghost" size="auto"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors"
+                        title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                        {copiedKey === 'recipient' ? <Check className="size-[10px]" strokeWidth={1.5} /> : <Copy className="size-[10px]" strokeWidth={1.5} />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
+                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
                   </div>
                 </div>
               </div>
@@ -806,6 +819,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       return (
                         <Button
                           key={opt.seconds}
+                          variant="ghost"
+                          size="auto"
                           onClick={() => setSelectedDuration(opt.seconds)}
                           className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 ${
                             isSelected
@@ -835,6 +850,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       return (
                         <Button
                           key={opt.pct}
+                          variant="ghost"
+                          size="auto"
                           onClick={() => setSlippagePct(opt.pct)}
                           className={`flex-1 py-2 rounded-[10px] text-[11px] font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${
                             isSelected
@@ -856,6 +873,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                 {/* CTA */}
                 <Button
+                  variant="ghost"
+                  size="auto"
                   onClick={() => {
                     onDutchPlanConfirm?.({ ...intent, floorPrice: adjustedFloorPrice, durationSeconds: selectedDuration });
                     transitionTo('sign');
@@ -879,7 +898,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <Bot size={16} strokeWidth={1.5} className="text-white" />
           </div>
         </div>
         <div className="flex-1 min-w-0">
@@ -960,19 +979,25 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 </div>
 
                 {/* Recipient */}
-                <div className="border-t border-white/5 pt-3 space-y-1.5">
-                  <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-400 bg-[#0F0F0F] px-2.5 py-2 rounded-lg border border-white/5 flex items-center gap-1.5">
-                    <span className="truncate flex-1">{intent.recipientAddress}</span>
-                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
-                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
-                      <span className="material-symbols-outlined text-[11px]">open_in_new</span>
-                    </a>
-                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
-                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
-                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
-                      <span className="material-symbols-outlined text-[11px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </Button>
+                <div className="border-t border-white/5 pt-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-slate-500">Recipient on {destLabel}</div>
+                    <div className="flex items-center gap-1">
+                      <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-[#0df2df] hover:bg-white/5 transition-colors"
+                        title="View on Solscan">
+                        <ExternalLink size={12} strokeWidth={1.5} />
+                      </a>
+                      <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                        variant="ghost" size="auto"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors"
+                        title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                        {copiedKey === 'recipient' ? <Check className="size-[10px]" strokeWidth={1.5} /> : <Copy className="size-[10px]" strokeWidth={1.5} />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
+                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
                   </div>
                 </div>
               </div>
@@ -1006,6 +1031,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                 {/* Buttons */}
                 <div className="mt-auto flex flex-col gap-2 pt-2">
                   <Button
+                    variant="ghost"
+                    size="auto"
                     onClick={() => {
                       setSignError(null);
                       setLocalSigning(true);
@@ -1028,6 +1055,8 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                     )}
                   </Button>
                   <Button
+                    variant="ghost"
+                    size="auto"
                     onClick={() => { setSignError(null); transitionTo('plan'); }}
                     disabled={localSigning}
                     className="w-full py-2 rounded-[10px] bg-white/3 hover:bg-white/8 border border-white/5 text-slate-400 hover:text-white disabled:opacity-30 text-[11px] font-medium transition-colors"
@@ -1112,7 +1141,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
         case 'signed':        return CheckCircle2;
         case 'rfq':           return Radio;
         case 'winner':        return Bot;
-        case 'evm_submitted': return Link;
+        case 'evm_submitted': return Link2;
         case 'sol_sent':      return Send;
         case 'vaa_ready':     return Shield;
         case 'settled':       return Sparkles;
@@ -1136,7 +1165,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
       <div className="group flex gap-3">
         <div className="flex-shrink-0 mt-1 hidden sm:block">
           <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-            <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+            <Bot size={16} strokeWidth={1.5} className="text-white" />
           </div>
         </div>
         <div className="flex-1 min-w-0">
@@ -1324,18 +1353,24 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
 
                 {/* Recipient */}
                 <div className="space-y-1">
-                  <div className="text-[11px] text-slate-600">Recipient on {destLabel}</div>
-                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-lg border border-white/5 flex items-center gap-1.5">
-                    <span className="truncate flex-1">{intent.recipientAddress}</span>
-                    <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
-                      className="text-slate-700 hover:text-[#0df2df] transition-colors shrink-0" title="View on Solscan">
-                      <span className="material-symbols-outlined text-[10px]">open_in_new</span>
-                    </a>
-                    <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
-                      className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
-                      title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
-                      <span className="material-symbols-outlined text-[10px]">{copiedKey === 'recipient' ? 'check' : 'content_copy'}</span>
-                    </Button>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] text-slate-600">Recipient on {destLabel}</div>
+                    <div className="flex items-center gap-1">
+                      <a href={`https://solscan.io/account/${intent.recipientAddress}?cluster=devnet`} target="_blank" rel="noreferrer"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-[#0df2df] hover:bg-white/5 transition-colors"
+                        title="View on Solscan">
+                        <ExternalLink size={12} strokeWidth={1.5} />
+                      </a>
+                      <Button onClick={() => copyToClipboard(intent.recipientAddress, 'recipient')}
+                        variant="ghost" size="auto"
+                        className="w-5 h-5 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors"
+                        title={copiedKey === 'recipient' ? 'Copied!' : 'Copy address'}>
+                        {copiedKey === 'recipient' ? <Check className="size-[10px]" strokeWidth={1.5} /> : <Copy className="size-[10px]" strokeWidth={1.5} />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="font-mono text-[9px] text-slate-500 bg-[#0F0F0F] px-2 py-1.5 rounded-md border border-white/5 truncate">
+                    {intent.recipientAddress.slice(0, 10)}…{intent.recipientAddress.slice(-8)}
                   </div>
                 </div>
 
@@ -1476,7 +1511,7 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                             {/* Inline tx hash — styled as detail line, not a card */}
                             {chip && (
                               <div className="flex items-center gap-1 mt-0.5 w-full min-w-0 group/chip">
-                                <span className="material-symbols-outlined text-[9px] shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" style={{ fontVariationSettings: "'FILL' 0" }}>link</span>
+                                <Link2 size={9} strokeWidth={1.5} className="shrink-0 text-slate-600 group-hover/chip:text-slate-400 transition-colors" />
                                 <a
                                   href={chip.href}
                                   target="_blank"
@@ -1491,12 +1526,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                                 </a>
                                 <Button
                                   onClick={() => copyToClipboard(step.txHash!, step.key)}
-                                  className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
+                                  variant="ghost" size="auto" className="text-slate-700 hover:text-slate-400 transition-colors shrink-0"
                                   title={copiedKey === step.key ? 'Copied!' : 'Copy'}
                                 >
-                                  <span className="material-symbols-outlined text-[9px]">
-                                    {copiedKey === step.key ? 'check' : 'content_copy'}
-                                  </span>
+                                  {copiedKey === step.key ? <Check className="size-[9px]" strokeWidth={1.5} /> : <Copy className="size-[9px]" strokeWidth={1.5} />}
                                 </Button>
                               </div>
                             )}
@@ -1522,12 +1555,10 @@ function UnifiedIntentBubble({ intent, onSignIntent, signStatus, isSignFailed, o
                       </div>
                       <Button
                         onClick={() => copyToClipboard(displayIntentId, 'intentId')}
-                        className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors"
+                        variant="ghost" size="auto" className="shrink-0 text-slate-700 hover:text-slate-500 transition-colors"
                         title={copiedKey === 'intentId' ? 'Copied!' : 'Copy Intent ID'}
                       >
-                        <span className="material-symbols-outlined text-[10px]">
-                          {copiedKey === 'intentId' ? 'check' : 'content_copy'}
-                        </span>
+                        {copiedKey === 'intentId' ? <Check className="size-[9px]" strokeWidth={1.5} /> : <Copy className="size-[9px]" strokeWidth={1.5} />}
                       </Button>
                     </div>
                   </div>

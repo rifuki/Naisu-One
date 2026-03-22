@@ -7,7 +7,6 @@ import { IntentChat } from '@/features/intent/components/intent-chat';
 import { ChatSidebar } from '@/features/intent/components/chat-sidebar';
 import { TransactionReviewCard, type PendingTx } from '@/features/intent/components/transaction-review-card';
 import { GaslessIntentReviewCard } from '@/features/intent/components/gasless-intent-review-card';
-import { SettingsModal } from '@/features/intent/components/settings-modal';
 import { PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSignIntent, type SignIntentParams } from '@/features/intent/hooks/use-sign-intent';
@@ -42,11 +41,11 @@ function IntentPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const navType = useRouterState({ select: (s) => s.historyAction });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const initialIntentRef = useRef((location.state as { initialIntent?: string })?.initialIntent);
   const initialSentRef = useRef(false);
   const searchParams = useSearch({ from: "/intent" });
   const isNavigatingRef = useRef(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTxSent, setIsTxSent] = useState(false);
   const [isTxFailed, setIsTxFailed] = useState(false);
@@ -182,8 +181,8 @@ function IntentPage() {
           if (navType === 'POP') {
             // User pressed Browser Back to a Virtual New Chat `/intent`
             handleSwitchSession(null);
-          } else {
-            // User clicked NavLink (PUSH/REPLACE) from somewhere else, let's resume their active session!
+          } else if (pathname === '/intent') {
+            // Only re-sync to active session if still on /intent (not navigating away to another route)
             isNavigatingRef.current = true;
             navigate({ to: "/intent", search: { chat: activeSessionId! }, replace: true });
           }
@@ -191,7 +190,7 @@ function IntentPage() {
       }
     }
     prevActiveSessionIdRef.current = activeSessionId;
-  }, [activeSessionId, searchParams, sessions, handleSwitchSession, navigate, navType]);
+  }, [activeSessionId, searchParams, sessions, handleSwitchSession, navigate, navType, pathname]);
 
   const currentMsgIdxRef = useRef(0);
 
@@ -423,17 +422,18 @@ function IntentPage() {
     }
   }, [inputValue, isLoading, messages.length, sendMessage]);
 
-  // Auto-send initial intent from Landing Page
+  // Auto-send initial intent from Landing Page — always start a fresh session
   useEffect(() => {
     if (initialIntentRef.current && !initialSentRef.current) {
       initialSentRef.current = true;
-      // Delay slightly so useSolanaAddress has time to detect injected wallets
+      // Switch to a new empty session first, then send after wallets settle
+      handleSwitchSession(null);
+      const text = initialIntentRef.current;
       setTimeout(() => {
-        handleSend(initialIntentRef.current);
-      }, 500);
-      navigate({ to: '/intent', replace: true, state: {} });
+        handleSend(text);
+      }, 600);
     }
-  }, [handleSend, navigate, createSession]);
+  }, [handleSend, handleSwitchSession]);
 
   const handleSendTx = useCallback(
     async (tx: PendingTx) => {
@@ -690,7 +690,6 @@ function IntentPage() {
         onNewChat={handleNewChat}
         onSwitchSession={handleSwitchSession}
         onDeleteSession={deleteSession}
-        onOpenSettings={() => setShowSettings(true)}
         onExport={exportSessions}
         onImport={importSessions}
         onClearAll={clearAllSessions}
@@ -717,7 +716,6 @@ function IntentPage() {
           onSend={handleSend}
           onRetry={handleRetry}
           onNewChat={handleNewChat}
-          onOpenSettings={() => setShowSettings(true)}
           onDutchPlanConfirm={handleDutchPlanConfirm}
           pendingSignIntent={pendingGaslessIntent && !intentProgress ? pendingGaslessIntent : undefined}
           signIntentStatus={gaslessStatus}
@@ -751,7 +749,6 @@ function IntentPage() {
           </div>
         )}
 
-        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
       </div>
     </div>
   );

@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { BACKEND_URL } from '@/lib/env'
+import { Users, CheckCircle2, Clock, Info, Lock, LockOpen } from 'lucide-react'
 
 // ── Types (mirrors backend solver.service.ts) ─────────────────────────────────
 
@@ -175,18 +176,18 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
       {/* Header */}
       <div className="px-3 py-2 bg-primary/10 border-b border-primary/15 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm text-primary">group</span>
+          <Users size={14} strokeWidth={1.5} className="text-primary" />
           <span className="font-bold text-primary uppercase tracking-wider">Solver Auction</span>
         </div>
         {phase === 'filled' && (
           <div className="flex items-center gap-1.5 text-emerald-400">
-            <span className="material-symbols-outlined text-xs">check_circle</span>
+            <CheckCircle2 size={12} strokeWidth={1.5} />
             <span className="font-bold">Filled</span>
           </div>
         )}
         {phase === 'done' && result?.exclusivityDeadline && countdown > 0 && (
           <div className="flex items-center gap-1.5 text-amber-400">
-            <span className="material-symbols-outlined text-xs">timer</span>
+            <Clock size={12} strokeWidth={1.5} />
             <span className="font-mono font-bold">{countdown}s exclusive</span>
           </div>
         )}
@@ -258,7 +259,7 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
 
                 {/* Winner reasoning */}
                 <div className="pt-1 flex items-start gap-2 text-slate-400 border-t border-white/5">
-                  <span className="material-symbols-outlined text-xs text-primary mt-0.5 flex-shrink-0">info</span>
+                  <Info size={12} strokeWidth={1.5} className="text-primary mt-0.5 flex-shrink-0" />
                   <span>{result.reasoning}</span>
                 </div>
 
@@ -267,7 +268,7 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
                   countdown > 0
                     ? (
                       <div className="flex items-center gap-1.5 text-amber-400/80 text-[11px]">
-                        <span className="material-symbols-outlined text-xs">lock</span>
+                        <Lock size={12} strokeWidth={1.5} />
                         <span>
                           <span className="font-semibold">{result.winner}</span> has {countdown}s exclusive window.
                           After that, any solver can fill.
@@ -275,7 +276,7 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
-                        <span className="material-symbols-outlined text-xs">lock_open</span>
+                        <LockOpen size={12} strokeWidth={1.5} />
                         <span>Exclusive window expired — open race active.</span>
                       </div>
                     )
@@ -289,7 +290,7 @@ export default function SolverAuctionCard({ userAddress, submittedAt }: Props) {
         {phase === 'filled' && result && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-emerald-400">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
+              <CheckCircle2 size={14} strokeWidth={1.5} />
               <span className="font-semibold">Order fulfilled by <span className="text-primary">{result.winner}</span></span>
             </div>
             {result.quotes.length > 0 && (

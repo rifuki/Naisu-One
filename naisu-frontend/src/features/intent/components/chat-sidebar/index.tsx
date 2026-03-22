@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, MessageSquarePlus, PanelLeftClose } from 'lucide-react';
+import { Plus, MessageSquarePlus, PanelLeftClose, MessageSquare, Trash2, Download, Upload, Trash } from 'lucide-react';
 import type { ChatSession } from '@/hooks/use-chat-sessions';
 import { Button } from '@/components/ui/button';
 
@@ -12,7 +12,6 @@ interface ChatSidebarProps {
   onNewChat: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
-  onOpenSettings: () => void;
   onExport?: () => void;
   onImport?: (file: File) => Promise<{ success: boolean; count: number; error?: string }>;
   onClearAll?: () => void;
@@ -52,7 +51,6 @@ export function ChatSidebar({
   onNewChat,
   onSwitchSession,
   onDeleteSession,
-  onOpenSettings,
   onExport,
   onImport,
   onClearAll,
@@ -87,7 +85,7 @@ export function ChatSidebar({
           title={`${s.title}${hasIntents ? ` • ${s.intentCount} intent${s.intentCount !== 1 ? 's' : ''}` : ''}`}
           className={`flex-1 flex items-center gap-2 px-2.5 py-2 overflow-hidden text-left ${disabled ? 'cursor-not-allowed' : ''}`}
         >
-          <span className="material-symbols-outlined text-[15px] shrink-0 opacity-60">chat_bubble</span>
+          <MessageSquare size={13} strokeWidth={1.5} className="shrink-0 opacity-50" />
           <span className="text-xs font-medium truncate flex-1">{s.title}</span>
           
           {/* Intent count badge */}
@@ -120,7 +118,7 @@ export function ChatSidebar({
               : 'opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 text-slate-500'
           }`}
         >
-          <span className="material-symbols-outlined text-[14px]">delete</span>
+          <Trash2 size={13} strokeWidth={1.5} />
         </Button>
       </div>
     );
@@ -202,18 +200,6 @@ export function ChatSidebar({
 
       {/* Footer */}
       <div className="p-3 border-t border-white/5 shrink-0 flex flex-col gap-2">
-        <Button
-          variant="ghost"
-          size="auto"
-          onClick={onOpenSettings}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white transition-colors"
-        >
-          <div className="w-7 h-7 rounded-lg bg-surface border border-white/5 flex items-center justify-center">
-            <span className="material-symbols-outlined text-sm">tune</span>
-          </div>
-          <span className="text-sm font-medium">Agent Settings</span>
-        </Button>
-        
         {/* Export/Import buttons */}
         <div className="flex items-center gap-2">
           {onExport && (
@@ -224,7 +210,7 @@ export function ChatSidebar({
               title="Export all chats"
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
             >
-              <span className="material-symbols-outlined text-[14px]">download</span>
+              <Download size={14} strokeWidth={1.5} />
               Export
             </Button>
           )}
@@ -237,7 +223,7 @@ export function ChatSidebar({
                 title="Import chats"
                 className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">upload</span>
+                <Upload size={14} strokeWidth={1.5} />
                 Import
               </Button>
               <input
@@ -261,7 +247,7 @@ export function ChatSidebar({
               title="Clear all"
               className="flex items-center justify-center px-2 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-500 hover:text-red-400 text-xs transition-colors"
             >
-              <span className="material-symbols-outlined text-[14px]">delete_sweep</span>
+              <Trash size={14} strokeWidth={1.5} />
             </Button>
           )}
         </div>

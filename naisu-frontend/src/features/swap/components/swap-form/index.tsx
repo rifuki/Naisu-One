@@ -4,6 +4,7 @@ import { WalletStatus } from './wallet-status';
 import { QuoteInfo } from './quote-info';
 import type { IntentQuote } from '@/features/intent/api/get-intent-quote';
 import { Button } from '@/components/ui/button';
+import { ArrowDown, AlertTriangle, XCircle } from 'lucide-react';
 
 interface SwapFormProps {
   // Input state
@@ -95,7 +96,7 @@ export function SwapForm({
       {/* Divider arrow */}
       <div className="relative h-2 flex items-center justify-center z-10 my-1">
         <div className="absolute bg-surface-light border-4 border-[#0e1716] rounded-xl p-2 text-slate-500">
-          <span className="material-symbols-outlined text-[18px] block">south</span>
+          <ArrowDown size={18} strokeWidth={1.5} className="block" />
         </div>
       </div>
 
@@ -143,7 +144,7 @@ export function SwapForm({
       {/* No solvers warning */}
       {hasNoSolvers && (
         <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
-          <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">warning</span>
+          <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
           <span>
             No solver is currently active. Your ETH would be locked with no one to fill the order.
             Start a solver or try again later.
@@ -166,7 +167,7 @@ export function SwapForm({
       {/* Build error */}
       {buildError && (
         <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
-          <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+          <XCircle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
           <span>{buildError}</span>
         </div>
       )}

@@ -1,5 +1,6 @@
 import { fmtRate, secondsAgo } from '@/lib/utils';
 import type { IntentQuote } from '@/features/intent/api/get-intent-quote';
+import { XCircle } from 'lucide-react';
 
 interface QuoteInfoProps {
   quote: IntentQuote | null;
@@ -29,7 +30,7 @@ export function QuoteInfo({
     <div className="mt-2 px-1 space-y-1.5">
       {error && (
         <div className="flex items-center gap-2 text-red-400 text-xs py-1">
-          <span className="material-symbols-outlined text-sm">error</span>
+          <XCircle size={14} strokeWidth={1.5} />
           {error}
         </div>
       )}

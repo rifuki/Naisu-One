@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
+import { XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
@@ -188,7 +189,7 @@ export function StakeTab({ selectedProtocol, onProtocolChange }: StakeTabProps) 
       <div className="pt-2">
         {buildError && (
           <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
-            <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+            <XCircle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
             <span>{buildError.message}</span>
           </div>
         )}

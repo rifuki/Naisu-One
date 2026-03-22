@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { useTimeAgo } from '@/hooks/use-time-ago';
 import { Button } from '@/components/ui/button';
 import { formatAbsoluteTime } from '@/lib/utils';
+import { Copy, Bot } from 'lucide-react';
 
 interface ReceiptMessageProps {
   children: ReactNode;
@@ -19,7 +20,7 @@ function CopyButton({ text }: { text: string }) {
       className="text-slate-500 hover:text-primary transition-colors"
       title="Copy"
     >
-      <span className="material-symbols-outlined text-[14px]">content_copy</span>
+      <Copy size={14} strokeWidth={1.5} />
     </Button>
   );
 }
@@ -32,7 +33,7 @@ export function ReceiptMessage({ children, timestamp }: ReceiptMessageProps) {
     <div className="group flex gap-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '0ms', animationFillMode: 'forwards' }}>
       <div className="flex-shrink-0 mt-1 hidden sm:block">
         <div className="size-8 rounded-full bg-gradient-to-br from-primary/80 to-teal-800 flex items-center justify-center shadow-[0_0_16px_rgba(13,242,223,0.25)] ring-1 ring-primary/20">
-          <span className="material-symbols-outlined text-white text-[16px]">smart_toy</span>
+          <Bot size={16} strokeWidth={1.5} className="text-white" />
         </div>
       </div>
       <div className="flex-1 max-w-2xl">

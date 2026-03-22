@@ -592,7 +592,12 @@ pub async fn get_quote(
     let amount_f64: f64 = params.amount.parse().unwrap_or(0.0);
     let amount_wei = format!("{:.0}", amount_f64 * 1e18);
 
-    let prices = super::price::compute_eth_to_sol_prices(&amount_wei).await;
+    let to_chain = if params.to_chain == "sui" {
+        super::price::ToChain::Sui
+    } else {
+        super::price::ToChain::Solana
+    };
+    let prices = super::price::compute_eth_to_dest_prices(&amount_wei, to_chain).await;
 
     let receive_f64 = (amount_f64 * (prices.from_usd / prices.to_usd)) * 0.97;
     let receive_amount = format!("{:.6}", receive_f64);

@@ -15,6 +15,18 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { BACKEND_URL } from '@/lib/env'
+import { Upload, Link2, CheckCircle2, Clock, Radio, Trophy, Zap, LucideIcon } from 'lucide-react'
+
+const STEP_ICON_MAP: Record<string, LucideIcon> = {
+  upload: Upload,
+  link: Link2,
+  cell_tower: Radio,
+  emoji_events: Trophy,
+  pending: Clock,
+  check_circle: CheckCircle2,
+  speed: Zap,
+  flash_on: Zap,
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,7 +79,7 @@ function StepRow({ step }: { step: TimelineStep }) {
       </div>
       <div className="flex-1 min-w-0 pb-3">
         <div className={`flex items-center gap-2 text-xs font-medium ${color}`}>
-          <span className={`material-symbols-outlined text-[14px] ${color}`}>{step.icon}</span>
+          {(() => { const Icon = STEP_ICON_MAP[step.icon] ?? CheckCircle2; return <Icon size={14} strokeWidth={1.5} className={color} />; })()}
           <span>{step.label}</span>
           {step.status === 'active' && (
             <span className="inline-flex gap-0.5 ml-0.5">
@@ -77,7 +89,7 @@ function StepRow({ step }: { step: TimelineStep }) {
             </span>
           )}
           {step.status === 'done' && (
-            <span className="material-symbols-outlined text-[13px] text-emerald-400">check_circle</span>
+            <CheckCircle2 size={13} strokeWidth={1.5} className="text-emerald-400" />
           )}
         </div>
         {step.detail && step.status !== 'pending' && (
@@ -284,14 +296,15 @@ export default function LiveProgressCard({ userAddress, txHash, submittedAt, ord
       {/* Header */}
       <div className="px-3 py-2 bg-primary/10 border-b border-primary/15 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`material-symbols-outlined text-sm ${headerColor}`}>
-            {isDone ? 'check_circle' : 'bolt'}
-          </span>
+          {isDone
+            ? <CheckCircle2 size={14} strokeWidth={1.5} className={headerColor} />
+            : <Zap size={14} strokeWidth={1.5} className={headerColor} />
+          }
           <span className={`font-bold uppercase tracking-wider ${headerColor}`}>{header}</span>
         </div>
         {exclusive > 0 && (
           <div className="flex items-center gap-1.5 text-amber-400">
-            <span className="material-symbols-outlined text-xs">timer</span>
+            <Clock size={12} strokeWidth={1.5} />
             <span className="font-mono font-bold">{exclusive}s exclusive</span>
           </div>
         )}

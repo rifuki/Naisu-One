@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
 import { Button } from '@/components/ui/button';
+import { Coins, Droplets, Building2, Layers, AlertTriangle, ArrowRight, SlidersHorizontal, ChevronDown, Bitcoin, ArrowDown, Fuel, Info, CheckCircle2, X, Check, Clock3 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+const NETWORK_ICON_MAP: Record<string, LucideIcon> = {
+  token: Coins,
+  water_drop: Droplets,
+  architecture: Building2,
+  layers: Layers,
+};
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -90,7 +99,7 @@ const DashboardPage: React.FC = () => {
       {/* ⚠️ MOCK DATA WARNING */}
       <div className="mb-8 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
         <div className="flex items-start gap-3">
-          <span className="material-symbols-outlined text-amber-400 text-xl">warning</span>
+          <AlertTriangle size={20} strokeWidth={1.5} className="text-amber-400" />
           <div>
             <h3 className="text-amber-400 font-semibold mb-1">Demo Page - Mock Data</h3>
             <p className="text-amber-300/80 text-sm">
@@ -98,7 +107,7 @@ const DashboardPage: React.FC = () => {
               No real blockchain interactions occur here.
             </p>
             <a href="#/intent" className="inline-flex items-center gap-1.5 mt-2 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors">
-              Use Intent Agent for real transactions <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              Use Intent Agent for real transactions <ArrowRight size={16} strokeWidth={1.5} className="inline" />
             </a>
           </div>
         </div>
@@ -125,7 +134,7 @@ const DashboardPage: React.FC = () => {
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-white">Bridge & Swap</h3>
                 <Button className="text-slate-400 hover:text-white transition-colors">
-                  <span className="material-symbols-outlined">settings</span>
+                  <SlidersHorizontal size={16} strokeWidth={1.5} />
                 </Button>
               </div>
 
@@ -142,10 +151,10 @@ const DashboardPage: React.FC = () => {
                         className="flex items-center gap-2 bg-white/5 hover:bg-white/10 transition-colors rounded-lg px-3 py-2 min-w-[140px] border border-white/5"
                       >
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center ${fromNetwork.color}`}>
-                          <span className="material-symbols-outlined text-sm">{fromNetwork.icon}</span>
+                          {(() => { const Icon = NETWORK_ICON_MAP[fromNetwork.icon] ?? Coins; return <Icon size={14} strokeWidth={1.5} />; })()}
                         </div>
                         <span className="text-sm font-bold text-white">{fromNetwork.name}</span>
-                        <span className="material-symbols-outlined text-slate-400 text-sm ml-auto">expand_more</span>
+                        <ChevronDown size={14} strokeWidth={1.5} className="text-slate-400 ml-auto" />
                       </Button>
 
                       {/* Dropdown */}
@@ -158,7 +167,7 @@ const DashboardPage: React.FC = () => {
                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
                                   >
                                       <div className={`w-6 h-6 rounded-full flex items-center justify-center ${net.color}`}>
-                                          <span className="material-symbols-outlined text-xs">{net.icon}</span>
+                                          {(() => { const Icon = NETWORK_ICON_MAP[net.icon] ?? Coins; return <Icon size={12} strokeWidth={1.5} />; })()}
                                       </div>
                                       <span className={`text-sm font-medium ${net.id === fromNetwork.id ? 'text-primary' : 'text-slate-300'}`}>{net.name}</span>
                                   </Button>
@@ -180,7 +189,7 @@ const DashboardPage: React.FC = () => {
                 <div className="flex justify-between mt-3 items-center">
                   <div className="flex items-center gap-2">
                     <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                      <span className="material-symbols-outlined text-[12px]">currency_bitcoin</span>
+                      <Bitcoin size={12} strokeWidth={1.5} />
                     </div>
                     <span className="text-sm text-slate-300">USDC</span>
                   </div>
@@ -194,7 +203,7 @@ const DashboardPage: React.FC = () => {
                     onClick={handleSwapNetworks}
                     className="bg-surface border border-white/10 rounded-lg p-2 hover:border-primary/50 hover:text-primary text-slate-400 transition-all shadow-lg hover:rotate-180 duration-300"
                 >
-                  <span className="material-symbols-outlined text-lg">arrow_downward</span>
+                  <ArrowDown size={18} strokeWidth={1.5} />
                 </Button>
               </div>
 
@@ -211,10 +220,10 @@ const DashboardPage: React.FC = () => {
                         className="flex items-center gap-2 bg-white/5 hover:bg-white/10 transition-colors rounded-lg px-3 py-2 min-w-[140px] border border-white/5"
                       >
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center ${toNetwork.color}`}>
-                            <span className="material-symbols-outlined text-sm">{toNetwork.icon}</span>
+                            {(() => { const Icon = NETWORK_ICON_MAP[toNetwork.icon] ?? Coins; return <Icon size={14} strokeWidth={1.5} />; })()}
                         </div>
                         <span className="text-sm font-bold text-white">{toNetwork.name}</span>
-                        <span className="material-symbols-outlined text-slate-400 text-sm ml-auto">expand_more</span>
+                        <ChevronDown size={14} strokeWidth={1.5} className="text-slate-400 ml-auto" />
                       </Button>
 
                        {/* Dropdown */}
@@ -227,7 +236,7 @@ const DashboardPage: React.FC = () => {
                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
                                   >
                                       <div className={`w-6 h-6 rounded-full flex items-center justify-center ${net.color}`}>
-                                          <span className="material-symbols-outlined text-xs">{net.icon}</span>
+                                          {(() => { const Icon = NETWORK_ICON_MAP[net.icon] ?? Coins; return <Icon size={12} strokeWidth={1.5} />; })()}
                                       </div>
                                       <span className={`text-sm font-medium ${net.id === toNetwork.id ? 'text-primary' : 'text-slate-300'}`}>{net.name}</span>
                                   </Button>
@@ -248,7 +257,7 @@ const DashboardPage: React.FC = () => {
                  <div className="flex justify-between mt-3 items-center">
                   <div className="flex items-center gap-2">
                     <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                      <span className="material-symbols-outlined text-[12px]">currency_bitcoin</span>
+                      <Bitcoin size={12} strokeWidth={1.5} />
                     </div>
                     <span className="text-sm text-slate-300">USDC ({toNetwork.name})</span>
                   </div>
@@ -259,20 +268,20 @@ const DashboardPage: React.FC = () => {
               {/* Info */}
               <div className="mt-6 p-4 rounded-lg bg-white/[0.02] border border-white/5 space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400 flex items-center gap-1">Rate <span className="material-symbols-outlined text-[14px] text-slate-600">info</span></span>
+                  <span className="text-slate-400 flex items-center gap-1">Rate <Info size={14} strokeWidth={1.5} className="text-slate-600" /></span>
                   <span className="text-slate-200">1 USDC ({fromNetwork.name}) ≈ 0.995 USDC ({toNetwork.name})</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400 flex items-center gap-1">Network Cost <span className="material-symbols-outlined text-[14px] text-slate-600">local_gas_station</span></span>
+                  <span className="text-slate-400 flex items-center gap-1">Network Cost <Fuel size={14} strokeWidth={1.5} className="text-slate-600" /></span>
                   <span className="text-slate-200">~$4.25</span>
                 </div>
                  <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Route</span>
                   <div className="flex items-center gap-1 text-slate-300 text-xs font-medium">
                     <span className="bg-white/10 px-1.5 py-0.5 rounded">{fromNetwork.name}</span>
-                    <span className="material-symbols-outlined text-[10px] text-slate-500">arrow_forward</span>
+                    <ArrowRight size={10} strokeWidth={1.5} className="text-slate-500" />
                     <span className="bg-white/10 px-1.5 py-0.5 rounded">Wormhole</span>
-                    <span className="material-symbols-outlined text-[10px] text-slate-500">arrow_forward</span>
+                    <ArrowRight size={10} strokeWidth={1.5} className="text-slate-500" />
                     <span className="bg-white/10 px-1.5 py-0.5 rounded">{toNetwork.name}</span>
                   </div>
                 </div>
@@ -297,16 +306,16 @@ const DashboardPage: React.FC = () => {
 
           <div className="group relative overflow-hidden rounded-xl bg-white/5 p-5 backdrop-blur-md border border-white/10 hover:border-primary/30 transition-all duration-300">
             <div className="absolute top-0 right-0 p-3 opacity-20">
-              <span className="material-symbols-outlined text-4xl text-emerald-400">check_circle</span>
+              <CheckCircle2 size={40} strokeWidth={1.5} className="text-emerald-400" />
             </div>
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-3">
                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
-                   <span className="material-symbols-outlined text-white text-sm">water_drop</span>
+                   <Droplets size={14} strokeWidth={1.5} className="text-white" />
                 </div>
-                <span className="material-symbols-outlined text-slate-600 text-sm">arrow_forward</span>
+                <ArrowRight size={14} strokeWidth={1.5} className="text-slate-600" />
                 <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
-                   <span className="material-symbols-outlined text-lg text-white">architecture</span>
+                   <Building2 size={18} strokeWidth={1.5} className="text-white" />
                 </div>
                 <span className="text-xs text-slate-400 ml-auto">2 mins ago</span>
               </div>
@@ -322,16 +331,16 @@ const DashboardPage: React.FC = () => {
 
           <div className="group relative overflow-hidden rounded-xl bg-white/5 p-5 backdrop-blur-md border border-white/10 hover:border-primary/30 transition-all duration-300">
             <div className="absolute top-0 right-0 p-3 opacity-20">
-              <span className="material-symbols-outlined text-4xl text-blue-400">pending</span>
+              <Clock3 size={40} strokeWidth={1.5} className="text-blue-400" />
             </div>
              <div className="relative z-10">
               <div className="flex items-center gap-3 mb-3">
                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
-                   <span className="material-symbols-outlined text-lg text-white">token</span>
+                   <Coins size={18} strokeWidth={1.5} className="text-white" />
                 </div>
-                <span className="material-symbols-outlined text-slate-600 text-sm">arrow_forward</span>
+                <ArrowRight size={14} strokeWidth={1.5} className="text-slate-600" />
                 <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
-                   <span className="material-symbols-outlined text-white text-sm">water_drop</span>
+                   <Droplets size={14} strokeWidth={1.5} className="text-white" />
                 </div>
                 <span className="text-xs text-slate-400 ml-auto">5 mins ago</span>
               </div>
@@ -387,7 +396,7 @@ const DashboardPage: React.FC = () => {
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-lg font-bold text-white">Review Transaction</h3>
                                 <Button onClick={() => setIsReviewOpen(false)} className="text-slate-400 hover:text-white">
-                                    <span className="material-symbols-outlined">close</span>
+                                    <X size={16} strokeWidth={1.5} />
                                 </Button>
                             </div>
                             <div className="space-y-4 mb-6">
@@ -398,7 +407,7 @@ const DashboardPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex justify-center -my-2">
-                                    <span className="material-symbols-outlined text-slate-500 bg-[#1a1f1e] rounded-full p-1">arrow_downward</span>
+                                    <ArrowDown size={16} strokeWidth={1.5} className="text-slate-500 bg-[#1a1f1e] rounded-full p-1" />
                                 </div>
                                  <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
                                     <div className="text-sm text-slate-400">You Receive</div>
@@ -437,7 +446,7 @@ const DashboardPage: React.FC = () => {
                     {processStatus === 'success' && (
                         <div className="flex flex-col items-center py-8">
                             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
-                                <span className="material-symbols-outlined text-4xl text-emerald-500">check</span>
+                                <Check size={40} strokeWidth={1.5} className="text-emerald-500" />
                             </div>
                             <h3 className="text-xl font-bold text-white mb-2">Transaction Submitted</h3>
                             <p className="text-slate-400 text-center">Funds should arrive in ~2 minutes.</p>

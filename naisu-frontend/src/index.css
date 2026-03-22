@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@fontsource-variable/manrope";
-@import "material-symbols/outlined.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
@@ -68,9 +67,6 @@ body {
   color: white;
 }
 
-.material-symbols-outlined {
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
-}
 
 .glass-panel {
   background: rgba(16, 26, 25, 0.6);

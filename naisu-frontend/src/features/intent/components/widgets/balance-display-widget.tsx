@@ -1,4 +1,5 @@
 import type { BalanceDisplayWidget as BalanceDisplayWidgetData } from './types';
+import { Wallet } from 'lucide-react';
 
 function shortenAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -16,7 +17,7 @@ export function BalanceDisplayWidget({ widget }: Props) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
       <div className="px-4 py-2.5 flex items-center gap-2 border-b border-white/5">
-        <span className="material-symbols-outlined text-slate-400 text-[15px]">account_balance_wallet</span>
+        <Wallet size={15} strokeWidth={1.5} className="text-slate-400" />
         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">Wallet Balances</span>
       </div>
       <div className="px-4 py-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
