@@ -1,6 +1,7 @@
 import React, { useState, KeyboardEvent, useRef, useEffect, useCallback } from 'react';
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sparkles, Loader2, ArrowRight, Mic } from 'lucide-react';
 import { useMic } from '@/hooks/use-mic';
 
@@ -64,6 +65,7 @@ const LandingPage: React.FC = () => {
   }, [handleMic]);
 
   return (
+    <TooltipProvider delayDuration={400}>
     <div className="relative flex flex-col items-center justify-center min-h-[calc(100dvh-64px)] px-4 overflow-hidden">
 
       {/* ── Ambient background glows ── */}
@@ -168,16 +170,20 @@ const LandingPage: React.FC = () => {
               }}
             >
               {/* I'm feeling lucky */}
-              <Button
-                onClick={handleLucky}
-                title="I'm feeling lucky — try a random intent"
-                className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
-                style={{ width: 38, height: 38, background: 'transparent', color: '#0df2df', cursor: 'pointer' }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,242,223,0.08)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                <Sparkles size={20} strokeWidth={1.5} className="animate-pulse-slow" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={handleLucky}
+                    className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
+                    style={{ width: 38, height: 38, background: 'transparent', color: '#0df2df', cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(13,242,223,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Sparkles size={20} strokeWidth={1.5} className="animate-pulse-slow" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">I&apos;m feeling lucky</TooltipContent>
+              </Tooltip>
 
               {/* Input field */}
               <input
@@ -199,28 +205,33 @@ const LandingPage: React.FC = () => {
 
               {/* Mic */}
               {micSupported && (
-                <Button
-                  onClick={handleMic}
-                  disabled={isTranscribing}
-                  className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
-                  title={isListening ? 'Stop recording' : isTranscribing ? 'Transcribing...' : 'Speak your intent (Ctrl+Space)'}
-                  style={{
-                    width: 38,
-                    height: 38,
-                    background: isListening ? 'rgba(13,242,223,0.12)' : 'transparent',
-                    color: isListening ? '#0df2df' : isTranscribing ? '#4f46e5' : '#3a4a47',
-                    boxShadow: isListening ? '0 0 12px rgba(13,242,223,0.3)' : 'none',
-                    cursor: isTranscribing ? 'default' : 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#fff'; }}
-                  onMouseLeave={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#3a4a47'; }}
-                >
-                  {isTranscribing
-                    ? <Loader2 size={20} strokeWidth={1.5} className="animate-spin" />
-                    : <Mic size={20} strokeWidth={1.5} className={isListening ? 'animate-pulse' : ''} />
-                  }
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={handleMic}
+                      disabled={isTranscribing}
+                      className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all"
+                      style={{
+                        width: 38, height: 38,
+                        background: isListening ? 'rgba(13,242,223,0.12)' : 'transparent',
+                        color: isListening ? '#0df2df' : isTranscribing ? '#4f46e5' : '#3a4a47',
+                        boxShadow: isListening ? '0 0 12px rgba(13,242,223,0.3)' : 'none',
+                        cursor: isTranscribing ? 'default' : 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { if (!isListening && !isTranscribing) e.currentTarget.style.color = '#3a4a47'; }}
+                    >
+                      {isTranscribing
+                        ? <Loader2 size={20} strokeWidth={1.5} className="animate-spin" />
+                        : <Mic size={20} strokeWidth={1.5} className={isListening ? 'animate-pulse' : ''} />
+                      }
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {isListening ? 'Stop recording' : 'Speak your intent (Ctrl+Space)'}
+                  </TooltipContent>
+                </Tooltip>
               )}
 
               {/* Send */}
@@ -279,5 +290,6 @@ const LandingPage: React.FC = () => {
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 };

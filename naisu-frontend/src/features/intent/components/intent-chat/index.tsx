@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,36 @@ const STATIC_SUGGESTIONS = [
   'How much SOL will I get for 0.1 ETH?',
   'Check my portfolio across chains',
 ];
+
+/**
+ * Parse the last assistant message for a closing question and extract actionable chips.
+ * Converts agent-POV ("your X") → user-POV ("my X"). Returns [] if no question found.
+ */
+function extractSuggestions(content: string): string[] {
+  const paragraphs = content.trim().split(/\n\n+/);
+  const lastPara = paragraphs[paragraphs.length - 1].trim();
+  const questions = lastPara.match(/[^.!?]*\?/g) ?? [];
+  if (!questions.length) return [];
+  const lastQ = questions[questions.length - 1].trim();
+
+  const stripped = lastQ
+    .replace(/^(Want to|Would you like to|Would you like|Do you want to|Shall I|Should I)\s*/i, '')
+    .replace(/\?.*$/, '')
+    .trim();
+  if (!stripped) return [];
+
+  const normalized = stripped.replace(/,\s*or\s+/gi, ', ');
+  return normalized.split(/,\s+|\s+or\s+/i)
+    .map(p => p
+      .replace(/^or\s+/i, '')
+      .replace(/[,?.!]+$/, '')
+      .replace(/\byour\b/gi, 'my')
+      .trim()
+    )
+    .filter(p => p.length > 3)
+    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+    .slice(0, 3);
+}
 
 interface GaslessIntentData {
   type: 'gasless_intent';
@@ -122,7 +152,16 @@ export function IntentChat({
     inputRef.current?.focus();
   };
 
-  const suggestions = isEmpty ? STATIC_SUGGESTIONS : (contextSuggestions ?? []);
+  // Parse last assistant message for question-based chips (fallback when no contextSuggestions)
+  const parsedSuggestions = useMemo(() => {
+    if (isLoading || contextSuggestions) return [];
+    const last = [...messages].reverse().find(m => m.role === 'assistant');
+    return last ? extractSuggestions(last.content) : [];
+  }, [messages, isLoading, contextSuggestions]);
+
+  const suggestions = isEmpty
+    ? STATIC_SUGGESTIONS
+    : (contextSuggestions ?? parsedSuggestions);
   const showSuggestions = suggestions.length > 0 && !inputValue.trim() && !isLoading;
 
   return (
