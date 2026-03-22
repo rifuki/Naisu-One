@@ -3,7 +3,7 @@ import { useAccount, useConnect, useBalance, useSendTransaction } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useSolanaAddress } from '@/hooks/useSolanaAddress';
-import { apiClient } from '@/lib/api-client';
+import { apiClient } from '@/lib/api/client';
 import { useYieldRates } from '../../hooks/use-yield-rates';
 import { ProtocolCard } from './protocol-card';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';

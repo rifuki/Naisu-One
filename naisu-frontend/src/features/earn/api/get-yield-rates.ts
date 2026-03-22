@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api-client';
+import { apiClient } from '@/lib/api/client';
 
 export interface YieldRate {
   id: 'marinade' | 'jito' | 'jupsol' | 'kamino';
