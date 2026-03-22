@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "@fontsource-variable/manrope";
+@import "material-symbols/outlined.css";
 
 @theme {
   --color-primary: #0df2df;
@@ -8,8 +10,8 @@
   --color-surface-light: #131616;
   --color-glass-border: rgba(255, 255, 255, 0.08);
 
-  --font-sans: "Manrope", sans-serif;
-  --font-display: "Manrope", sans-serif;
+  --font-sans: "Manrope Variable", sans-serif;
+  --font-display: "Manrope Variable", sans-serif;
 
   --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-float: float 6s ease-in-out infinite;
