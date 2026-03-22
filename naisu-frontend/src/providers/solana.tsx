@@ -1,6 +1,9 @@
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { SOLANA_ENDPOINT, wallets } from "@/config/solana";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+
+const SOLANA_ENDPOINT = "https://api.devnet.solana.com";
+const wallets = [new PhantomWalletAdapter()];
 
 export function SolanaProvider({ children }: { children: React.ReactNode }) {
   return (
