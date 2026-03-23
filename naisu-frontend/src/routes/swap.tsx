@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useSolanaAddress } from '@/hooks/use-solana-address';
 import { useSwapQuote } from '@/features/swap/hooks/use-swap-quote';
 import { useSwapOrder } from '@/features/swap/hooks/use-swap-order';
@@ -17,18 +18,30 @@ export const Route = createFileRoute("/swap")({
 });
 
 function SwapPage() {
-  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const { address: evmAddress, isConnected: evmConnected, connector } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
+  const { disconnect: disconnectSolana, wallet: solanaWallet } = useWallet();
   const solanaAddress = useSolanaAddress();
 
   const [sellAmount, setSellAmount] = useState('');
   const [buyAmount, setBuyAmount] = useState('');
   const [lastEdited, setLastEdited] = useState<'sell' | 'buy'>('sell');
   const latestRate = useRef<number>(0);
+  const [inputToken, setInputToken] = useState<'eth' | 'usdc'>('eth');
   const [outputToken, setOutputToken] = useState<'sol' | 'msol'>('sol');
   const [submitted, setSubmitted] = useState<{ txHash: string; submittedAt: number } | null>(null);
   const [tick, setTick] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [pastedDestinationAddress, setPastedDestinationAddress] = useState('');
+
+  const handleFlip = () => {
+    setIsFlipped(!isFlipped);
+    setSellAmount(buyAmount);
+    setBuyAmount(sellAmount);
+    setLastEdited(lastEdited === 'sell' ? 'buy' : 'sell');
+    setPastedDestinationAddress('');
+  };
 
   // Balances
   const { balance: ethBalance, raw: ethBalanceRaw } = useEthBalance();
@@ -39,10 +52,15 @@ function SwapPage() {
   const {
     data: quote,
     isLoading: isQuoteLoading,
+    isFetching: isQuoteFetching,
     error: quoteError,
     dataUpdatedAt,
     refetch,
-  } = useSwapQuote({ amount: quoteAmount });
+  } = useSwapQuote({ 
+    amount: quoteAmount,
+    fromChain: isFlipped ? 'solana' : 'evm-base',
+    toChain: isFlipped ? 'evm-base' : 'solana'
+  });
 
   // 2-way input synchronization
   if (quote && parseFloat(quote.amountIn) > 0) {
@@ -94,20 +112,23 @@ function SwapPage() {
   const hasValidAmount = Boolean(sellAmount && parseFloat(sellAmount) > 0);
   const activeSolvers = quote?.activeSolvers ?? 0;
   const noSolvers = hasValidAmount && quote && activeSolvers === 0;
-  const canSwap = evmConnected && !!solanaAddress && hasValidAmount && !noSolvers;
+
+  const destAddress = isFlipped ? (evmConnected ? evmAddress : pastedDestinationAddress) : (solanaAddress || pastedDestinationAddress);
+  const sourceAddress = isFlipped ? solanaAddress : (evmConnected ? evmAddress : undefined);
+  const canSwap = !!sourceAddress && !!destAddress && hasValidAmount && !noSolvers;
 
   const quoteAge = dataUpdatedAt > 0 ? secondsAgo(dataUpdatedAt) : null;
   const quoteExpiring = quoteAge !== null && quoteAge > 20;
 
   const handleSwap = async () => {
-    if (!evmAddress || !solanaAddress || !sellAmount) return;
+    if (!sourceAddress || !destAddress || !sellAmount) return;
 
     resetError();
 
     try {
       const result = await submitOrder({
-        evmAddress,
-        solanaAddress,
+        evmAddress: (isFlipped ? destAddress : sourceAddress) as string,
+        solanaAddress: (isFlipped ? sourceAddress : destAddress) as string,
         amount: sellAmount,
         outputToken,
       });
@@ -133,16 +154,16 @@ function SwapPage() {
   };
 
   const getSubmitLabel = () => {
-    if (!evmConnected) return 'Connect EVM Wallet';
-    if (!solanaAddress) return 'Connect Solana Wallet';
+    if (!sourceAddress) return `Connect ${isFlipped ? 'Solana' : 'EVM'} Wallet`;
+    if (!destAddress) return `Select ${isFlipped ? 'EVM' : 'Solana'} Destination`;
     if (!hasValidAmount) return 'Enter Amount';
     if (noSolvers) return 'No Active Solvers';
     if (isBusy) return 'Processing...';
-    return 'Swap via Intent →';
+    return 'Swap';
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[85vh] px-4 relative w-full pt-6">
+    <div className="flex-1 flex items-center justify-center px-4 relative w-full pb-[10vh]">
       {/* Background glows */}
       <div className="absolute top-[20%] left-[15%] w-[400px] h-[400px] bg-teal-500/10 rounded-full blur-[120px] pointer-events-none z-0" />
       <div className="absolute bottom-[20%] right-[15%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none z-0" />
@@ -154,6 +175,8 @@ function SwapPage() {
           onSellAmountChange={handleSellChange}
           buyAmount={buyAmount}
           onBuyAmountChange={handleBuyChange}
+          inputToken={inputToken}
+          onInputTokenChange={setInputToken}
           outputToken={outputToken}
           onOutputTokenChange={setOutputToken}
           ethBalance={ethBalance}
@@ -161,13 +184,24 @@ function SwapPage() {
           solBalance={solBalance}
           evmAddress={evmAddress}
           evmConnected={evmConnected}
+          evmWalletIcon={connector?.icon}
+          evmWalletName={connector?.name}
           solanaAddress={solanaAddress}
+          solanaWalletIcon={solanaWallet?.adapter?.icon}
+          solanaWalletName={solanaWallet?.adapter?.name}
           quote={quote ?? null}
           isQuoteLoading={isQuoteLoading}
+          isQuoteFetching={isQuoteFetching}
           quoteError={quoteError?.message ?? null}
           quoteAge={quoteAge}
           onConnectEvm={() => connect({ connector: connectors[0] })}
+          onDisconnectEvm={() => disconnect()}
+          onDisconnectSolana={() => disconnectSolana()}
           isConnectingEvm={isConnecting}
+          isFlipped={isFlipped}
+          onFlip={handleFlip}
+          pastedDestinationAddress={pastedDestinationAddress}
+          setPastedDestinationAddress={setPastedDestinationAddress}
           onSubmit={handleSwap}
           canSubmit={canSwap}
           isSubmitting={isBusy}

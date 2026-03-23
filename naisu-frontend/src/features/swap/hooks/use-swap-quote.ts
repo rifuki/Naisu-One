@@ -2,8 +2,8 @@ import { queryKeys } from '@/lib/query-keys'
 import { useQuery } from '@tanstack/react-query';
 import { getIntentQuote, type GetIntentQuoteParams, type IntentQuote } from '@/features/intent/api/get-intent-quote';
 
-const STALE_TIME = 30 * 1000; // 30 seconds
-const REFETCH_INTERVAL = 30 * 1000; // 30 seconds
+const STALE_TIME = 5 * 1000; // 5 seconds
+const REFETCH_INTERVAL = 5 * 1000; // 5 seconds
 
 export interface SwapQuoteParams {
   amount: string;

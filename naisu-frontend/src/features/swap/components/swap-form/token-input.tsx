@@ -91,7 +91,7 @@ export function TokenInput({
           variant="outline"
           type="button"
           onClick={onTokenSelectorClick}
-          className="flex items-center gap-2.5 bg-white/5 hover:bg-white/10 hover:text-white border-white/5 rounded-full h-[50px] pl-[9px] pr-4 shrink-0 transition-colors shadow-sm"
+          className="cursor-pointer flex items-center gap-2.5 bg-white/5 hover:bg-white/10 hover:text-white border-white/5 rounded-full h-[50px] pl-[9px] pr-4 shrink-0 transition-colors shadow-sm"
         >
           <div className="relative w-8 h-8 shrink-0 flex items-center justify-center">
             <div className="w-full h-full rounded-full flex items-center justify-center overflow-hidden">

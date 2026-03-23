@@ -53,6 +53,7 @@ function MultiWalletDropdown({
   solAddress,
   fullEvmAddress,
   fullSolAddress,
+  evmWalletIcon,
   onConnectEvm,
   onConnectSol,
   onDisconnectEvm,
@@ -62,6 +63,7 @@ function MultiWalletDropdown({
   solAddress: string | null;
   fullEvmAddress: string | null;
   fullSolAddress: string | null;
+  evmWalletIcon?: string | null;
   onConnectEvm: () => void;
   onConnectSol: () => void;
   onDisconnectEvm: () => void;
@@ -79,7 +81,7 @@ function MultiWalletDropdown({
   if (connectedCount === 1) {
     if (evmAddress) {
       buttonContent = (
-        <div className="flex items-center gap-2 text-primary font-mono">
+        <div className="flex items-center gap-2 text-primary font-mono cursor-pointer">
           <EthLogo />
           {evmAddress}
         </div>
@@ -94,7 +96,7 @@ function MultiWalletDropdown({
     }
   } else if (connectedCount === 2) {
     buttonContent = (
-      <div className="flex items-center gap-2 text-primary overflow-hidden">
+      <div className="flex items-center gap-2 text-primary overflow-hidden cursor-pointer">
         <EthLogo />
         <span className="font-mono">{evmAddress}</span>
         <div className="w-px h-3 bg-white/20 mx-1" />
@@ -131,7 +133,7 @@ function MultiWalletDropdown({
             <div className="p-2 rounded-xl bg-primary/5 border border-primary/10 mb-1">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-start gap-2 text-primary select-all font-mono text-[10px] break-all leading-tight pr-2">
-                  <EthLogo className="mt-0.5 shrink-0" />
+                  {evmWalletIcon ? <img src={evmWalletIcon} className="mt-0.5 w-4 h-4 rounded-sm object-cover shrink-0" /> : <EthLogo className="mt-0.5 shrink-0" />}
                   <span>{fullEvmAddress}</span>
                 </div>
                 <Button
@@ -236,12 +238,40 @@ function MultiWalletDropdown({
 
 // ── Navbar ────────────────────────────────────────────────────────────────────
 
+const getFallbackIcon = (name?: string, fallbackIcon?: string, isEvm: boolean = true) => {
+  let lower = (name || '').toLowerCase();
+
+  if (isEvm && typeof window !== 'undefined' && (window as any).ethereum) {
+    const eth = (window as any).ethereum;
+    if (!name || lower === 'injected' || lower === 'okx wallet' || eth.isOkxWallet) {
+      if (eth.isOkxWallet || (window as any).okxwallet) lower += ' okx';
+      if (eth.isMetaMask && !eth.isOkxWallet && !eth.isPhantom) lower += ' metamask';
+    }
+  }
+
+  if (lower.includes('okx')) return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgNDAwIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgcng9IjIwMCIgZmlsbD0iIzAwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkeT0iLjM1ZW0iIGZpbGw9IiNmZmYiIGZvbnQtZmFtaWx5PSJBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyMCIgZm9udC13ZWlnaHQ9ImJvbGQiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk9LWDwvdGV4dD48L3N2Zz4=";
+  if (fallbackIcon) return fallbackIcon;
+  if (lower.includes('metamask')) return 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg';
+  return null;
+};
+
 const Navbar: React.FC = () => {
-  const pathname = useRouterState({ select: (s) => s.pathname });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    // Check initial scroll position
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // EVM
-  const { address, isConnected, chain } = useAccount();
+  const { address, isConnected, chain, connector } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
 
@@ -296,12 +326,17 @@ const Navbar: React.FC = () => {
 
   const cLabel = chainLabel(chain?.name);
 
-  // No longer returning individual dropdown maps here since MultiWalletDropdown handles its own logic.
+  const isIntentPage = pathname === '/intent';
+  const shouldShowBackground = isIntentPage || isScrolled;
 
   return (
     <>
       <div className="fixed top-0 left-0 right-0 z-50 w-full">
-        <header className="flex items-center justify-between h-16 bg-[#070a09]/95 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 transition-all duration-300">
+        <header className={`flex items-center justify-between h-16 px-4 sm:px-6 transition-all duration-300 ${
+          shouldShowBackground 
+            ? 'bg-[#070a09]/95 backdrop-blur-xl border-b border-white/5' 
+            : 'bg-transparent border-b border-transparent'
+        }`}>
 
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group shrink-0">
@@ -331,6 +366,7 @@ const Navbar: React.FC = () => {
               solAddress={shortSol}
               fullEvmAddress={address || null}
               fullSolAddress={detectedSolAddress || null}
+              evmWalletIcon={getFallbackIcon(connector?.name, connector?.icon, true)}
               onConnectEvm={() => connect({ connector: injected() })}
               onConnectSol={() => setVisible(true)}
               onDisconnectEvm={disconnect}

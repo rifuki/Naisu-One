@@ -18,7 +18,7 @@ function EarnPage() {
   const solanaAddress = useSolanaAddress();
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
+    <div className="flex-1 flex items-center justify-center px-4 pb-[10vh]">
       <div className="w-full max-w-md space-y-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Earn Yield</h1>

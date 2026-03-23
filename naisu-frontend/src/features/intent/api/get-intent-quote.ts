@@ -51,7 +51,7 @@ export async function getIntentQuote(params: GetIntentQuoteParams): Promise<Inte
     toUsd: raw.toUsd ?? null,
     rate,
     confidence: null,
-    priceSource: 'fallback',
+    priceSource: 'pyth',
     activeSolvers: raw.activeSolvers ?? 0,
     durationMs: (raw.durationSeconds ?? 300) * 1000,
   }
