@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createFileRoute } from "@tanstack/react-router";
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,10 @@ function SwapPage() {
   const { disconnect } = useDisconnect();
   const solanaAddress = useSolanaAddress();
 
-  const [amount, setAmount] = useState('');
+  const [sellAmount, setSellAmount] = useState('');
+  const [buyAmount, setBuyAmount] = useState('');
+  const [lastEdited, setLastEdited] = useState<'sell' | 'buy'>('sell');
+  const latestRate = useRef<number>(0);
   const [outputToken, setOutputToken] = useState<'sol' | 'msol'>('sol');
   const [submitted, setSubmitted] = useState<{ txHash: string; submittedAt: number } | null>(null);
   const [tick, setTick] = useState(0);
@@ -32,13 +35,44 @@ function SwapPage() {
   const { balance: solBalance } = useSolBalance(solanaAddress);
 
   // Quote
+  const quoteAmount = sellAmount || '1'; // Default to 1 to lazily grab exchange rate if empty
   const {
     data: quote,
     isLoading: isQuoteLoading,
     error: quoteError,
     dataUpdatedAt,
     refetch,
-  } = useSwapQuote({ amount });
+  } = useSwapQuote({ amount: quoteAmount });
+
+  // 2-way input synchronization
+  if (quote && parseFloat(quote.amountIn) > 0) {
+    latestRate.current = parseFloat(quote.estimatedReceive) / parseFloat(quote.amountIn);
+  }
+
+  const handleSellChange = (val: string) => {
+    setSellAmount(val);
+    setLastEdited('sell');
+    if (!val) setBuyAmount('');
+  };
+
+  const handleBuyChange = (val: string) => {
+    setBuyAmount(val);
+    setLastEdited('buy');
+    if (!val) {
+      setSellAmount('');
+      return;
+    }
+    if (latestRate.current > 0) {
+      const calculatedSell = (parseFloat(val) / latestRate.current).toFixed(6);
+      setSellAmount(parseFloat(calculatedSell).toString());
+    }
+  };
+
+  useEffect(() => {
+    if (quote && lastEdited === 'sell' && sellAmount) {
+      setBuyAmount(quote.estimatedReceive);
+    }
+  }, [quote, lastEdited, sellAmount]);
 
   // Order
   const {
@@ -57,7 +91,7 @@ function SwapPage() {
     return () => clearInterval(id);
   }, []);
 
-  const hasValidAmount = Boolean(amount && parseFloat(amount) > 0);
+  const hasValidAmount = Boolean(sellAmount && parseFloat(sellAmount) > 0);
   const activeSolvers = quote?.activeSolvers ?? 0;
   const noSolvers = hasValidAmount && quote && activeSolvers === 0;
   const canSwap = evmConnected && !!solanaAddress && hasValidAmount && !noSolvers;
@@ -66,7 +100,7 @@ function SwapPage() {
   const quoteExpiring = quoteAge !== null && quoteAge > 20;
 
   const handleSwap = async () => {
-    if (!evmAddress || !solanaAddress || !amount) return;
+    if (!evmAddress || !solanaAddress || !sellAmount) return;
 
     resetError();
 
@@ -74,7 +108,7 @@ function SwapPage() {
       const result = await submitOrder({
         evmAddress,
         solanaAddress,
-        amount,
+        amount: sellAmount,
         outputToken,
       });
 
@@ -93,7 +127,8 @@ function SwapPage() {
 
   const handleReset = () => {
     setSubmitted(null);
-    setAmount('');
+    setSellAmount('');
+    setBuyAmount('');
     resetError();
   };
 
@@ -107,54 +142,18 @@ function SwapPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4 relative">
+    <div className="flex items-center justify-center min-h-[85vh] px-4 relative w-full pt-6">
       {/* Background glows */}
-      <div className="absolute top-[20%] left-[25%] w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none z-0" />
-      <div className="absolute bottom-[20%] right-[25%] w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none z-0" />
+      <div className="absolute top-[20%] left-[15%] w-[400px] h-[400px] bg-teal-500/10 rounded-full blur-[120px] pointer-events-none z-0" />
+      <div className="absolute bottom-[20%] right-[15%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none z-0" />
 
-      <div className="w-full max-w-md relative z-10 space-y-3">
-        {/* Header */}
-        <div className="flex justify-between items-center px-1">
-          <div>
-            <h1 className="text-xl font-bold text-white">Cross-chain Swap</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {`ETH on Base Sepolia → ${outputToken.toUpperCase()} on Solana · via Intent Bridge`}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {evmConnected && (
-              <Button
-                variant="ghost"
-                size="auto"
-                type="button"
-                onClick={() => disconnect()}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                {evmAddress?.slice(0, 6)}…{evmAddress?.slice(-4)}
-              </Button>
-            )}
-            {quoteAge !== null && (
-              <Button
-                variant="ghost"
-                size="auto"
-                onClick={() => refetch()}
-                title="Refresh quote"
-                className={`p-1.5 rounded-full transition-all ${
-                  quoteExpiring
-                    ? 'text-amber-400 hover:text-amber-300 animate-pulse'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <RefreshCw size={18} strokeWidth={1.5} />
-              </Button>
-            )}
-          </div>
-        </div>
-
+      <div className="w-full max-w-[420px] relative z-10 space-y-4">
         {/* Swap Form */}
         <SwapForm
-          amount={amount}
-          onAmountChange={setAmount}
+          sellAmount={sellAmount}
+          onSellAmountChange={handleSellChange}
+          buyAmount={buyAmount}
+          onBuyAmountChange={handleBuyChange}
           outputToken={outputToken}
           onOutputTokenChange={setOutputToken}
           ethBalance={ethBalance}
@@ -208,21 +207,23 @@ function SwapPage() {
 
       {/* WalletMultiButton style override */}
       <style>{`
-        .wallet-adapter-button-override .wallet-adapter-button {
-          background: transparent !important;
-          border: none !important;
-          padding: 0 !important;
-          height: auto !important;
+        .wallet-adapter-root-override .wallet-adapter-button {
+          background: rgba(255, 255, 255, 0.1) !important;
+          border: 1px solid rgba(255, 255, 255, 0.05) !important;
+          border-radius: 9999px !important;
+          padding: 0 16px !important;
+          height: 32px !important;
           font-size: 12px !important;
           font-weight: 600 !important;
-          color: rgb(13 242 223) !important;
+          color: white !important;
           line-height: 1 !important;
+          backdrop-filter: blur(8px) !important;
+          font-family: inherit !important;
         }
-        .wallet-adapter-button-override .wallet-adapter-button:hover {
-          background: transparent !important;
-          opacity: 0.8;
+        .wallet-adapter-root-override .wallet-adapter-button:hover {
+          background: rgba(255, 255, 255, 0.15) !important;
         }
-        .wallet-adapter-button-override .wallet-adapter-button-start-icon {
+        .wallet-adapter-root-override .wallet-adapter-button-start-icon {
           display: none !important;
         }
       `}</style>
