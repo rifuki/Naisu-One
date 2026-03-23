@@ -12,7 +12,9 @@ export interface IntentQuote {
   toChain: string
   amountIn: string
   estimatedReceive: string
+  startPrice: string
   floorPrice: string
+  durationSeconds: number
   currentAuctionPrice: string | null
   fromUsd: number | null
   toUsd: number | null
@@ -45,7 +47,9 @@ export async function getIntentQuote(params: GetIntentQuoteParams): Promise<Inte
     toChain,
     amountIn: amount,
     estimatedReceive: raw.receiveAmount ?? '0',
+    startPrice: raw.startPrice ?? '0',
     floorPrice: raw.floorPrice ?? '0',
+    durationSeconds: raw.durationSeconds ?? 300,
     currentAuctionPrice: null,
     fromUsd: raw.fromUsd ?? null,
     toUsd: raw.toUsd ?? null,

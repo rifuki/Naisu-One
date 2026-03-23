@@ -5,6 +5,8 @@ import { QueryProvider } from "@/providers/query";
 import { AgentProvider } from "@/providers/agent";
 import Navbar from "@/components/navbar";
 import ActiveIntents from "@/components/active-intents";
+import { Toaster } from "@/components/ui/sonner";
+import { ProgressToastMonitor } from "@/components/progress-toast";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -50,6 +52,8 @@ function RootContent() {
         </div>
       </div>
       <ActiveIntents />
+      <ProgressToastMonitor />
+      <Toaster position="bottom-right" />
     </div>
   );
 }

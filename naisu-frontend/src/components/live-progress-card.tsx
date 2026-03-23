@@ -1,75 +1,50 @@
 /**
  * LiveProgressCard
  *
- * Real-time progress tracker for intent bridge transactions.
- * Replaces polling-based SolverAuctionCard with SSE EventSource.
+ * Real-time cross-chain progress tracker for /swap gasless intents.
+ * Uses useOrderWatch SSE hook with orderId filtering.
  *
- * Steps:
- *  1. Order submitted          — immediate (from props)
- *  2. Indexing on-chain        — pulse until 'order_created' SSE event
- *  3. RFQ sent to N solvers    — on 'rfq_broadcast' SSE event
- *  4. Winner selected          — on 'rfq_winner' SSE event
- *  5. Solver filling order     — after winner, before fulfilled
- *  6. Order fulfilled          — on 'order_update' (FULFILLED) event
+ * Steps mirror the intent agent's 7-step flow:
+ *  1. Signed & submitted  — immediate
+ *  2. Broadcasting RFQ    — rfq_broadcast
+ *  3. Selecting solver    — rfq_winner
+ *  4. EVM submitted       — execute_sent
+ *  5. Sending to Solana   — sol_sent
+ *  6. Cross-chain proof   — vaa_ready
+ *  7. Bridge settled      — settled
  */
 
-import { useState, useEffect, useRef } from 'react'
-import { BACKEND_URL } from '@/lib/env'
-import { Upload, Link2, CheckCircle2, Clock, Radio, Trophy, Zap, LucideIcon } from 'lucide-react'
-
-const STEP_ICON_MAP: Record<string, LucideIcon> = {
-  upload: Upload,
-  link: Link2,
-  cell_tower: Radio,
-  emoji_events: Trophy,
-  pending: Clock,
-  check_circle: CheckCircle2,
-  speed: Zap,
-  flash_on: Zap,
-}
+import { useState, useRef } from 'react'
+import { CheckCircle2, LucideIcon, Zap } from 'lucide-react'
+import { useOrderWatch, type OrderFulfilledEvent } from '@/hooks/use-order-watch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type StepStatus = 'pending' | 'active' | 'done' | 'error'
 
 interface TimelineStep {
-  id: string
-  icon: string
+  key: string
   label: string
   detail?: string
+  txHash?: string
   status: StepStatus
-  ts?: number
 }
 
-// ── Countdown hook ────────────────────────────────────────────────────────────
-
-function useCountdown(deadlineMs: number | null): number {
-  const [secs, setSecs] = useState(0)
-  useEffect(() => {
-    if (!deadlineMs) return
-    const update = () => setSecs(Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000)))
-    update()
-    const t = setInterval(update, 500)
-    return () => clearInterval(t)
-  }, [deadlineMs])
-  return secs
-}
-
-// ── Step indicator ────────────────────────────────────────────────────────────
+// ── Step row ──────────────────────────────────────────────────────────────────
 
 function StepRow({ step }: { step: TimelineStep }) {
-  const color = {
-    pending: 'text-slate-600',
-    active:  'text-amber-400',
-    done:    'text-emerald-400',
-    error:   'text-red-400',
-  }[step.status]
-
   const dotColor = {
     pending: 'bg-slate-700',
-    active:  'bg-amber-400',
+    active:  'bg-primary',
     done:    'bg-emerald-400',
     error:   'bg-red-400',
+  }[step.status]
+
+  const textColor = {
+    pending: 'text-slate-600',
+    active:  'text-primary',
+    done:    'text-emerald-400',
+    error:   'text-red-400',
   }[step.status]
 
   return (
@@ -78,8 +53,7 @@ function StepRow({ step }: { step: TimelineStep }) {
         <span className={`size-2 rounded-full mt-1 ${dotColor} ${step.status === 'active' ? 'animate-pulse' : ''}`} />
       </div>
       <div className="flex-1 min-w-0 pb-3">
-        <div className={`flex items-center gap-2 text-xs font-medium ${color}`}>
-          {(() => { const Icon = STEP_ICON_MAP[step.icon] ?? CheckCircle2; return <Icon size={14} strokeWidth={1.5} className={color} />; })()}
+        <div className={`flex items-center gap-2 text-xs font-medium ${textColor}`}>
           <span>{step.label}</span>
           {step.status === 'active' && (
             <span className="inline-flex gap-0.5 ml-0.5">
@@ -95,234 +69,154 @@ function StepRow({ step }: { step: TimelineStep }) {
         {step.detail && step.status !== 'pending' && (
           <p className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">{step.detail}</p>
         )}
+        {step.txHash && step.status !== 'pending' && (
+          <p className="mt-0.5 text-[11px] text-slate-600 font-mono truncate">{step.txHash.slice(0, 12)}…{step.txHash.slice(-6)}</p>
+        )}
       </div>
     </div>
   )
 }
 
+// ── Initial steps ─────────────────────────────────────────────────────────────
+
+const INITIAL_STEPS: TimelineStep[] = [
+  { key: 'signed',        label: 'Signed & submitted',  detail: 'Gasless intent relayed',           status: 'done'    },
+  { key: 'rfq',           label: 'Broadcasting RFQ',    detail: 'Requesting quotes from solvers…',  status: 'active'  },
+  { key: 'winner',        label: 'Selecting solver',    detail: 'Evaluating solver quotes…',         status: 'pending' },
+  { key: 'evm_submitted', label: 'EVM submitted',       detail: 'Solver calling executeIntent()…',  status: 'pending' },
+  { key: 'sol_sent',      label: 'Sending to Solana',   detail: 'SOL transfer in progress…',        status: 'pending' },
+  { key: 'vaa_ready',     label: 'Cross-chain proof',   detail: 'Fetching Wormhole VAA…',           status: 'pending' },
+  { key: 'settled',       label: 'Bridge settled',      detail: 'Waiting for confirmation…',        status: 'pending' },
+]
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   userAddress: string
-  txHash?: string
   submittedAt: number
-  orderId?: string
+  orderId?: string   // intentId from gasless submission
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function LiveProgressCard({ userAddress, txHash, submittedAt, orderId: initialOrderId }: Props) {
-  const [orderId, setOrderId] = useState<string | null>(initialOrderId ?? null)
-  const [steps, setSteps] = useState<TimelineStep[]>([
-    {
-      id: 'submitted',
-      icon: 'upload',
-      label: 'Order submitted',
-      detail: txHash ? `Tx: ${txHash.slice(0, 10)}…${txHash.slice(-6)}` : undefined,
-      status: 'done',
-    },
-    {
-      id: 'indexing',
-      icon: 'link',
-      label: 'Indexing on-chain…',
-      status: 'active',
-    },
-    {
-      id: 'rfq',
-      icon: 'cell_tower',
-      label: 'Broadcasting to solvers',
-      status: 'pending',
-    },
-    {
-      id: 'winner',
-      icon: 'emoji_events',
-      label: 'Selecting best solver',
-      status: 'pending',
-    },
-    {
-      id: 'filling',
-      icon: 'pending',
-      label: 'Solver filling order…',
-      status: 'pending',
-    },
-    {
-      id: 'fulfilled',
-      icon: 'check_circle',
-      label: 'Order fulfilled!',
-      status: 'pending',
-    },
-  ])
-  const [exclusivityDeadline, setExclusivityDeadline] = useState<number | null>(null)
+export default function LiveProgressCard({ userAddress, orderId: initialOrderId }: Props) {
+  const [steps, setSteps] = useState<TimelineStep[]>(INITIAL_STEPS)
   const [isDone, setIsDone] = useState(false)
-  const esRef = useRef<EventSource | null>(null)
 
-  const exclusive = useCountdown(exclusivityDeadline)
+  const orderIdRef  = useRef<string | null>(initialOrderId ?? null)
+  const prevIdRef   = useRef<string | null>(null)
 
-  // Helper to mutate a specific step
-  const updateStep = (id: string, patch: Partial<TimelineStep>) => {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s))
-  }
+  const matches = (id: string) =>
+    id === orderIdRef.current || id === prevIdRef.current
 
-  // Connect SSE
-  useEffect(() => {
-    if (isDone) return
+  const patch = (updates: Record<string, Partial<TimelineStep>>) =>
+    setSteps((prev) => prev.map((s) => updates[s.key] ? { ...s, ...updates[s.key] } : s))
 
-    const url = `${BACKEND_URL}/api/v1/intent/watch?user=${userAddress}&chain=evm-base`
-    const es = new EventSource(url)
-    esRef.current = es
+  useOrderWatch({
+    user: userAddress,
+    enabled: !isDone,
 
-    es.addEventListener('order_created', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { orderId: string }
-        if (!orderId) setOrderId(data.orderId)
-        updateStep('indexing', { status: 'done', label: 'Order indexed on-chain', detail: `Order ID: ${data.orderId.slice(0, 12)}…` })
-        updateStep('rfq', { status: 'active', label: 'Broadcasting to solvers…' })
-      } catch { /* suppress */ }
-    })
+    onGaslessResolved: (intentId, contractOrderId) => {
+      if (orderIdRef.current?.toLowerCase() === intentId.toLowerCase()) {
+        prevIdRef.current  = orderIdRef.current
+        orderIdRef.current = contractOrderId
+      }
+    },
 
-    es.addEventListener('rfq_broadcast', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { orderId: string; solverCount: number; solverNames: string[] }
-        // Only apply if no orderId filter or matches our order (SSE is global, not user-scoped on solver events)
-        updateStep('rfq', {
-          status: 'done',
-          label: `RFQ sent to ${data.solverCount} solver${data.solverCount !== 1 ? 's' : ''}`,
-          detail: data.solverNames.join(' · '),
+    onProgress: (evt) => {
+      if (!matches(evt.orderId)) return
+
+      if (evt.type === 'rfq_broadcast') {
+        const count = (evt.data['solverCount'] as number) ?? 0
+        patch({ rfq: { status: 'active', label: count > 0 ? `Broadcasting RFQ to ${count} solver${count !== 1 ? 's' : ''}` : 'Waiting for solvers…' } })
+
+      } else if (evt.type === 'rfq_winner') {
+        const winner = evt.data['winner'] as string | undefined
+        const priceRaw = evt.data['quotedPrice'] as string | undefined
+        const priceSol = priceRaw ? (Number(BigInt(priceRaw)) / 1e9).toFixed(4) : undefined
+        patch({
+          rfq:    { status: 'done',  active: false },
+          winner: { status: 'active', label: winner ? `Solver: ${winner}` : 'Solver selected', detail: priceSol ? `${priceSol} SOL` : undefined },
         })
-        updateStep('winner', { status: 'active', label: 'Collecting quotes…' })
-      } catch { /* suppress */ }
-    })
 
-    es.addEventListener('rfq_winner', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as {
-          orderId: string; winner: string; score: number;
-          reasoning: string; estimatedETA: number; exclusivityDeadline: number
-        }
-        setExclusivityDeadline(data.exclusivityDeadline)
-        updateStep('winner', {
-          status: 'done',
-          label: `Winner: ${data.winner}`,
-          detail: `${data.reasoning} — ETA ${data.estimatedETA}s`,
+      } else if (evt.type === 'execute_sent') {
+        const tx = evt.data['txHash'] as string | undefined
+        patch({
+          rfq:          { status: 'done' },
+          winner:       { status: 'done' },
+          evm_submitted: { status: 'active', txHash: tx },
         })
-        updateStep('filling', { status: 'active', label: `${data.winner} is filling the order…` })
-      } catch { /* suppress */ }
-    })
 
-    es.addEventListener('order_fulfilled', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { solverName?: string }
-        const by = data.solverName ? ` by ${data.solverName}` : ''
-        
-        setSteps(prev => {
-          const rfqDone = prev.find(s => s.id === 'rfq')?.status === 'done'
-          const winnerDone = prev.find(s => s.id === 'winner')?.status === 'done'
-          
-          return prev.map(s => {
-            if (s.id === 'rfq' && !rfqDone) {
-              return { ...s, status: 'done', icon: 'speed', label: 'Bypassed local RFQ', detail: 'Direct on-chain execution' }
-            }
-            if (s.id === 'winner' && !winnerDone) {
-              return { ...s, status: 'done', icon: 'flash_on', label: 'Open Dutch Auction', detail: 'Order claimed directly' }
-            }
-            if (s.status === 'active' || s.status === 'pending') {
-              return { ...s, status: 'done' }
-            }
-            return s
-          })
+      } else if (evt.type === 'sol_sent') {
+        const tx = evt.data['txHash'] as string | undefined
+        patch({
+          rfq:          { status: 'done' },
+          winner:       { status: 'done' },
+          evm_submitted: { status: 'done', detail: 'Submitted on-chain' },
+          sol_sent:      { status: 'active', txHash: tx },
         })
-        
-        updateStep('fulfilled', { status: 'done', label: `Order fulfilled${by}! 🎉` })
+
+      } else if (evt.type === 'vaa_ready') {
+        const solTx = steps.find((s) => s.key === 'sol_sent')?.txHash
+        patch({
+          rfq:          { status: 'done' },
+          winner:       { status: 'done' },
+          evm_submitted: { status: 'done' },
+          sol_sent:      { status: 'done', detail: 'Transfer complete' },
+          vaa_ready:     { status: 'active', txHash: solTx },
+        })
+
+      } else if (evt.type === 'settled') {
+        const tx = evt.data['txHash'] as string | undefined
+        setSteps((prev) => prev.map((s) =>
+          s.key === 'settled'
+            ? { ...s, status: 'done', txHash: tx, detail: undefined }
+            : { ...s, status: 'done' }
+        ))
         setIsDone(true)
-      } catch { /* suppress */ }
-    })
+      }
+    },
 
-    es.addEventListener('order_update', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { status: string; orderId: string }
-        if (data.status === 'FULFILLED') {
-          setSteps(prev => {
-            const rfqDone = prev.find(s => s.id === 'rfq')?.status === 'done'
-            const winnerDone = prev.find(s => s.id === 'winner')?.status === 'done'
-            
-            return prev.map(s => {
-              if (s.id === 'rfq' && !rfqDone) {
-                return { ...s, status: 'done', icon: 'speed', label: 'Bypassed local RFQ', detail: 'Direct on-chain execution' }
-              }
-              if (s.id === 'winner' && !winnerDone) {
-                return { ...s, status: 'done', icon: 'flash_on', label: 'Open Dutch Auction', detail: 'External solver claimed order directly' }
-              }
-              if (s.status === 'pending' || s.status === 'active') {
-                return { ...s, status: 'done' }
-              }
-              return s;
-            })
-          })
-          updateStep('fulfilled', { status: 'done', label: 'Order fulfilled! 🎉' })
-          setIsDone(true)
-        } else if (data.status === 'EXPIRED') {
-          updateStep('filling', { status: 'error', label: 'Auction expired — no solver filled in time' })
-        }
-      } catch { /* suppress */ }
-    })
-
-    es.onerror = () => {
-      // EventSource auto-reconnects; suppress visual noise
-    }
-
-    return () => {
-      es.close()
-      esRef.current = null
-    }
-  }, [userAddress, isDone, orderId])
-
-  // Mark indexing timeout after 30s if still active
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setSteps(prev => prev.map(s =>
-        s.id === 'indexing' && s.status === 'active'
-          ? { ...s, detail: 'Taking longer than expected — still watching…' }
-          : s
+    onOrderFulfilled: (data: OrderFulfilledEvent) => {
+      if (!matches(data.orderId)) return
+      // Mark all steps done — settled event may still arrive with txHash
+      setSteps((prev) => prev.map((s) =>
+        s.key === 'settled' ? { ...s, status: 'active' } : { ...s, status: 'done' }
       ))
-    }, 30_000)
-    return () => clearTimeout(t)
-  }, [])
+    },
 
-  const header = isDone ? '✅ COMPLETE' : '⚡ LIVE PROGRESS'
-  const headerColor = isDone ? 'text-emerald-400' : 'text-primary'
+    onOrderUpdate: (evt) => {
+      if (!matches(evt.orderId)) return
+      if (evt.status === 'FULFILLED') {
+        setSteps((prev) => prev.map((s) =>
+          s.key === 'settled' ? { ...s, status: 'active' } : { ...s, status: 'done' }
+        ))
+      } else if (evt.status === 'EXPIRED') {
+        setSteps((prev) => prev.map((s) =>
+          s.active ? { ...s, status: 'error', detail: 'Expired — no solver filled in time' } : s
+        ))
+        setIsDone(true)
+      }
+    },
+  })
+
+  const allDone = steps.every((s) => s.status === 'done')
+  const headerColor = allDone ? 'text-emerald-400' : 'text-primary'
 
   return (
     <div className="mt-3 rounded-xl border border-primary/20 bg-gradient-to-b from-primary/5 to-black/10 overflow-hidden text-xs">
-      {/* Header */}
-      <div className="px-3 py-2 bg-primary/10 border-b border-primary/15 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isDone
-            ? <CheckCircle2 size={14} strokeWidth={1.5} className={headerColor} />
-            : <Zap size={14} strokeWidth={1.5} className={headerColor} />
-          }
-          <span className={`font-bold uppercase tracking-wider ${headerColor}`}>{header}</span>
-        </div>
-        {exclusive > 0 && (
-          <div className="flex items-center gap-1.5 text-amber-400">
-            <Clock size={12} strokeWidth={1.5} />
-            <span className="font-mono font-bold">{exclusive}s exclusive</span>
-          </div>
-        )}
+      <div className="px-3 py-2 bg-primary/10 border-b border-primary/15 flex items-center gap-2">
+        {allDone
+          ? <CheckCircle2 size={14} strokeWidth={1.5} className={headerColor} />
+          : <Zap size={14} strokeWidth={1.5} className={`${headerColor} animate-pulse`} />
+        }
+        <span className={`font-bold uppercase tracking-wider ${headerColor}`}>
+          {allDone ? '✅ Complete' : '⚡ Live Progress'}
+        </span>
       </div>
-
-      {/* Timeline */}
       <div className="px-3 pt-3 pb-1">
-        {steps.map(step => (
-          <StepRow key={step.id} step={step} />
-        ))}
+        {steps.map((step) => <StepRow key={step.key} step={step} />)}
       </div>
-
-      {/* No solver fallback note */}
-      {steps.find(s => s.id === 'rfq' && s.status === 'active') && (
-        <p className="px-3 pb-3 text-[11px] text-slate-600">
-          No registered solvers — running as open Dutch auction. Any solver can fill.
-        </p>
-      )}
     </div>
   )
 }

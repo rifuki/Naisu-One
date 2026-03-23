@@ -300,13 +300,16 @@ function IntentPage() {
       }
     }, [intentFulfilled, setPendingGaslessIntent, sendMessage]),
     onGaslessResolved: useCallback((intentId: string, contractOrderId: string) => {
+      const trackedLower = trackedIntentIdRef.current?.toLowerCase();
+      const intentIdLower = intentId.toLowerCase();
+      const contractOrderIdLower = contractOrderId.toLowerCase();
       console.log('[intent-page] gasless_resolved:', { intentId, contractOrderId, currentTracked: trackedIntentIdRef.current });
-      if (trackedIntentIdRef.current === intentId) {
+      if (trackedLower === intentIdLower) {
         console.log('[intent-page] Updating trackedId from', intentId, 'to', contractOrderId);
         previousIntentIdRef.current = intentId; // Store old ID
         trackedIntentIdRef.current = contractOrderId;
         updateIntentId(contractOrderId);
-      } else if (trackedIntentIdRef.current === contractOrderId) {
+      } else if (trackedLower === contractOrderIdLower) {
         console.log('[intent-page] trackedId already set to contractOrderId');
       } else {
         console.log('[intent-page] gasless_resolved ignored - intentId mismatch. Expected:', trackedIntentIdRef.current, 'Got:', intentId);
